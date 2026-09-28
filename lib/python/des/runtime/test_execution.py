@@ -51,7 +51,14 @@ def _read_capture(handle: IO[bytes] | None, text: bool) -> str | bytes | None:
     return raw.decode(errors="replace") if text else raw
 
 
-def run_pytest_reaped(
+# Every keyword here is a `subprocess.run` keyword with `subprocess.run`
+# semantics, and this module's own first line says it is "deliberately not a
+# test-runner abstraction". Reaching five arguments means folding
+# capture_output, text, stdin, stdout and stderr into one record, which IS the
+# abstraction the module declines to be, and it would make a pre-commit hook
+# script import a DES-internal type in order to run a subprocess. Grouping the
+# three streams alone only reaches seven, so there is no cheap partial win.
+def run_pytest_reaped(  # noqa: PLR0913 - see the note above
     argv: list[str],
     *,
     cwd: Path,

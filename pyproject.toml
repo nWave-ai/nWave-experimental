@@ -34,7 +34,7 @@ path = "scripts/release/offline_wheelhouse_hook.py"
 
 [project]
 name = "nwave-ai"
-version = "4.0.0+atddpure.5688098da"
+version = "4.0.0+atddpure.59c47180b"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -120,7 +120,7 @@ dev = [
     "mutmut==3.8.0",
     # Linting & formatting
     "mypy>=2.3.0",
-    "ruff==0.15.22",
+    "ruff==0.16.9",
     "bandit[toml]>=1.9.4",
     "detect-secrets>=1.4.0",
     # Git & release
@@ -357,7 +357,6 @@ ignore = [
     "PLR0911", # too many return statements
     "PLR0912", # too many branches
     "PLR0915", # too many statements
-    "PLR0917", # existing positional APIs/pytest fixtures; migrate callers before tightening
     "PLC0415", # import not at top of file (intentional lazy loading)
     "ARG001",  # unused function argument (common in callbacks/fixtures)
     "ARG002",  # unused method argument (common in overrides)
@@ -422,92 +421,26 @@ ignore = [
 "tests/des/acceptance/test_us003_post_execution_validation.py" = ["F821"]
 "tests/des/acceptance/test_post_execution_validation.py" = ["F821"]
 
-# PLR0913 ratchet. The rule is ENFORCED repo-wide: every file NOT listed below is
-# gated, so new and moved code cannot add a function with more than five arguments.
-# The files below are the ones that already violated it when the rule was switched
-# on, grandfathered so that enabling it did not require one unreviewable repo-wide
-# refactor.
+# PLR0913 is ENFORCED repo-wide with NO per-file grandfathering. Every violation is
+# either refactored away or suppressed per FUNCTION at its own definition, with a
+# comment there saying why that arity is a design fact: a port contract its adapters
+# must match, a pluggy hook whose signature pytest owns, a test function whose
+# parameters are fixtures injected by name, a helper forwarding genuine
+# `subprocess.run` keywords, or a test-data builder whose call sites vary one field.
 #
-# The count beside each path is MAINTAINED DATA, not prose: it is how many functions
-# that file still owes, and whoever changes a file's debt updates it in the same
-# commit. Clear some of a file's functions and you decrement its count; clear them
-# all and you DELETE its line, after which the rule applies to that file and it can
-# never regress. Those two are the whole burn-down ritual, and the partial case is
-# named here because the heaviest file owes twenty and no single batch will clear it.
+# Per FUNCTION is the point. A `per-file-ignores` entry exempted a whole FILE, so a new
+# over-argument function added to it was never reported. An inline `# noqa: PLR0913`
+# exempts one definition and leaves every other function in that file gated.
 #
-# For today's totals, do not count anything by hand -- ask ruff. BOTH overrides are
-# required: clearing `lint.ignore` alone still leaves every grandfathered file
-# suppressed by this very table, so it answers "All checks passed" and you would
-# read zero debt. Verified to print the real outstanding count:
-#   uv run ruff check --config 'lint.ignore=[]' --config 'lint.per-file-ignores={}' \
-#     --select PLR0913 --statistics src/ scripts/ tests/
+# THE DEBT IS NOT ZERO, and seeing it needs `--ignore-noqa`, because a plain
+# `ruff check` prints "All checks passed!" whether the figure is 0 or 33:
+#   uv run ruff check --ignore-noqa --select PLR0913 --statistics src/ scripts/ tests/
+# 33 on 2026-09-27. Nothing verifies that number against the tree, so treat the command
+# as the source of truth and this line as a hint; a gate to close that gap is filed in
+# techdebt.md.
 #
-# That command counts the WHOLE tree, not just the files listed here. Its total
-# matching the sum of the counts below is a SMOKE CHECK, not a proof: a total is
-# one number, so an over-counted annotation and an un-grandfathered violation
-# cancel each other and the sum still agrees. A disagreement is real evidence of
-# something wrong; an agreement is not evidence that everything is right. An
-# earlier version of this comment claimed the match proved both, which was false.
-#
-# What settles it is a PER-FILE comparison of what ruff reports against what this
-# table claims. NO_COLOR is required, not decoration: without it ruff wraps each
-# path in ANSI escapes, nothing matches, and the check reports every file as a
-# disagreement. In an agent session that exports FORCE_COLOR, which overrides
-# NO_COLOR, prefix the whole thing with `env -u FORCE_COLOR -u COLORTERM`.
-# Verified as written to print nothing when the table is exact:
-#   NO_COLOR=1 uv run ruff check --config 'lint.ignore=[]' --config 'lint.per-file-ignores={}' \
-#     --select PLR0913 --output-format concise src/ scripts/ tests/ \
-#     | grep ':.*PLR0913' | sed 's/:.*//' | sort | uniq -c \
-#     | awk '{print $2, $1}' | sort > /tmp/actual
-#   grep '\["PLR0913"\]' pyproject.toml \
-#     | sed -E 's/^"([^"]+)".*# *([0-9]+) function.*/\1 \2/' | sort > /tmp/annotated
-#   comm -3 /tmp/actual /tmp/annotated     # empty output means every entry is exact
-#
-# The ONE figure in this comment is a dated historical baseline, kept because it
-# says what the debt was when the decision was taken, and it is never updated:
-# 119 violations across 64 files on 2026-09-24, at switch-on. Any OTHER total
-# written into this prose would be false by the next batch, which is the
-# stale-by-construction resident prose this repository's CLAUDE.md warns about.
-#
-# Known limit, stated rather than discovered later: per-file-ignores are per FILE, so
-# while a line below exists, that file is unguarded -- a NEW over-argument function
-# added to it is not reported. Prefer clearing a file outright over adding to it.
-"scripts/analysis/k4/admission_verdict.py" = ["PLR0913"]  # 2 functions
-"scripts/analysis/k4/delivery_attribution.py" = ["PLR0913"]  # 1 function
-"scripts/analysis/paired_campaign.py" = ["PLR0913"]  # 1 function
-"scripts/release/release_migration_decision.py" = ["PLR0913"]  # 1 function
-"scripts/release/trace_message.py" = ["PLR0913"]  # 1 function
-"scripts/testpypi_validation.py" = ["PLR0913"]  # 1 function
-"src/des/adapters/driven/task_invocation/claude_code_task_adapter.py" = ["PLR0913"]  # 2 functions
-"src/des/adapters/driven/task_invocation/codex_task_adapter.py" = ["PLR0913"]  # 3 functions
-"src/des/adapters/driven/task_invocation/configured_task_adapter.py" = ["PLR0913"]  # 1 function
-"src/des/adapters/driven/task_invocation/mocked_task_adapter.py" = ["PLR0913"]  # 1 function
-"src/des/adapters/driven/task_invocation/model_envelope.py" = ["PLR0913"]  # 1 function
-"src/des/adapters/driven/task_invocation/turn_recorder.py" = ["PLR0913"]  # 2 functions
-"src/des/application/agreement_crossing.py" = ["PLR0913"]  # 2 functions
-"src/des/application/delivery_continuation.py" = ["PLR0913"]  # 18 functions
-"src/des/application/delivery_steps.py" = ["PLR0913"]  # 7 functions
-"src/des/application/handover.py" = ["PLR0913"]  # 3 functions
-"src/des/cli/role_artifacts.py" = ["PLR0913"]  # 1 function
-"src/des/cli/step_terminal.py" = ["PLR0913"]  # 2 functions
-"src/des/ports/driven_ports/task_invocation_port.py" = ["PLR0913"]  # 1 function
-"src/des/application/design_document_producer.py" = ["PLR0913"]  # 1 function
-"src/des/runtime/test_execution.py" = ["PLR0913"]  # 1 function
-"tests/bugs/plugins/des/installation/acceptance/steps/conftest.py" = ["PLR0913"]  # 1 function
-"tests/common/in_process_cli.py" = ["PLR0913"]  # 2 functions
-"tests/des/_helpers/step_stimulus.py" = ["PLR0913"]  # 3 functions
-"tests/des/acceptance/commit_author_identity/steps/composition.py" = ["PLR0913"]  # 1 function
-"tests/des/acceptance/design_document_construction/test_design_document_construction.py" = ["PLR0913"]  # 2 functions
-"tests/des/acceptance/distill_document_construction/test_distill_document_construction.py" = ["PLR0913"]  # 1 function
-"tests/des/acceptance/fake_provider.py" = ["PLR0913"]  # 1 function
-"tests/des/acceptance/steps_for_the_orchestrator/test_host_review_examine_artifacts.py" = ["PLR0913"]  # 2 functions
-"tests/des/unit/adapters/driven/logging/test_jsonl_nwave_log_writer.py" = ["PLR0913"]  # 1 function
-"tests/installer/acceptance/test_install_cleanup_stale.py" = ["PLR0913"]  # 3 functions
-"tests/plugins/plugin-architecture/acceptance/steps/conftest.py" = ["PLR0913"]  # 1 function
-"tests/plugins/plugin-architecture/integration/test_behavioral_equivalence.py" = ["PLR0913"]  # 1 function
-"tests/release/release_migration_fixtures.py" = ["PLR0913"]  # 1 function
-"tests/release/test_release_migration_decision_gate.py" = ["PLR0913"]  # 2 functions
-"tests/release/test_release_staging_ssot.py" = ["PLR0913"]  # 1 function
+# Adding a new `per-file-ignores` PLR0913 row would reopen the hole this closed.
+# Suppress the one function, at the function, with the reason.
 
 [tool.ruff.lint.isort]
 known-first-party = ["crafter_ai", "des", "scripts"]

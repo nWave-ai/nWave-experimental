@@ -248,14 +248,43 @@ def _make_complete_stage(
 
 
 def _run(
-    command: list[str] | str,
+    # `list[str]`, not a union with `str`: a string here would run under the implicit
+    # `shell=False`, which hands the whole command line to the OS as one executable
+    # name and fails as though a binary were missing. All 21 call sites pass a list
+    # literal, verified by AST. Shell invocations use `_run_shell` below.
+    command: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str] | None = None,
+    timeout: int = 600,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+
+
+def _run_shell(
+    command: str,
     *,
     cwd: Path,
     env: dict[str, str] | None = None,
     input_text: str | None = None,
     timeout: int = 600,
-    shell: bool = False,
 ) -> subprocess.CompletedProcess[str]:
+    """Run ONE shell command that is also fed stdin.
+
+    Separate from `_run` rather than two more optional parameters on it, because a
+    single call site needs `shell=True` and a stdin payload together: the installed
+    Codex launcher entry, which is a shell command string and reads a hook envelope
+    on stdin. Keeping them here leaves `_run` at four parameters for its other 21
+    call sites, and makes the one genuinely different invocation say so by name.
+    """
     return subprocess.run(
         command,
         cwd=cwd,
@@ -265,7 +294,7 @@ def _run(
         text=True,
         timeout=timeout,
         check=False,
-        shell=shell,
+        shell=True,
     )
 
 
@@ -2297,7 +2326,7 @@ def test_all_target_install_keeps_codex_and_copilot_hooks_on_one_runtime(
     activation = consumer / ".nwave" / "config.json"
     activation.parent.mkdir(parents=True, exist_ok=True)
     activation.write_text('{"enabled": true}\n', encoding="utf-8")
-    fired_codex = _run(
+    fired_codex = _run_shell(
         codex_entries[0]["command"],
         cwd=consumer,
         env=environment,
@@ -2309,7 +2338,6 @@ def test_all_target_install_keeps_codex_and_copilot_hooks_on_one_runtime(
             }
         )
         + "\n",
-        shell=True,
     )
     _require(
         fired_codex.returncode == 0,

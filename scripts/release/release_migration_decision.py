@@ -1604,15 +1604,34 @@ def classify_destination(
     return "Unavailable"
 
 
+@dataclass(frozen=True, kw_only=True)
+class PublicationTargets:
+    """WHERE one publication writes, and what may redirect it.
+
+    Keyword-only: `root`, `downstream` and `target_repo` are all paths and
+    `downstream` is optional, so a positional permutation would publish into the
+    artifact root or the downstream decision instead of the target repository,
+    and nothing raises. This module is outside `mypy src/des/`, which is itself
+    executed by no workflow, so nothing would catch it.
+    """
+
+    root: Path
+    downstream: Path | None
+    override: str | None
+    refs: dict[str, GeneratedCommitRef]
+    target_repo: Path
+
+
 def publish(
     d: InvocationDecision,
     u: PublicationExpectation,
-    root: Path,
-    downstream: Path | None,
-    override: str | None,
-    refs: dict[str, GeneratedCommitRef],
-    target_repo: Path,
+    targets: PublicationTargets,
 ) -> str:
+    root = targets.root
+    downstream = targets.downstream
+    override = targets.override
+    refs = targets.refs
+    target_repo = targets.target_repo
     b = u.body
     if u.kind == "github_release_metadata":
         repo, tag, target = (
@@ -2003,11 +2022,17 @@ def main(argv: list[str] | None = None) -> int:
             publish(
                 decision,
                 decision.unit(args.unit),
-                Path(args.artifact_root),
-                Path(args.downstream_decision) if args.downstream_decision else None,
-                args.package_index_endpoint,
-                _refs(args.generated_ref, decision, target_repo),
-                target_repo,
+                PublicationTargets(
+                    root=Path(args.artifact_root),
+                    downstream=(
+                        Path(args.downstream_decision)
+                        if args.downstream_decision
+                        else None
+                    ),
+                    override=args.package_index_endpoint,
+                    refs=_refs(args.generated_ref, decision, target_repo),
+                    target_repo=target_repo,
+                ),
             )
         )
         return 0

@@ -159,6 +159,13 @@ detail on a specific feature today, ask the assisting LLM directly during
 the wave; it produces additional detail through the existing DES document
 producer rather than through a persisted, freeform handoff document.
 
+`nwave-ai install` checks existing documentation preferences before writing any
+installation files, including when `--density-only` is used. An invalid
+`documentation.expansion_prompt` stops the install with an error that lists
+valid values. Correct the value in `~/.nwave/config.json` and run install again;
+the refused install leaves that file unchanged.
+
+
 **Cascade** (independent of the density cascade above): explicit value wins;
 else the `rigor.profile` mapping; else hard default `ask-intelligent`.
 

@@ -43,7 +43,9 @@ class MockedTaskAdapter(TaskInvocationPort):
         """The results still to be returned, in order."""
         return list(self._queue)
 
-    def invoke(
+    # Arity is fixed by TaskInvocationPort.invoke, which this implements.
+    # Narrowing it here alone would break the contract.
+    def invoke(  # noqa: PLR0913 - see the note above
         self,
         *,
         role_id: str,

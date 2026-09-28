@@ -88,7 +88,9 @@ class ConfiguredTaskAdapter(TaskInvocationPort):
         self._delegates[key] = delegate
         return delegate
 
-    def invoke(
+    # Arity is fixed by TaskInvocationPort.invoke, which this implements.
+    # Narrowing it here alone would break the contract.
+    def invoke(  # noqa: PLR0913 - see the note above
         self,
         *,
         role_id: str,

@@ -897,16 +897,35 @@ def prepare(
         raise RoleInputAlreadyPrepared(relative, conflict.digest) from None
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RecordedRoleTurn:
+    """WHICH role turn a recorded result belongs to, and WHO answered it.
+
+    Keyword-only, and load-bearing: `role`, `candidate`, `provider`, `model` and
+    `session` are all strings or None, so a positional permutation records a turn
+    against the wrong role, the wrong candidate or an invented model, and nothing
+    raises. Nothing in this repository would catch it: `typecheck` covers
+    `src/des/` but is executed by no workflow.
+    """
+
+    role: str
+    candidate: str
+    provider: str
+    model: str | None
+    session: str | None
+
+
 def record(
     root: Path,
-    role: str,
-    candidate: str,
-    provider: str,
-    model: str | None,
-    session: str | None,
+    turn: RecordedRoleTurn,
     raw: bytes,
     prepared_input: Path | None = None,
 ) -> tuple[str, str, str]:
+    role = turn.role
+    candidate = turn.candidate
+    provider = turn.provider
+    model = turn.model
+    session = turn.session
     if prepared_input is not None:
         if role != "examiner":
             raise ValueError("--prepared-input applies only to examiner revisions")

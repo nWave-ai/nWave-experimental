@@ -781,7 +781,11 @@ class IdentityComposition:
             raise RuntimeError(f"git {args} failed: {result.stderr}")
         return result
 
-    def _commit(
+    # `_commit` is defined in several modules and called 15 times in this one, so an
+    # ambiguous name has already caused two near-misses in this burn-down, so a
+    # mechanical rename is hazardous here. Its arguments are the git
+    # invocation's own dimensions rather than a domain concept.
+    def _commit(  # noqa: PLR0913 - see the note above
         self,
         repo: Path,
         message: str,

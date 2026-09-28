@@ -31,6 +31,7 @@ from des.application import handover
 from des.application.delivery_steps import DeliverySteps
 from des.application.handover import (
     AcceptanceObligation,
+    BoundDesign,
     bind_design_facts,
     read_handover,
 )
@@ -115,7 +116,10 @@ def _distill_payload() -> dict[str, object]:
     }
 
 
-def _call(
+# 58 in-file call sites, and it already carries `**kwargs`, so a record cannot
+# make the signature keyword-safe: arbitrary extra arguments pass through it by
+# design. The named parameters are the CLI's own flags forwarded verbatim.
+def _call(  # noqa: PLR0913 - see the note above
     root: Path,
     command: str,
     raw: str,
@@ -393,7 +397,8 @@ def test_distill_accepts_selected_graph_values_and_preserves_unselected_graph_an
         0,
     )
     assert not isinstance(
-        bind_design_facts(root, before, 2, unselected_authority), handover.Blocked
+        bind_design_facts(root, before, 2, BoundDesign(unselected_authority)),
+        handover.Blocked,
     )
     values = supplied["values"]
     assert isinstance(values, list)
@@ -863,7 +868,7 @@ def test_delivery_steps_craft_consumes_distill_typed_stimulus_expected_oracle_an
     facts = stored.values[position - 1].authority
     assert isinstance(facts, DesignFacts)
     assert not isinstance(
-        bind_design_facts(root, stored, position, facts), handover.Blocked
+        bind_design_facts(root, stored, position, BoundDesign(facts)), handover.Blocked
     )
     port = _CapturingCraftPort()
     outcome = DeliverySteps(invoker=port).craft(root, position)

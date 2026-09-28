@@ -2,7 +2,7 @@
 
 > Experimental software: evaluate it on non-critical work and report concrete friction or defects.
 
-**Build:** `5688098da` from `atdd_pure_staging` (`5688098dac051693702be3f17e228f2fa9644ab7`)
+**Build:** `59c47180b` from `atdd_pure_staging` (`59c47180b9ea751fb264c272fc2a91b63c748ee9`)
 
 ## Delivery
 
@@ -11,7 +11,21 @@ printf '%s' "$REQUEST" | des po --repo-root ROOT
 des state --repo-root ROOT
 ```
 
-Each step resolves one thing — product decomposition, design facts, public oracle, craft, whole-diff review with source-blind examination, integration — and returns `Success`, `Refusal`, `Retry`, or `Indeterminate` with the canonical next step in its `NEXT` line. Your assistant invokes them one at a time; `des state` says where an open request stands.
+DES helps deliver a request one step at a time. Your assistant chooses and starts each step.
+The steps define the product goal, establish design facts, and write a public oracle: an executable check of promised behavior.
+They then implement the change, review the whole change, examine observed behavior without reading implementation code, and integrate the result.
+
+Each step reports one outcome:
+- `Success`: the step completed.
+- `Refusal`: the step cannot proceed as requested.
+- `Retry`: the operation can be tried again.
+- `Indeterminate`: the result is uncertain; do not treat it as success.
+
+The `NEXT` line suggests a following step; DES does not start it. Run `des state` to see where an open request stands.
+
+## Writing for this channel
+
+Use short, active sentences in guides, examples, and user-facing messages. Explain a new abbreviation or internal term before using it. Keep command names, flags, configuration keys, and required technical details exact.
 
 ## Install
 

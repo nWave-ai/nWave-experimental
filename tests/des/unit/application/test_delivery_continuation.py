@@ -13,6 +13,9 @@ from des.application.delivery_continuation import (
     DeliveryContinuationRunner,
     DeliveryOutcome,
     Disposition,
+    FrozenHandover,
+    RoleTurn,
+    ScopeWindow,
     _status_paths,
 )
 from des.application.handover import (
@@ -281,7 +284,10 @@ def test_a_provider_that_never_started_is_not_reported_as_an_envelope_defect(
             raise OSError(7, "Argument list too long", "/usr/bin/claude")
 
     outcome = DeliveryContinuationRunner()._invoke(
-        RefusingPort(), tmp_path, "nw-product-owner", "classify", None
+        RefusingPort(),
+        tmp_path,
+        RoleTurn(role="nw-product-owner", prompt="classify"),
+        FrozenHandover(raw=None),
     )
 
     assert isinstance(outcome, DeliveryOutcome)
@@ -303,7 +309,10 @@ def test_preissue_refusal_does_not_increment_turns_bought(tmp_path) -> None:
 
     runner = DeliveryContinuationRunner()
     outcome = runner._invoke(
-        PreissuePort(), tmp_path, "nw-product-owner", "classify", None
+        PreissuePort(),
+        tmp_path,
+        RoleTurn(role="nw-product-owner", prompt="classify"),
+        FrozenHandover(raw=None),
     )
 
     assert isinstance(outcome, DeliveryOutcome)
@@ -341,10 +350,12 @@ def test_selected_revision_recovery_never_repeats_an_issued_retry_safe_turn(
     outcome = runner._invoke(
         port,
         tmp_path,
-        "nw-acceptance-designer",
-        "recover the selected revision",
-        None,
-        semantic_task="selected-revision-recovery",
+        RoleTurn(
+            role="nw-acceptance-designer",
+            prompt="recover the selected revision",
+            semantic_task="selected-revision-recovery",
+        ),
+        FrozenHandover(raw=None),
     )
 
     assert isinstance(outcome, DeliveryOutcome)
@@ -373,7 +384,12 @@ def test_generic_retry_safe_turn_keeps_its_existing_second_attempt(tmp_path) -> 
 
     port = RetrySafePort()
     runner = DeliveryContinuationRunner()
-    outcome = runner._invoke(port, tmp_path, "nw-product-owner", "classify", None)
+    outcome = runner._invoke(
+        port,
+        tmp_path,
+        RoleTurn(role="nw-product-owner", prompt="classify"),
+        FrozenHandover(raw=None),
+    )
 
     assert isinstance(outcome, DeliveryOutcome)
     assert outcome.failure is not None
@@ -406,7 +422,7 @@ def test_the_runners_own_state_directory_is_not_workspace_drift(tmp_path) -> Non
     assert record.relative_to(root).as_posix() not in _status_paths(
         runner._observed_scope(root)[0]
     )
-    drift = runner._scope_drift(root, status, before)
+    drift = runner._scope_drift(root, ScopeWindow(status=status, workspace=before))
     assert not isinstance(drift, DeliveryOutcome)
     assert drift.attributed == () and drift.unattributed == ()
 

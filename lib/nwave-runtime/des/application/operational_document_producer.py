@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from des.application.handover import Blocked, replace_exact_bytes
+from des.application.handover import AtomicReplaceWords, Blocked, replace_exact_bytes
 from des.domain.operational_document import (
     OperationalDocument,
     OperationalDocumentInvalid,
@@ -21,6 +21,25 @@ class PublishedOperationalDocument:
     digest: str
     facts_path: str
     sidecar_failure: Blocked | None = None
+
+
+#: TWO vocabularies, because this producer writes TWO files and they fail
+#: differently: the Markdown authority and the canonical facts sidecar name
+#: distinct drifts and distinct repairs, and the terminal must send an operator
+#: to the file that actually moved.  That distinction is the whole reason this
+#: producer reports a mixed outcome rather than one transaction.
+_AUTHORITY_WORDS = AtomicReplaceWords(
+    unavailable="OperationalAuthorityUnavailable",
+    repair="restore authority storage; the complete replacement may already be visible",
+    drift="OperationalAuthorityDrift",
+    drift_subject="authority",
+)
+_SIDECAR_WORDS = AtomicReplaceWords(
+    unavailable="OperationalAuthorityUnavailable",
+    repair="restore OperationalFacts storage; the complete replacement may already be visible",
+    drift="OperationalFactsDrift",
+    drift_subject="OperationalFacts sidecar",
+)
 
 
 def _safe(root: Path, candidate: Path) -> bool:
@@ -196,26 +215,14 @@ def publish_operational_document(
         if rendered != existing:
             operation = "replacing DEVOPS Markdown authority"
             replaced = replace_exact_bytes(
-                path,
-                authority_expected,
-                rendered,
-                unavailable="OperationalAuthorityUnavailable",
-                repair="restore authority storage; the complete replacement may already be visible",
-                drift="OperationalAuthorityDrift",
-                drift_subject="authority",
+                path, authority_expected, rendered, words=_AUTHORITY_WORDS
             )
             if replaced is not None:
                 return replaced
         if existing_facts != facts:
             operation = "replacing OperationalFacts sidecar"
             replaced = replace_exact_bytes(
-                sidecar,
-                existing_facts,
-                facts,
-                unavailable="OperationalAuthorityUnavailable",
-                repair="restore OperationalFacts storage; the complete replacement may already be visible",
-                drift="OperationalFactsDrift",
-                drift_subject="OperationalFacts sidecar",
+                sidecar, existing_facts, facts, words=_SIDECAR_WORDS
             )
             if replaced is not None:
                 if rendered != existing:

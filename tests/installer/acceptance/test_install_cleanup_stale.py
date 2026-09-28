@@ -443,7 +443,16 @@ def given_current_version_contents(temp_source_dir: Path):
 
 
 @given("a previous install has already completed successfully")
-def given_previous_install_completed(
+# A pytest-bdd step function: every parameter is a FIXTURE, injected by name.
+# Folding any of them into a record stops the injection silently, so this arity
+# belongs to pytest and not to us.
+#
+# PLR0917 is suppressed rather than answered with a `*` separator: pytest-bdd resolves a
+# step's arguments from its POSITIONAL parameter names, so keyword-only parameters are
+# never injected and the step dies with "missing required keyword-only arguments". That
+# was measured with a probe feature file, not assumed, and it is the opposite of a plain
+# `test_` function, where pytest injects fixtures into keyword-only parameters happily.
+def given_previous_install_completed(  # noqa: PLR0913, PLR0917 - see the note above
     commands_plugin,
     skills_plugin,
     templates_plugin,
@@ -565,7 +574,16 @@ def given_no_directories(clean_claude_dir: Path, temp_source_dir: Path):
     "the user runs the nWave installer",
     target_fixture="install_results",
 )
-def when_user_runs_installer(
+# A pytest-bdd step function: every parameter is a FIXTURE, injected by name.
+# Folding any of them into a record stops the injection silently, so this arity
+# belongs to pytest and not to us.
+#
+# PLR0917 is suppressed rather than answered with a `*` separator: pytest-bdd resolves a
+# step's arguments from its POSITIONAL parameter names, so keyword-only parameters are
+# never injected and the step dies with "missing required keyword-only arguments". That
+# was measured with a probe feature file, not assumed, and it is the opposite of a plain
+# `test_` function, where pytest injects fixtures into keyword-only parameters happily.
+def when_user_runs_installer(  # noqa: PLR0913, PLR0917 - see the note above
     commands_plugin,
     skills_plugin,
     templates_plugin,
@@ -647,7 +665,16 @@ def when_templates_plugin_cleans_up(
     "the user runs the nWave installer for the first time",
     target_fixture="install_results",
 )
-def when_user_runs_installer_first_time(
+# A pytest-bdd step function: every parameter is a FIXTURE, injected by name.
+# Folding any of them into a record stops the injection silently, so this arity
+# belongs to pytest and not to us.
+#
+# PLR0917 is suppressed rather than answered with a `*` separator: pytest-bdd resolves a
+# step's arguments from its POSITIONAL parameter names, so keyword-only parameters are
+# never injected and the step dies with "missing required keyword-only arguments". That
+# was measured with a probe feature file, not assumed, and it is the opposite of a plain
+# `test_` function, where pytest injects fixtures into keyword-only parameters happily.
+def when_user_runs_installer_first_time(  # noqa: PLR0913, PLR0917 - see the note above
     commands_plugin,
     skills_plugin,
     templates_plugin,

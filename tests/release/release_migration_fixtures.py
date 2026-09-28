@@ -11,6 +11,7 @@ import hashlib
 import json
 import stat
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -249,19 +250,44 @@ def rewrite_wheel_member(record: Path, member: str, data: bytes) -> None:
     _rebase_proof(record)
 
 
+#: The source blob and candidate artifact a fixture decision binds by default.
+_DEFAULT_SOURCE_SHA = "a" * 40
+_DEFAULT_SOURCE_PATH = "src/release/decision.py"
+_DEFAULT_SOURCE_BYTES = b"BOUND_MIGRATION = 'fixture'\n"
+
+
+@dataclass(frozen=True, kw_only=True)
+class DecisionBinding:
+    """What one fixture decision BINDS: a source blob and a candidate artifact.
+
+    Keyword-only, and load-bearing: `source_sha`, `source_path`, `wheel_member`
+    and `version` are all strings or None, so a positional permutation binds a
+    decision to a sha named by a path, or an archive member named by a version,
+    and nothing raises.
+
+    There is no `predecessor` field. `decision` took one and never read it: the
+    record's predecessor is the hardcoded `prior` below, because a caller with its
+    own branch predecessor carries it on the BRANCH UNIT instead.
+    """
+
+    source_sha: str = _DEFAULT_SOURCE_SHA
+    source_path: str = _DEFAULT_SOURCE_PATH
+    source_bytes: bytes = _DEFAULT_SOURCE_BYTES
+    wheel: Path | None = None
+    wheel_member: str | None = None
+    version: str | None = None
+
+
+_DEFAULT_BINDING = DecisionBinding()
+
+
 def decision(
     root: Path,
     *,
     channel: str,
     units: list[dict[str, object]],
     required: bool = False,
-    source_sha: str = "a" * 40,
-    predecessor: str | None = None,
-    source_path: str = "src/release/decision.py",
-    source_bytes: bytes = b"BOUND_MIGRATION = 'fixture'\n",
-    wheel: Path | None = None,
-    wheel_member: str | None = None,
-    version: str | None = None,
+    binding: DecisionBinding = _DEFAULT_BINDING,
 ) -> Path:
     """Construct one decision around the supplied retained candidate wheel.
 
@@ -269,7 +295,12 @@ def decision(
     path here.  This deliberately prevents a later fixture call from replacing
     the bytes whose digest the publication unit already bound.
     """
-    version = candidate_version(channel, version)
+    source_sha = binding.source_sha
+    source_path = binding.source_path
+    source_bytes = binding.source_bytes
+    wheel = binding.wheel
+    wheel_member = binding.wheel_member
+    version = candidate_version(channel, binding.version)
     if wheel is None:
         wheel, member = candidate_wheel(
             root, channel=channel, version=version, source_bytes=source_bytes

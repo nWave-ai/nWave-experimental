@@ -630,7 +630,17 @@ def _schema_for(
     )
 
 
-def decode_model_run(
+# Five of these six arguments are the CALL's own facts, not this decoder's
+# choices.  `role_id`, `max_product_values`, `defect_values` and `semantic_task`
+# are TaskInvocationPort.invoke's per-call declarations, re-stated here so an
+# envelope that never met the provider's validator is judged against the same
+# law it declared; `accounting` is the provenance its caller already unwrapped.
+# Narrowing this signature therefore means grouping them AT `invoke`, which is
+# the DESIGN change the port's own note declines (18 definitions, ~51 call
+# sites) -- and a record built only inside this module's two callers would add an
+# abstraction nothing else reads. Suppressed per FUNCTION, so a new over-wide function
+# in this module is still caught.
+def decode_model_run(  # noqa: PLR0913 - see the note above
     structured: dict[str, Any],
     *,
     role_id: str = "",

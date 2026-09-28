@@ -115,6 +115,62 @@ class _TurnStart:
     problem: str | None
 
 
+# The records below carry one turn document's fields, split the way a reader asks
+# about a turn: what was issued, what came back, when, and which turn of the run
+# a producer projection belongs to.  Every one of them is keyword-only because
+# every one has at least two fields of the same type -- two strings, or two
+# floats -- and nothing here checks an annotation at runtime, so a positional
+# construction could transpose a pair and no gate would see it.
+
+
+@dataclass(frozen=True, kw_only=True)
+class IssuedTurn:
+    """The turn as issued: its record root, its role, its prompt, its argv.
+
+    ``argv`` is the provider command line that was actually spawned, and is
+    ``None`` for a turn refused before any provider existed.
+    """
+
+    root: Path
+    role_id: str
+    prompt: str
+    argv: list[str] | None
+
+
+@dataclass(frozen=True, kw_only=True)
+class TurnResult:
+    """What the turn returned, and how it ended.
+
+    ``raised`` names the exception type for a turn that left by raising rather
+    than by answering; a turn that answered carries ``None``.
+    """
+
+    outcome: str
+    diagnostic: str
+    exit_status: int
+    retry_safe: bool
+    provider_stdout: str | None
+    provider_stderr: str | None
+    raised: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class TurnTiming:
+    """The turn's two wall-clock instants; the record derives its duration."""
+
+    started_at: float
+    ended_at: float
+
+
+@dataclass(frozen=True, kw_only=True)
+class _TurnIdentity:
+    """Which turn of which run a producer projection belongs to."""
+
+    run_id: str
+    sequence: int
+    role_id: str
+
+
 @dataclass(frozen=True)
 class RecorderReservation:
     """The immutable native run reservation bound into a delivery child env."""
@@ -233,7 +289,12 @@ class TurnRecorder:
 
             def publish(sequence: int) -> None:
                 raw = _producer_projection_bytes(
-                    started.before, after, transitions, self._run_id, sequence, role_id
+                    started.before,
+                    after,
+                    transitions,
+                    _TurnIdentity(
+                        run_id=self._run_id, sequence=sequence, role_id=role_id
+                    ),
                 )
                 _publish_no_replace(
                     self._directory(anchor) / f"{sequence:02d}-{role_id}.projection",
@@ -259,23 +320,14 @@ class TurnRecorder:
     def record(
         self,
         *,
-        root: Path,
-        role_id: str,
-        prompt: str,
-        argv: list[str] | None,
-        outcome: str,
-        diagnostic: str,
-        exit_status: int,
-        retry_safe: bool,
-        provider_stdout: str | None,
-        provider_stderr: str | None,
-        started_at: float,
-        ended_at: float,
-        raised: str | None = None,
+        turn: IssuedTurn,
+        result: TurnResult,
+        timing: TurnTiming,
         producer_projection: dict[str, object] | None = None,
     ) -> Path | None:
         """Write one immutable turn document; errors stay diagnostic-only."""
-        anchor = self._anchor(root)
+        role_id = turn.role_id
+        anchor = self._anchor(turn.root)
         problem = self._prepare(anchor)
         if problem is not None:
             self._report(role_id, problem)
@@ -287,18 +339,18 @@ class TurnRecorder:
                     "run_id": self._run_id,
                     "sequence": sequence,
                     "role_id": role_id,
-                    "prompt": prompt,
-                    "argv": argv,
-                    "outcome": outcome,
-                    "diagnostic": diagnostic,
-                    "exit_status": exit_status,
-                    "retry_safe": retry_safe,
-                    "provider_stdout": provider_stdout,
-                    "provider_stderr": provider_stderr,
-                    "raised": raised,
-                    "started_at": _utc(started_at),
-                    "ended_at": _utc(ended_at),
-                    "duration_seconds": round(ended_at - started_at, 6),
+                    "prompt": turn.prompt,
+                    "argv": turn.argv,
+                    "outcome": result.outcome,
+                    "diagnostic": result.diagnostic,
+                    "exit_status": result.exit_status,
+                    "retry_safe": result.retry_safe,
+                    "provider_stdout": result.provider_stdout,
+                    "provider_stderr": result.provider_stderr,
+                    "raised": result.raised,
+                    "started_at": _utc(timing.started_at),
+                    "ended_at": _utc(timing.ended_at),
+                    "duration_seconds": round(timing.ended_at - timing.started_at, 6),
                     "producer_projection": producer_projection
                     or {"state": "not_applicable"},
                 }
@@ -471,18 +523,16 @@ def _producer_projection_bytes(
     before: WorkspaceProjection,
     after: WorkspaceProjection,
     transitions: tuple[PathTransition, ...],
-    run_id: str,
-    sequence: int,
-    role_id: str,
+    identity: _TurnIdentity,
 ) -> bytes:
     return _canonical_json(
         {
             "after_sha256": hashlib.sha256(projection_to_bytes(after)).hexdigest(),
             "before_sha256": hashlib.sha256(projection_to_bytes(before)).hexdigest(),
-            "role_id": role_id,
-            "run_id": run_id,
+            "role_id": identity.role_id,
+            "run_id": identity.run_id,
             "schema_version": 1,
-            "sequence": sequence,
+            "sequence": identity.sequence,
             "transitions": [_transition_json(transition) for transition in transitions],
         }
     )
@@ -872,7 +922,10 @@ def _utc(instant: float) -> str:
 __all__ = [
     "RESERVED_RUN_ID_ENV",
     "TURN_LOG_RELATIVE_DIR",
+    "IssuedTurn",
     "RecorderReservation",
     "TurnRecorder",
+    "TurnResult",
+    "TurnTiming",
     "reserve_d0",
 ]

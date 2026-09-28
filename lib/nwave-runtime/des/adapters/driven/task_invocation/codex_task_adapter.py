@@ -12,6 +12,7 @@ import shutil
 import stat
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +21,12 @@ from des.adapters.driven.task_invocation.model_envelope import (
     decode_model_run,
 )
 from des.adapters.driven.task_invocation.role_instructions import load_role_instructions
-from des.adapters.driven.task_invocation.turn_recorder import TurnRecorder
+from des.adapters.driven.task_invocation.turn_recorder import (
+    IssuedTurn,
+    TurnRecorder,
+    TurnResult,
+    TurnTiming,
+)
 from des.domain.agent_capability import (
     REPLY_CHANNEL_TOOLS,
     ClaimRegister,
@@ -326,6 +332,35 @@ def codex_schema_for(
     }
 
 
+@dataclass(frozen=True, kw_only=True)
+class CodexTurnPolicy:
+    """What Codex itself is told about one turn, as opposed to where it runs.
+
+    Keyword-only: `model`, `developer_instruction` and `sandbox` are all `str`,
+    so a positional triple constructs cleanly with any two swapped and the turn
+    then runs under the wrong sandbox or announces the wrong model, with nothing
+    raising. Nothing in this repository would catch that: `typecheck` covers
+    `src/des/` but is executed by no workflow.
+
+    `model_catalog_path` is deliberately NOT a field here, and it was briefly. A
+    review held the reason for including it to nothing: the docstring claimed the
+    field is "what Codex is told" rather than "where the turn runs", but
+    `schema_path` constrains the accepted answer shape and is equally "what Codex is
+    told", and the catalog file is built in the same per-turn
+    `tempfile.TemporaryDirectory()` block as `schema_path` and `terminal_path` with
+    the same transient lifecycle. No line separates them. The real driver was that
+    folding it in kept `argv_for` under the argument limit, which is a mechanism
+    added to route around a lint threshold rather than to describe the domain, and
+    GDP-10 refuses that. It stays a loose `argv_for` parameter beside the other two
+    paths, and `argv_for` carries the suppression its real arity has earned.
+    """
+
+    model: str
+    developer_instruction: str
+    sandbox: str
+    tool_free: bool
+
+
 class CodexTaskAdapter(TaskInvocationPort):
     """Spawn one configured Codex role without a Claude compatibility layer."""
 
@@ -358,20 +393,31 @@ class CodexTaskAdapter(TaskInvocationPort):
     def run_id(self) -> str:
         return self._recorder.run_id
 
-    def argv_for(
+    # Six arguments, and the sixth is honest. `model_catalog_path` sits here beside
+    # `schema_path` and `terminal_path` because all three are per-turn transient files
+    # built in the same `tempfile.TemporaryDirectory()` block; an earlier version of
+    # this batch folded it into `CodexTurnPolicy` instead, and a review established
+    # that the distinction offered for doing so did not survive comparison with
+    # `schema_path`. The honest arity is six, so it is suppressed at the function
+    # rather than disguised by a record that exists to lower a count (GDP-10). All six
+    # are keyword-only, so there is no transposition to prevent. The sibling
+    # `ClaudeCodeTaskAdapter.argv_for` carries the same suppression for the same
+    # reason, which is what makes the two adapters read consistently.
+    def argv_for(  # noqa: PLR0913 - see the note above
         self,
         *,
         role_id: str,
-        model: str,
-        developer_instruction: str,
-        sandbox: str,
-        tool_free: bool,
-        model_catalog_path: Path | None,
+        policy: CodexTurnPolicy,
         schema_path: Path,
         terminal_path: Path,
+        model_catalog_path: Path | None,
         cwd: Path,
     ) -> list[str]:
         """Build the complete admitted Codex argv; prompt travels on stdin."""
+        model = policy.model
+        developer_instruction = policy.developer_instruction
+        sandbox = policy.sandbox
+        tool_free = policy.tool_free
         argv = [
             str(self._launcher),
             "exec",
@@ -436,7 +482,9 @@ class CodexTaskAdapter(TaskInvocationPort):
                 argv.extend(("--disable", feature))
         return argv
 
-    def invoke(
+    # Arity is fixed by TaskInvocationPort.invoke, which this implements.
+    # Narrowing it here alone would break the contract.
+    def invoke(  # noqa: PLR0913 - see the note above
         self,
         *,
         role_id: str,
@@ -464,19 +512,19 @@ class CodexTaskAdapter(TaskInvocationPort):
                 started=recorder_start, role_id=role_id
             )
             self._recorder.record(
-                root=cwd,
-                role_id=role_id,
-                prompt=prompt,
-                argv=captured["argv"],
-                outcome=ModelOutcome.Indeterminate.value,
-                diagnostic=f"{type(error).__name__}: {error}",
-                exit_status=-1,
-                retry_safe=False,
-                provider_stdout=captured["stdout"],
-                provider_stderr=captured["stderr"],
-                started_at=started_at,
-                ended_at=time.time(),
-                raised=type(error).__name__,
+                turn=IssuedTurn(
+                    root=cwd, role_id=role_id, prompt=prompt, argv=captured["argv"]
+                ),
+                result=TurnResult(
+                    outcome=ModelOutcome.Indeterminate.value,
+                    diagnostic=f"{type(error).__name__}: {error}",
+                    exit_status=-1,
+                    retry_safe=False,
+                    provider_stdout=captured["stdout"],
+                    provider_stderr=captured["stderr"],
+                    raised=type(error).__name__,
+                ),
+                timing=TurnTiming(started_at=started_at, ended_at=time.time()),
                 producer_projection=producer_projection,
             )
             raise
@@ -484,23 +532,26 @@ class CodexTaskAdapter(TaskInvocationPort):
             started=recorder_start, role_id=role_id
         )
         self._recorder.record(
-            root=cwd,
-            role_id=role_id,
-            prompt=prompt,
-            argv=captured["argv"],
-            outcome=run.outcome.value,
-            diagnostic=run.diagnostic,
-            exit_status=run.exit_status,
-            retry_safe=run.retry_safe,
-            provider_stdout=captured["stdout"],
-            provider_stderr=captured["stderr"],
-            started_at=started_at,
-            ended_at=time.time(),
+            turn=IssuedTurn(
+                root=cwd, role_id=role_id, prompt=prompt, argv=captured["argv"]
+            ),
+            result=TurnResult(
+                outcome=run.outcome.value,
+                diagnostic=run.diagnostic,
+                exit_status=run.exit_status,
+                retry_safe=run.retry_safe,
+                provider_stdout=captured["stdout"],
+                provider_stderr=captured["stderr"],
+            ),
+            timing=TurnTiming(started_at=started_at, ended_at=time.time()),
             producer_projection=producer_projection,
         )
         return run
 
-    def _run_turn(
+    # Arity is TaskInvocationPort.invoke's six arguments plus the `captured`
+    # evidence map this seam fills. It cannot be narrower than the contract it
+    # carries; see the note on `invoke` above.
+    def _run_turn(  # noqa: PLR0913 - see the note above
         self,
         *,
         role_id: str,
@@ -648,13 +699,15 @@ class CodexTaskAdapter(TaskInvocationPort):
             )
             argv = self.argv_for(
                 role_id=role_id,
-                model=model,
-                developer_instruction=developer_instruction,
-                sandbox=sandbox,
-                tool_free=not real_tools,
-                model_catalog_path=model_catalog_path,
+                policy=CodexTurnPolicy(
+                    model=model,
+                    developer_instruction=developer_instruction,
+                    sandbox=sandbox,
+                    tool_free=not real_tools,
+                ),
                 schema_path=schema_path,
                 terminal_path=terminal_path,
+                model_catalog_path=model_catalog_path,
                 cwd=execution_cwd,
             )
             captured["argv"] = argv

@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from des.cli.role_artifacts import record
+from des.cli.role_artifacts import RecordedRoleTurn, record
 from des.cli.role_guidance import successor_next
 from des.cli.step_terminal import (
     NOTHING_OWED,
@@ -40,11 +40,13 @@ def main(argv=None):
     try:
         outcome, path, digest = record(
             r,
-            a.role,
-            a.candidate,
-            a.provider,
-            a.model,
-            a.session_id,
+            RecordedRoleTurn(
+                role=a.role,
+                candidate=a.candidate,
+                provider=a.provider,
+                model=a.model,
+                session=a.session_id,
+            ),
             read.encode("utf-8"),
             prepared_input=a.prepared_input,
         )

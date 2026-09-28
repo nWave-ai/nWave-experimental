@@ -32,6 +32,8 @@ from des.adapters.driven.task_invocation.configured_task_adapter import (
 from des.application.candidate_radius import INDETERMINATE, candidate_radius
 from des.application.commit_message_attribution import attribute_commit_message
 from des.application.design_document_producer import (
+    DesignAuthorityBinding,
+    DesignPublicationWidenings,
     bound_authority_headings,
     publish_design_document,
 )
@@ -423,6 +425,326 @@ class ScopeObservation:
     attributed: tuple[str, ...] = ()
     unattributed: tuple[str, ...] = ()
     in_scope: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RoleTurn:
+    """Everything ONE provider turn is asked for, apart from where it runs.
+
+    ADR-SSOT-002 Section 4b names a step as taking «the role, the minimum facts
+    that role consumes, the private workspace».  This record is the first two:
+    the role id, the prompt facts already rendered, and the shape of answer the
+    boundary will admit from them.  The workspace stays a separate argument
+    because one turn -- the whole-diff review -- runs in an ephemeral candidate
+    worktree that is NOT the root its handover is frozen at.
+
+    `max_product_values` and `defect_values` reach `port.invoke` unchanged.  No
+    call site in this module or in `delivery_steps` sets either, so today both
+    always arrive at the port as the defaults below; `semantic_task` is set at
+    exactly one site, the host-selected role invocation.
+
+    Keyword-only: `role`, `prompt` and `semantic_task` are all strings, nothing
+    here enforces annotations at runtime, and two of them swapped would buy a
+    paid turn under the wrong role id without saying so.
+    """
+
+    role: str
+    prompt: str
+    max_product_values: int | None = None
+    defect_values: tuple[str, ...] = ()
+    semantic_task: str | None = None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FrozenHandover:
+    """The graph bytes a turn may not move, and the root they are read at.
+
+    `raw` is `None` for the turns that run with no durable graph at all -- the
+    first decomposition, the DEVOPS constraints turn, and a host-selected role
+    issued alone -- and the compare-and-set is then not armed.
+
+    `root` exists for the ONE site where the handover does not live in the turn's
+    own workspace: the whole-diff review runs in a candidate worktree carrying no
+    handover, so the comparison has to name the subject root.  `None` falls back
+    to that workspace root, and several sites pass the workspace root explicitly
+    instead -- the same value either way.
+    """
+
+    raw: bytes | None
+    root: Path | None = None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class NativeRun:
+    """How ONE ordered native execution is labelled, and what it may keep.
+
+    `origin` labels every record the execution produces and decides the refusal
+    policy: a DECLARED vector the kernel will not start leaves the run with no
+    verification, so it terminates, while any other provenance is retained as an
+    unobserved stimulus instead.  `changed` is the candidate's own changed paths,
+    which the exercise measure intersects with what each execution imported.
+    `capture_incomplete` keeps a declared command's partial observation beside
+    its terminal fact rather than returning that fact alone.
+
+    Every call site in THIS module asks for the declared label and nothing else;
+    the other provenance is what the unobserved-stimulus arm of the execution
+    loop exists for, and no code here supplies it.
+    """
+
+    origin: str = DECLARED_ORIGIN
+    changed: tuple[str, ...] = ()
+    capture_incomplete: bool = False
+
+
+#: The declared-vector execution with nothing retained -- what a caller that
+#: names no policy gets.  ONE shared frozen value, so no signature carries a
+#: constructor call in a default argument.
+_DECLARED_NATIVE_RUN = NativeRun()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CommandObservation:
+    """The facts of ONE command invocation that are not its result.
+
+    Captured before the spawn apart from the elapsed duration, so a launch
+    refusal and a fired bound carry exactly what a completed command carries.
+    The two builders of a `NativeEvidence` with NO exit status -- the stimulus
+    that never started, and the declared command whose observation is partial --
+    take this record instead of six loose arguments, which is what keeps them
+    from disagreeing about which invocation they are each describing.
+
+    Keyword-only: `origin` and `cwd` are both strings, nothing here enforces
+    annotations at runtime, and a positional swap would report a provenance as
+    the working directory a command ran in.
+    """
+
+    origin: str
+    touches_test_paths: bool
+    # Required, with no default. `UNEXERCISED` is not a neutral placeholder: it is a
+    # positive claim that the command imported no product module, and the
+    # `NativeEvidence` docstring above states the opposite rule, that absence means
+    # unmeasured. A record built without this must fail to construct rather than
+    # quietly assert something about what ran. All four construction sites pass it.
+    exercised: ExercisedModules
+    duration_seconds: float | None = None
+    cwd: str | None = None
+    declared_environment: tuple[tuple[str, str], ...] | None = None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TurnRecordTarget:
+    """Where one role's turn records are written, and which values they cover.
+
+    `base` is the commit the record is parented on, which is what makes a stale
+    record self-invalidating: one taken before an integration cannot match after
+    one.  `request` keys the ref namespace, and `values` are the (observation,
+    selected-revision identity) pairs the record is a fact about.
+
+    Keyword-only: `base` and `request` are both strings, nothing here enforces
+    annotations at runtime, and swapping them would key every record under a ref
+    named by a commit sha.
+    """
+
+    base: str
+    request: str
+    values: tuple[tuple[str, RecordIdentity], ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ScopeWindow:
+    """The window one turn's scope is measured in.
+
+    `status` and `workspace` are the porcelain records and the bytes of every
+    path they name, observed BEFORE the turn, so the comparison after it reads
+    the same two axes.  `declared` is every path this Request has DERIVED so
+    far: a changed path it names is attributable delivery surface, and a path it
+    does not name reaches the third state rather than a refusal naming a writer
+    the runner never observed.
+    """
+
+    status: str
+    workspace: dict[str, tuple[str, bytes | str]]
+    declared: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class DesignedBatch:
+    """One batch's value observations and the single design they all consume.
+
+    A batch exists because `_batch_key` found its members' locator, oracle,
+    acceptance paths, target decisions and paradigm identical, so exactly one
+    `AuthorityFacts` describes every member and its author is shown one design.
+    """
+
+    observations: tuple[str, ...]
+    design: AuthorityFacts
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AcceptanceAuthoring:
+    """What an acceptance-designer turn is given beyond its own design facts.
+
+    `raw` is the handover bytes the turn is frozen against.  `finding` is the
+    opaque review finding it must answer: `None` is a first authoring turn, and
+    the correction site always supplies one.
+    """
+
+    raw: bytes
+    finding: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RequestFacts:
+    """One Request's persisted graph beside every admitted value's derived facts.
+
+    The two travel together wherever a turn may REPLACE one of them: a design
+    correction rebinds the graph and rewrites that value's entry in `prepared`
+    inside the same window.  `prepared` is the very list the caller holds, so
+    that replacement is visible to the pass iterating over it.
+    """
+
+    stored: StoredHandover
+    prepared: list[tuple[str, AuthorityFacts]]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RefusedCraft:
+    """The craft turn that refused its batch, and the terminal composed for it.
+
+    `run` is the turn itself, which carries the closed blocker word the window
+    routes on; `terminal` is the outcome the caller already composed, and the
+    three arms that open no window -- an outcome in place of a run, a turn that
+    did not REJECT, and the `product` blocker -- return it unchanged rather than
+    rebuilding it.  The fourth non-routing arm, a rejection naming no blocker,
+    deliberately composes its own LOUD terminal instead.
+
+    Keyword-only, and of every record in this module this is the one where that
+    matters MOST rather than least: the two field types OVERLAP.  A
+    `DeliveryOutcome` satisfies both `run` and `terminal`, so a positional swap
+    would be entirely type-valid, and the window would route on the composed
+    terminal while returning the turn as the outcome.  Elsewhere in this module
+    keyword-only guards two fields of the SAME type; here it guards two whose
+    types merely intersect, which no annotation and no checker would catch.
+    """
+
+    run: ModelRun | DeliveryOutcome
+    terminal: DeliveryOutcome
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CraftSelection:
+    """Which values one craft pass invokes, and how it differs from the first.
+
+    `owners` narrows the pass to a subset of the Request's values; `None` is
+    every value of it.  `correction` is the extra prompt facts a correction pass
+    carries, and its presence is also what forbids reusing a recorded craft turn
+    -- a finding was issued, and answering it is the whole point of that turn.
+    `route_blockers` decides whether a refusing turn's closed blocker word buys
+    one correction window here or returns to the caller as data, which Section 4b
+    makes the orchestrator's decision and not the software's.
+
+    Only `route_blockers` is set by any caller in this module today; `owners` and
+    `correction` are read by the pass and supplied by nothing, which is stated
+    here rather than left to be rediscovered as an unused field.
+    """
+
+    owners: list[tuple[str, AuthorityFacts]] | None = None
+    correction: dict[str, object] | None = None
+    route_blockers: bool = True
+
+
+#: The ordinary first pass over the whole Request, routing its own blockers.
+#: ONE shared frozen value, so no signature carries a constructor call in a
+#: default argument.
+_WHOLE_REQUEST_CRAFT = CraftSelection()
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedCandidate:
+    """One candidate SHA and the declared native evidence its execution produced."""
+
+    sha: str
+    evidence: tuple[NativeEvidence, ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReviewedCandidate:
+    """The whole candidate ONE read-only veto reads, and where it reads it.
+
+    `worktree` is the ephemeral checkout the review turn runs in, which is not
+    the subject root its handover is frozen at.  `diff` and `approved_oracles`
+    are what make this the WHOLE-diff review: the source-blind pass receives
+    neither, which is why it takes `VerifiedCandidate` alone and not this.
+    """
+
+    worktree: Path
+    verified: VerifiedCandidate
+    diff: str
+    approved_oracles: tuple[tuple[str, bytes], ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Integration:
+    """The one compare-and-swap an integration performs, and what it must leave.
+
+    `base` is the expected-old commit and `candidate` the commit that replaces
+    it.  `foreign_status` and `foreign_bytes` are the state OUTSIDE this
+    Request's owned paths as it stood immediately before the swap: the
+    reconciliation proves them equivalent afterwards, or reports cleanup as
+    unproven rather than answering with a Success nobody verified.
+
+    Keyword-only: `base`, `candidate` and `foreign_status` are all strings,
+    nothing here enforces annotations at runtime, and a positional swap would
+    compare and swap in the opposite direction without saying so.
+    """
+
+    base: str
+    candidate: str
+    foreign_status: str
+    foreign_bytes: dict[str, tuple[str, bytes | str]]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DesignOptions:
+    """The three facts a CALLER chooses for one architect turn.
+
+    `finding` makes the turn a correction rather than a first authoring, and the
+    current typed facts travel into the prompt beside it.  `competence`
+    qualifies the role id when this turn needs a different competence than the
+    role's ordinary one.  `destination` is the configured
+    `documents.design.destination`, resolved by the caller at the application
+    boundary so this runner gains no configuration dependency.
+
+    Keyword-only: all three are optional strings, nothing here enforces
+    annotations at runtime, and a positional swap would qualify a role with a
+    finding and publish a section into a competence name.
+    """
+
+    finding: str | None = None
+    competence: str | None = None
+    destination: str | None = None
+
+
+#: A FIRST architect turn's choices: nothing to correct, the role's ordinary
+#: competence, and no destination resolved.  ONE shared frozen value, so no
+#: signature carries a constructor call in a default argument.
+_FIRST_DESIGN = DesignOptions()
+
+
+@dataclass(frozen=True, slots=True)
+class SelectedValue:
+    """One value of a Request, as the three facts a per-value step consumes.
+
+    `stored` is the persisted graph the value belongs to, `ready` is the value
+    itself, and `design` is the runner's ephemeral projection of the authority it
+    is bound to -- the selected acceptance revision where one exists, and the
+    DESIGN facts otherwise.  `design` is derived by the caller and never here,
+    which is what keeps `selected_authority` the ONE source of that projection.
+    """
+
+    stored: StoredHandover
+    ready: HandoverValue
+    design: AuthorityFacts
 
 
 _PRODUCT_ROOT = Path("docs/product")
@@ -1100,33 +1422,28 @@ class DeliveryContinuationRunner:
         self,
         port: TaskInvocationPort,
         root: Path,
-        role: str,
-        prompt: str,
-        handover_bytes: bytes | None,
-        handover_root: Path | None = None,
-        max_product_values: int | None = None,
-        defect_values: tuple[str, ...] = (),
-        semantic_task: str | None = None,
+        turn: RoleTurn,
+        frozen: FrozenHandover,
     ) -> ModelRun | DeliveryOutcome:
-        prompt = self._rooted(root, prompt)
+        prompt = self._rooted(root, turn.prompt)
         for attempt in range(2):
-            frozen = (
-                handover_unchanged(handover_root or root, handover_bytes)
-                if handover_bytes is not None
+            moved = (
+                handover_unchanged(frozen.root or root, frozen.raw)
+                if frozen.raw is not None
                 else None
             )
-            if frozen is not None:
-                return self._blocked(frozen)
+            if moved is not None:
+                return self._blocked(moved)
             try:
                 invocation = {
-                    "role_id": role,
+                    "role_id": turn.role,
                     "prompt": prompt,
                     "cwd": root,
-                    "max_product_values": max_product_values,
-                    "defect_values": defect_values,
+                    "max_product_values": turn.max_product_values,
+                    "defect_values": turn.defect_values,
                 }
-                if semantic_task is not None:
-                    invocation["semantic_task"] = semantic_task
+                if turn.semantic_task is not None:
+                    invocation["semantic_task"] = turn.semantic_task
                 run = port.invoke(**invocation)
             except (ModelRuntimeUnavailable, ModelRuntimeConfigError) as error:
                 return self._fail(
@@ -1158,7 +1475,7 @@ class DeliveryContinuationRunner:
                 # reader "the software refused before buying one" over a turn
                 # the provider log shows was bought).
                 self._turns_bought += 1
-                self._last_role = role
+                self._last_role = turn.role
                 return self._fail(
                     Disposition.Indeterminate,
                     "ModelEnvelopeUnavailable",
@@ -1173,15 +1490,15 @@ class DeliveryContinuationRunner:
                     "repair the selected role runtime or its capability profile and retry",
                 )
             self._turns_bought += 1
-            self._last_role = role
+            self._last_role = turn.role
             self._model_runs.append(run)
-            frozen = (
-                handover_unchanged(handover_root or root, handover_bytes)
-                if handover_bytes is not None
+            moved = (
+                handover_unchanged(frozen.root or root, frozen.raw)
+                if frozen.raw is not None
                 else None
             )
-            if frozen is not None:
-                return self._blocked(frozen)
+            if moved is not None:
+                return self._blocked(moved)
             if not run.exit_status:
                 return run
             if not run.retry_safe:
@@ -1195,7 +1512,7 @@ class DeliveryContinuationRunner:
             # acceptance-designer turn.  A provider-level failure still reaches
             # the caller as a retryable terminal, but DES must not buy a second
             # turn on its own: the caller chooses whether and when to retry.
-            if attempt or semantic_task == "selected-revision-recovery":
+            if attempt or turn.semantic_task == "selected-revision-recovery":
                 return self._fail(
                     Disposition.Retry,
                     "ProviderRetry",
@@ -1400,13 +1717,17 @@ class DeliveryContinuationRunner:
     def _scope_drift(
         self,
         root: Path,
-        before_status: str,
-        before_bytes: dict[str, tuple[str, bytes | str]],
+        before: ScopeWindow,
         allowed: tuple[str, ...] = (),
-        declared: tuple[str, ...] = (),
         owns: Callable[[str], bool] | None = None,
     ) -> ScopeObservation | DeliveryOutcome:
-        """Observe one comparison: outside the role's own paths, and those themselves."""
+        """Observe one comparison: outside the role's own paths, and those themselves.
+
+        `before` carries the two axes of the pre-turn observation together with
+        the paths this Request has already declared, because all three are read
+        by the single comparison below and a site holding one without the others
+        cannot make it.
+        """
         status = self._git(
             root, "status", "--porcelain=v1", "-z", "--untracked-files=all"
         )
@@ -1417,11 +1738,13 @@ class DeliveryContinuationRunner:
                 what="GitUnavailable",
                 how="restore Git",
             )
-        paths = tuple(dict.fromkeys((*before_bytes, *_status_paths(status.stdout))))
+        paths = tuple(dict.fromkeys((*before.workspace, *_status_paths(status.stdout))))
         after_bytes = _workspace_bytes(root, paths)
         return _scope_observation(
-            _scope_changes(before_status, before_bytes, status.stdout, after_bytes, ()),
-            declared,
+            _scope_changes(
+                before.status, before.workspace, status.stdout, after_bytes, ()
+            ),
+            before.declared,
             allowed,
             owns,
         )
@@ -2210,9 +2533,9 @@ class DeliveryContinuationRunner:
         commands ran in.  The examiner read the noisy answer as "promise not
         observed on the product" and refused candidate `77b9e120c`; the SAME
         candidate, verified by hand in a tree where the index was reachable,
-        answered with a resolved provider and the real call sites.  Two runs
-        paid for a defect of PRECONDITION, which
-        `boundary:software-measures-model-decides` bills to the software.
+        answered with a resolved provider and the real call sites.  Two runs paid
+        for a defect of PRECONDITION, which the
+        `boundary:software-measures-model-decides` clause bills to the software.
 
         Same class as `_link_subject_venv`, and deliberately the same shape: the
         runner CARRIES what the subject already has, and materialises nothing on
@@ -2379,11 +2702,10 @@ class DeliveryContinuationRunner:
         inherited environment byte for byte for any of them.  The two conditions
         are separated there, with the measured run that forced it.
 
-        Nothing is stripped from the
-        inherited environment: measured on this box, none of `NWAVE_RUNTIME`,
-        `NWAVE_AGENTS_HOME`, `CLAUDE_CONFIG_DIR`, `PYTHONPATH` or `VIRTUAL_ENV`
-        was set, so a strip list would be precautionary ceremony, and the shim
-        reads none of them anyway.
+        Nothing is stripped from the inherited environment: measured on this box,
+        none of `NWAVE_RUNTIME`, `NWAVE_AGENTS_HOME`, `CLAUDE_CONFIG_DIR`,
+        `PYTHONPATH` or `VIRTUAL_ENV` was set, so a strip list would be
+        precautionary ceremony, and the shim reads none of them anyway.
 
         STATED LIMIT.  The `PATH` half is POSIX-shaped: it relies on a shebang,
         so on Windows a bare `des`, `python` or `pytest` would still reach
@@ -2435,17 +2757,17 @@ class DeliveryContinuationRunner:
         subject: Path,
         extra_env: dict[str, str] | None = None,
         *,
-        origin: str = DECLARED_ORIGIN,
-        changed: tuple[str, ...] = (),
-        capture_incomplete: bool = False,
+        run: NativeRun = _DECLARED_NATIVE_RUN,
     ) -> tuple[NativeEvidence, ...] | DeliveryOutcome:
         """`root` is the tree under verification; `subject` is the repository.
 
-        `origin` labels every record this execution produces and determines the
-        refusal policy.  Public verification executes design-declared vectors:
-        a spawn the kernel will not start leaves the run with no verification,
-        so it terminates.  The retained metadata does not create a separate
-        Request-authored execution path.
+        `run` carries the three facts that describe the EXECUTION rather than the
+        commands: its provenance label, the candidate's changed paths, and
+        whether a declared command's partial observation is kept.  Public
+        verification executes design-declared vectors: a spawn the kernel will
+        not start leaves the run with no verification, so it terminates.  The
+        retained metadata does not create a separate Request-authored execution
+        path.
 
         `extra_env` overlays the constructed environment for THIS execution
         only.  It exists for the pre-craft oracle run, which needs a report
@@ -2474,10 +2796,8 @@ class DeliveryContinuationRunner:
                         ),
                         **(extra_env or {}),
                     },
-                    origin,
                     self._subject_test_paths(subject),
-                    changed,
-                    capture_incomplete,
+                    run,
                 )
         finally:
             if venv_link == self._VENV_LINKED:
@@ -2490,16 +2810,16 @@ class DeliveryContinuationRunner:
         root: Path,
         commands: tuple[tuple[str, ...], ...],
         env: dict[str, str],
-        origin: str = DECLARED_ORIGIN,
         test_paths: tuple[str, ...] = (),
-        changed: tuple[str, ...] = (),
-        capture_incomplete: bool = False,
+        run: NativeRun = _DECLARED_NATIVE_RUN,
     ) -> tuple[NativeEvidence, ...] | DeliveryOutcome:
         """The ordered execution itself, over an environment already built.
 
         Split from :meth:`_native` only so the constructed environment is a
         parameter rather than a hidden effect of the loop -- the shim directory
-        lives exactly as long as the commands that may resolve through it.
+        lives exactly as long as the commands that may resolve through it.  It
+        takes the same `NativeRun` its caller was given, so the two cannot
+        disagree about the provenance a record is labelled with.
         """
         with tempfile.TemporaryDirectory(prefix="nwave-exercised-") as probe:
             reports = Path(probe)
@@ -2508,7 +2828,7 @@ class DeliveryContinuationRunner:
                 encoding="utf-8",
             )
             evidence: list[NativeEvidence] = []
-            observational = origin != DECLARED_ORIGIN
+            observational = run.origin != DECLARED_ORIGIN
             for index, argv in enumerate(commands):
                 touches = touches_test_paths(tuple(argv), test_paths)
                 report = reports / f"{index}.txt"
@@ -2533,31 +2853,39 @@ class DeliveryContinuationRunner:
                             self._unobserved(
                                 tuple(argv),
                                 str(refused),
-                                origin,
-                                touches,
-                                self._exercised(argv, None, root, test_paths, changed),
-                                duration_seconds,
-                                cwd,
-                                declared_environment,
+                                CommandObservation(
+                                    origin=run.origin,
+                                    touches_test_paths=touches,
+                                    exercised=self._exercised(
+                                        argv, None, root, test_paths, run.changed
+                                    ),
+                                    duration_seconds=duration_seconds,
+                                    cwd=cwd,
+                                    declared_environment=declared_environment,
+                                ),
                             )
                         )
                         continue
                     refusal = self._verification_refused(tuple(argv), refused, root)
-                    if not capture_incomplete:
+                    if not run.capture_incomplete:
                         return refusal
                     assert refusal.failure is not None
                     evidence.append(
                         self._incomplete_native(
                             tuple(argv),
-                            "",
-                            f"not executed: {refused}",
-                            origin,
-                            touches,
-                            self._exercised(argv, None, root, test_paths, changed),
-                            refusal.failure,
-                            duration_seconds,
-                            cwd,
-                            declared_environment,
+                            stdout="",
+                            stderr=f"not executed: {refused}",
+                            failure=refusal.failure,
+                            observed=CommandObservation(
+                                origin=run.origin,
+                                touches_test_paths=touches,
+                                exercised=self._exercised(
+                                    argv, None, root, test_paths, run.changed
+                                ),
+                                duration_seconds=duration_seconds,
+                                cwd=cwd,
+                                declared_environment=declared_environment,
+                            ),
                         )
                     )
                     break
@@ -2568,12 +2896,16 @@ class DeliveryContinuationRunner:
                             self._unobserved(
                                 tuple(argv),
                                 str(unbounded),
-                                origin,
-                                touches,
-                                self._exercised(argv, None, root, test_paths, changed),
-                                duration_seconds,
-                                cwd,
-                                declared_environment,
+                                CommandObservation(
+                                    origin=run.origin,
+                                    touches_test_paths=touches,
+                                    exercised=self._exercised(
+                                        argv, None, root, test_paths, run.changed
+                                    ),
+                                    duration_seconds=duration_seconds,
+                                    cwd=cwd,
+                                    declared_environment=declared_environment,
+                                ),
                             )
                         )
                         continue
@@ -2589,7 +2921,7 @@ class DeliveryContinuationRunner:
                         "clear what the command is blocked on, or widen "
                         "NWAVE_GATE_RUN_TIMEOUT, then re-run",
                     )
-                    if not capture_incomplete:
+                    if not run.capture_incomplete:
                         return self._fail(
                             Disposition.Indeterminate,
                             failure.what,
@@ -2599,15 +2931,19 @@ class DeliveryContinuationRunner:
                     evidence.append(
                         self._incomplete_native(
                             tuple(argv),
-                            self._stream_text(unbounded.output),
-                            self._stream_text(unbounded.stderr),
-                            origin,
-                            touches,
-                            self._exercised(argv, None, root, test_paths, changed),
-                            failure,
-                            duration_seconds,
-                            cwd,
-                            declared_environment,
+                            stdout=self._stream_text(unbounded.output),
+                            stderr=self._stream_text(unbounded.stderr),
+                            failure=failure,
+                            observed=CommandObservation(
+                                origin=run.origin,
+                                touches_test_paths=touches,
+                                exercised=self._exercised(
+                                    argv, None, root, test_paths, run.changed
+                                ),
+                                duration_seconds=duration_seconds,
+                                cwd=cwd,
+                                declared_environment=declared_environment,
+                            ),
                         )
                     )
                     break
@@ -2618,10 +2954,14 @@ class DeliveryContinuationRunner:
                         completed.returncode,
                         completed.stdout,
                         completed.stderr,
-                        origin,
+                        run.origin,
                         touches,
                         self._exercised(
-                            argv, self._read_report(report), root, test_paths, changed
+                            argv,
+                            self._read_report(report),
+                            root,
+                            test_paths,
+                            run.changed,
                         ),
                         duration_seconds=duration_seconds,
                         cwd=cwd,
@@ -2632,14 +2972,7 @@ class DeliveryContinuationRunner:
 
     @staticmethod
     def _unobserved(
-        argv: tuple[str, ...],
-        reason: str,
-        origin: str,
-        touches: bool,
-        exercised: ExercisedModules = UNEXERCISED,
-        duration_seconds: float | None = None,
-        cwd: str | None = None,
-        declared_environment: tuple[tuple[str, str], ...] | None = None,
+        argv: tuple[str, ...], reason: str, observed: CommandObservation
     ) -> NativeEvidence:
         """A stimulus the runner could not start, recorded rather than dropped.
 
@@ -2652,12 +2985,12 @@ class DeliveryContinuationRunner:
             None,
             "",
             f"not executed: {reason}",
-            origin,
-            touches,
-            exercised,
-            duration_seconds=duration_seconds,
-            cwd=cwd,
-            declared_environment=declared_environment,
+            observed.origin,
+            observed.touches_test_paths,
+            observed.exercised,
+            duration_seconds=observed.duration_seconds,
+            cwd=observed.cwd,
+            declared_environment=observed.declared_environment,
         )
 
     @staticmethod
@@ -2669,32 +3002,33 @@ class DeliveryContinuationRunner:
     @staticmethod
     def _incomplete_native(
         argv: tuple[str, ...],
+        *,
         stdout: str,
         stderr: str,
-        origin: str,
-        touches: bool,
-        exercised: ExercisedModules,
         failure: FailureDetail,
-        duration_seconds: float | None = None,
-        cwd: str | None = None,
-        declared_environment: tuple[tuple[str, str], ...] | None = None,
+        observed: CommandObservation,
     ) -> NativeEvidence:
-        """Keep a declared command's partial observation with its terminal fact."""
+        """Keep a declared command's partial observation with its terminal fact.
+
+        The two channels are keyword-only: both are strings, nothing enforces
+        annotations at runtime, and a record whose stdout and stderr are swapped
+        reads as a command that answered on the channel it never used.
+        """
         return NativeEvidence(
             argv,
             None,
             stdout,
             stderr,
-            origin,
-            touches,
-            exercised,
+            observed.origin,
+            observed.touches_test_paths,
+            observed.exercised,
             incomplete=True,
             incomplete_what=failure.what,
             incomplete_why=failure.why,
             incomplete_how=failure.how,
-            duration_seconds=duration_seconds,
-            cwd=cwd,
-            declared_environment=declared_environment,
+            duration_seconds=observed.duration_seconds,
+            cwd=observed.cwd,
+            declared_environment=observed.declared_environment,
         )
 
     @staticmethod
@@ -3340,13 +3674,7 @@ class DeliveryContinuationRunner:
         return not self._git(root, "rev-parse", "--verify", "--quiet", ref).returncode
 
     def _record_turn(
-        self,
-        root: Path,
-        base: str,
-        request: str,
-        values: tuple[tuple[str, RecordIdentity], ...],
-        role: str,
-        tree: str,
+        self, root: Path, target: TurnRecordTarget, *, role: str, tree: str
     ) -> None:
         """Write one turn commit per (observation, identity) and point its ref.
 
@@ -3356,15 +3684,19 @@ class DeliveryContinuationRunner:
 
         Recording is best-effort for the same reason reading is: a record that
         is not written costs the NEXT run one re-invoked turn and nothing else.
+
+        `role` and `tree` are keyword-only: both are strings, nothing enforces
+        annotations at runtime, and swapping them would commit a tree named by a
+        role and key the ref by a tree sha.
         """
         env = declared_child_environment()
-        for observation, identity in values:
+        for observation, identity in target.values:
             commit = self._git(
                 root,
                 "commit-tree",
                 tree,
                 "-p",
-                base,
+                target.base,
                 "-m",
                 self._turn_message(role, identity),
                 env=env,
@@ -3374,7 +3706,7 @@ class DeliveryContinuationRunner:
             self._git(
                 root,
                 "update-ref",
-                self._turn_ref(request, observation, role),
+                self._turn_ref(target.request, observation, role),
                 commit.stdout.strip(),
                 env=env,
             )
@@ -3391,17 +3723,18 @@ class DeliveryContinuationRunner:
     def _stamp_craft_record(
         self,
         root: Path,
-        base: str,
+        target: TurnRecordTarget,
         base_tree: str,
-        request: str,
-        values: tuple[tuple[str, RecordIdentity], ...],
+        *,
         mutable: tuple[str, ...],
         record_paths: tuple[str, ...],
     ) -> None:
         """Point a craft record at the CURRENT bytes, or drop it when there are none.
 
         "Wrote nothing" is judged over the ``mutable`` targets alone; the
-        record itself is the tree over ``record_paths``.
+        record itself is the tree over ``record_paths``.  Both are keyword-only:
+        they are two path tuples, nothing enforces annotations at runtime, and
+        swapping them would judge emptiness over the wrong set of bytes.
 
         A record buys back WORK, and a turn that contributed nothing has none to
         buy back.  Recording one would make the empty-owner repair -- "rerun the
@@ -3413,18 +3746,18 @@ class DeliveryContinuationRunner:
         turn whose only edit was whitespace the declared formatter undoes wrote
         no bytes, and `_candidate` already says so about its own tree.
         """
-        written = self._owned_tree(root, base, mutable)
+        written = self._owned_tree(root, target.base, mutable)
         if written is None:
             return
         if written == base_tree:
             self._drop_turn_records(
-                root, request, tuple(o for o, _ in values), _CRAFT_TURN
+                root, target.request, tuple(o for o, _ in target.values), _CRAFT_TURN
             )
             return
         tree = self._paths_tree(root, record_paths)
         if tree is None:
             return
-        self._record_turn(root, base, request, values, _CRAFT_TURN, tree)
+        self._record_turn(root, target, role=_CRAFT_TURN, tree=tree)
 
     def _pre_candidate_currentness(
         self,
@@ -3501,11 +3834,13 @@ class DeliveryContinuationRunner:
                 if identity is not None and tree is not None:
                     self._record_turn(
                         root,
-                        base,
-                        stored.request,
-                        ((observation, identity),),
-                        _ORACLE_TURN,
-                        tree,
+                        TurnRecordTarget(
+                            base=base,
+                            request=stored.request,
+                            values=((observation, identity),),
+                        ),
+                        role=_ORACLE_TURN,
+                        tree=tree,
                     )
             if craft_was_current and self._turn_recorded(
                 root, stored.request, observation, _CRAFT_TURN
@@ -3515,12 +3850,10 @@ class DeliveryContinuationRunner:
                     continue
                 self._stamp_craft_record(
                     root,
-                    base,
+                    TurnRecordTarget(base=base, request=stored.request, values=pairs),
                     base_tree,
-                    stored.request,
-                    pairs,
-                    self._mutable_targets(design),
-                    self._craft_record_paths(design),
+                    mutable=self._mutable_targets(design),
+                    record_paths=self._craft_record_paths(design),
                 )
 
     def _release_turn_records(self, root: Path, stored: StoredHandover) -> None:
@@ -3764,7 +4097,10 @@ class DeliveryContinuationRunner:
                 how="restore Git worktree support",
             )
         evidence = self._native(
-            directory, commands, root, changed=changed, capture_incomplete=True
+            directory,
+            commands,
+            root,
+            run=NativeRun(changed=changed, capture_incomplete=True),
         )
         if isinstance(evidence, DeliveryOutcome):
             # The capture flag covers declared spawn failures only. Preserve the
@@ -4379,8 +4715,7 @@ class DeliveryContinuationRunner:
         root: Path,
         port: TaskInvocationPort,
         prepared: list[tuple[str, AuthorityFacts]],
-        handover_bytes: bytes,
-        finding: str,
+        authoring: AcceptanceAuthoring,
         oracle_red: tuple[dict[str, object], ...],
     ) -> DeliveryOutcome | None:
         """The ONE correction turn the acceptance author gets for this Request.
@@ -4391,7 +4726,30 @@ class DeliveryContinuationRunner:
         observation, so a second copy would be two chances to drift apart on
         who owns which byte.  ``None`` means the author corrected something and
         the caller may measure the set again.
+
+        ``authoring.finding`` is REQUIRED here -- this is the correction site, so
+        both of its callers hold a finding -- and it is the same record the first
+        authoring turn takes, because the two turns are one role writing one kind
+        of artefact.  That sharing is why the field is OPTIONAL on the record: a
+        first authoring turn has nothing to answer.  So "required" is this function's
+        invariant rather than the type's, and it is ENFORCED below rather than merely
+        asserted here, because a caller reaching it with no finding would buy a paid
+        correction turn and ask an author to answer nothing.  Both current callers
+        supply one, so the refusal is unreachable today.
         """
+        # FIRST, before any path resolution, byte read or scope observation: this is
+        # the cheapest check in the function and it guards the most expensive thing
+        # in it, a paid author turn (GDP-1). A silently omitted prompt key would buy
+        # that turn and ask the author to answer nothing, which looks like success
+        # and is the silent-wrong GDP-6 forbids.
+        if authoring.finding is None:
+            return self._fail(
+                Disposition.Indeterminate,
+                "AcceptanceCorrectionFindingAbsent",
+                "a correction turn was reached with no review finding to answer",
+                "supply the finding the author must answer, or take the first "
+                "authoring turn instead",
+            )
         acceptance_paths = self._prepared_acceptance_paths(prepared)
         rejected = _authority_bytes(root, acceptance_paths)
         observed = self._observed_scope(root)
@@ -4408,20 +4766,22 @@ class DeliveryContinuationRunner:
         correction = self._invoke(
             port,
             root,
-            "nw-acceptance-designer",
-            self._prompt(
-                review_task=(
-                    "Revise only the candidate public oracle set and declared supports "
-                    "for the values below, in response to the opaque independent review "
-                    "finding; do not judge, implement, or execute production."
+            RoleTurn(
+                role="nw-acceptance-designer",
+                prompt=self._prompt(
+                    review_task=(
+                        "Revise only the candidate public oracle set and declared "
+                        "supports for the values below, in response to the opaque "
+                        "independent review finding; do not judge, implement, or "
+                        "execute production."
+                    ),
+                    values=self._prepared_facts(prepared),
+                    **self._shared_of(authoring.raw),
+                    finding=authoring.finding,
+                    oracle_red=list(oracle_red),
                 ),
-                values=self._prepared_facts(prepared),
-                **self._shared_of(handover_bytes),
-                finding=finding,
-                oracle_red=list(oracle_red),
             ),
-            handover_bytes,
-            root,
+            FrozenHandover(raw=authoring.raw, root=root),
         )
         denied = self._accepted(
             correction,
@@ -4436,11 +4796,16 @@ class DeliveryContinuationRunner:
         # same property, never a second guarantee.
         drift = self._scope_drift(
             root,
-            status,
-            before,
-            (),
-            self._request_owned_paths(prepared),
-            None if denied is not None else self._designer_owns(root, acceptance_paths),
+            ScopeWindow(
+                status=status,
+                workspace=before,
+                declared=self._request_owned_paths(prepared),
+            ),
+            owns=(
+                None
+                if denied is not None
+                else self._designer_owns(root, acceptance_paths)
+            ),
         )
         if isinstance(drift, DeliveryOutcome):
             return drift
@@ -4474,8 +4839,8 @@ class DeliveryContinuationRunner:
         self,
         root: Path,
         port: TaskInvocationPort,
-        prepared: list[tuple[str, AuthorityFacts]],
-        stored: StoredHandover,
+        request: RequestFacts,
+        *,
         finding: str,
         value: str | None,
     ) -> StoredHandover | DeliveryOutcome:
@@ -4483,10 +4848,11 @@ class DeliveryContinuationRunner:
 
         It takes the two facts it USES -- the opaque finding and the value the
         defect is charged to -- rather than a whole `AcceptanceFinding`, because
-        two different measurements now reach it: the aggregate oracle review and
-        the craft turn.  A craft refusal is not an acceptance finding, and
-        building one to satisfy a parameter would make the type claim something
-        about the run that is not true.
+        a craft refusal is not an acceptance finding, and building one to satisfy
+        a parameter would make the type claim something about the run that is not
+        true.  Both are keyword-only: they are two strings, nothing enforces
+        annotations at runtime, and swapping them would charge the defect to a
+        value named by a diagnostic.
 
         The architect is the only role that may rewrite a value's targets,
         obligations and verification: the acceptance designer holds `Read, Edit`
@@ -4504,6 +4870,8 @@ class DeliveryContinuationRunner:
         acceptance path set change? -- and not on the designation "the design
         was corrected".
         """
+        prepared = request.prepared
+        stored = request.stored
         if value is None:
             return self._fail(
                 Disposition.Indeterminate,
@@ -4541,15 +4909,17 @@ class DeliveryContinuationRunner:
         correction = self._invoke(
             port,
             root,
-            "nw-solution-architect",
-            self._prompt(
-                observation=value,
-                decomposition=self._decomposition(stored),
-                **self._typed_facts(design),
-                **self._shared(stored),
-                finding=finding,
+            RoleTurn(
+                role="nw-solution-architect",
+                prompt=self._prompt(
+                    observation=value,
+                    decomposition=self._decomposition(stored),
+                    **self._typed_facts(design),
+                    **self._shared(stored),
+                    finding=finding,
+                ),
             ),
-            stored.raw,
+            FrozenHandover(raw=stored.raw),
         )
         denied = self._accepted(
             correction,
@@ -4611,47 +4981,51 @@ class DeliveryContinuationRunner:
         realigned = self._prepare_single(
             root,
             port,
-            (value,),
-            refreshed,
-            stored.raw,
-            status,
-            workspace,
-            self._request_owned_paths(prepared),
+            DesignedBatch((value,), refreshed),
+            AcceptanceAuthoring(raw=stored.raw),
+            ScopeWindow(
+                status=status,
+                workspace=workspace,
+                declared=self._request_owned_paths(prepared),
+            ),
         )
         return realigned if realigned is not None else stored
 
     def _implementation_review(
         self,
-        candidate_root: Path,
         root: Path,
         port: TaskInvocationPort,
         prepared: list[tuple[str, AuthorityFacts]],
         handover_bytes: bytes,
-        acceptance_evidence: tuple[tuple[str, bytes], ...],
-        candidate: str,
-        diff: str,
-        evidence: tuple[NativeEvidence, ...],
+        reviewed: ReviewedCandidate,
     ) -> DeliveryOutcome | None:
-        """One read-only veto over the whole candidate, never a per-value pass."""
+        """One read-only veto over the whole candidate, never a per-value pass.
+
+        `root` is the SUBJECT root the handover is frozen at; the turn itself runs
+        in `reviewed.worktree`, and keeping the two as separate facts is what
+        stops the freeze being compared inside a checkout that carries no
+        handover.
+        """
         review = self._invoke(
             port,
-            candidate_root,
-            "nw-software-crafter-reviewer",
-            self._prompt(
-                candidate_sha=candidate,
-                diff=diff,
-                values=self._prepared_facts(prepared),
-                **self._shared_of(handover_bytes),
-                owned_paths=self._request_owned_paths(prepared),
-                approved_oracles=[
-                    [path, raw.decode("utf-8", errors="replace")]
-                    for path, raw in acceptance_evidence
-                ],
-                native_evidence=self._evidence_records(evidence),
-                radius=self._radius,
+            reviewed.worktree,
+            RoleTurn(
+                role="nw-software-crafter-reviewer",
+                prompt=self._prompt(
+                    candidate_sha=reviewed.verified.sha,
+                    diff=reviewed.diff,
+                    values=self._prepared_facts(prepared),
+                    **self._shared_of(handover_bytes),
+                    owned_paths=self._request_owned_paths(prepared),
+                    approved_oracles=[
+                        [path, raw.decode("utf-8", errors="replace")]
+                        for path, raw in reviewed.approved_oracles
+                    ],
+                    native_evidence=self._evidence_records(reviewed.verified.evidence),
+                    radius=self._radius,
+                ),
             ),
-            handover_bytes,
-            root,
+            FrozenHandover(raw=handover_bytes, root=root),
         )
         return self._accepted(
             review,
@@ -4666,25 +5040,29 @@ class DeliveryContinuationRunner:
         port: TaskInvocationPort,
         prepared: list[tuple[str, AuthorityFacts]],
         handover_bytes: bytes,
-        candidate: str,
-        evidence: tuple[NativeEvidence, ...],
+        verified: VerifiedCandidate,
     ) -> DeliveryOutcome | None:
         """The one source-blind pass: ordered observations, SHA, captured evidence.
 
         It receives no diff, oracle bytes or source, and never re-executes: a
-        second execution would judge a different run than the reviewed one.
+        second execution would judge a different run than the reviewed one.  That
+        is why it takes `VerifiedCandidate` and not the whole `ReviewedCandidate`
+        -- the diff and the approved oracle bytes are not in the record it holds
+        at all, so there is nothing here to pass on by accident.
         """
         examine = self._invoke(
             port,
             root,
-            "nw-user-examiner",
-            self._prompt(
-                outcomes=[observation for observation, _ in prepared],
-                candidate_sha=candidate,
-                native_evidence=self._evidence_records(evidence),
-                radius=self._radius,
+            RoleTurn(
+                role="nw-user-examiner",
+                prompt=self._prompt(
+                    outcomes=[observation for observation, _ in prepared],
+                    candidate_sha=verified.sha,
+                    native_evidence=self._evidence_records(verified.evidence),
+                    radius=self._radius,
+                ),
             ),
-            handover_bytes,
+            FrozenHandover(raw=handover_bytes),
         )
         denied = self._accepted(
             examine,
@@ -4699,9 +5077,9 @@ class DeliveryContinuationRunner:
         return DeliveryOutcome(
             denied.disposition,
             FailureDetail(
-                f"{denied.failure.what} on candidate {candidate}",
+                f"{denied.failure.what} on candidate {verified.sha}",
                 denied.failure.why,
-                f"inspect candidate {candidate}; the destination ref never moved",
+                f"inspect candidate {verified.sha}; the destination ref never moved",
             ),
         )
 
@@ -4820,23 +5198,21 @@ class DeliveryContinuationRunner:
         self,
         root: Path,
         port: TaskInvocationPort,
-        observations: tuple[str, ...],
-        design: AuthorityFacts,
-        handover_bytes: bytes,
-        initial_status: str,
-        initial_workspace: dict[str, tuple[str, bytes | str]],
-        declared: tuple[str, ...] = (),
-        finding: str | None = None,
+        batch: DesignedBatch,
+        authoring: AcceptanceAuthoring,
+        window: ScopeWindow,
     ) -> DeliveryOutcome | None:
         """Author one batch's candidate public oracle.  No review or craft.
 
-        ``finding`` travels verbatim into the author's prompt when a caller
-        reaches this first-authoring path wearing one -- exactly the state a
-        rejected first turn that wrote no oracle byte leaves behind: nothing
+        ``authoring.finding`` travels verbatim into the author's prompt when a
+        caller reaches this first-authoring path wearing one -- exactly the state
+        a rejected first turn that wrote no oracle byte leaves behind: nothing
         on disk to correct, so the same author call `finding is None` already
         makes is the one this second turn takes too, only with the original
         finding string attached rather than dropped.
         """
+        observations = batch.observations
+        design = batch.design
         acceptance_paths = design.acceptance_paths
         owns_path = self._designer_owns(root, acceptance_paths)
         approved_authority = _authority_bytes(root, design.modified_authority_paths)
@@ -4871,11 +5247,13 @@ class DeliveryContinuationRunner:
             # for paths no fact in this Request names at all.
             drift = self._scope_drift(
                 root,
-                initial_status,
-                initial_workspace,
-                (),
-                tuple(dict.fromkeys((*declared, *self._owned_paths(design)))),
-                owns_path,
+                replace(
+                    window,
+                    declared=tuple(
+                        dict.fromkeys((*window.declared, *self._owned_paths(design)))
+                    ),
+                ),
+                owns=owns_path,
             )
             if isinstance(drift, DeliveryOutcome):
                 return drift
@@ -4890,19 +5268,24 @@ class DeliveryContinuationRunner:
         atd = self._invoke(
             port,
             root,
-            "nw-acceptance-designer",
-            self._prompt(
-                **(
-                    {"observation": observations[0]}
-                    if len(observations) == 1
-                    else {"observations": list(observations)}
+            RoleTurn(
+                role="nw-acceptance-designer",
+                prompt=self._prompt(
+                    **(
+                        {"observation": observations[0]}
+                        if len(observations) == 1
+                        else {"observations": list(observations)}
+                    ),
+                    **self._typed_facts(design),
+                    **self._shared_of(authoring.raw),
+                    **(
+                        {}
+                        if authoring.finding is None
+                        else {"finding": authoring.finding}
+                    ),
                 ),
-                **self._typed_facts(design),
-                **self._shared_of(handover_bytes),
-                **({} if finding is None else {"finding": finding}),
             ),
-            handover_bytes,
-            root,
+            FrozenHandover(raw=authoring.raw, root=root),
         )
         not_accepted = self._accepted(
             atd,
@@ -5122,12 +5505,8 @@ class DeliveryContinuationRunner:
         root: Path,
         base: str,
         port: TaskInvocationPort,
-        prepared: list[tuple[str, AuthorityFacts]],
-        handover_bytes: bytes,
-        stored: StoredHandover,
-        owners: list[tuple[str, AuthorityFacts]] | None = None,
-        correction: dict[str, object] | None = None,
-        route_blockers: bool = True,
+        request: RequestFacts,
+        selection: CraftSelection = _WHOLE_REQUEST_CRAFT,
     ) -> DeliveryOutcome | tuple[StoredHandover, tuple[str, ...]]:
         """Every selected value contributes to the one shared private workspace.
 
@@ -5150,14 +5529,13 @@ class DeliveryContinuationRunner:
         that turn.
 
         A REFUSING craft turn names WHO can unblock it in a closed word of its
-        typed payload.  `route_blockers` decides what happens to that word here:
-        the composed run spends one window per value on the role it names, and a
-        step invoked ALONE returns it to its caller instead, because Section 4b
-        makes choosing which role answers a finding the orchestrator's decision
-        and not the software's.  The word is DATA either way.  See
-        :meth:`_craft_blocker_window` for the
-        measurement; what belongs here is why the pass RESTARTS instead of
-        re-invoking the batch in place.  The window's two destinations can both
+        typed payload.  `selection.route_blockers` decides what happens to that
+        word here: the composed run spends one window per value on the role it
+        names, and a step invoked ALONE returns it to its caller instead, because
+        Section 4b makes choosing which role answers a finding the orchestrator's
+        decision and not the software's.  The word is DATA either way.  See
+        :meth:`_craft_blocker_window` for the measurement; what belongs here is
+        why the pass RESTARTS instead of re-invoking the batch in place.  The window's two destinations can both
         change the facts this pass is iterating over -- the architect replaces
         the value's bound typed design, which regroups batches, and the designer
         rewrites oracle bytes -- so continuing over a batch list derived before
@@ -5170,9 +5548,16 @@ class DeliveryContinuationRunner:
 
         The handover is returned because a `design` window REBINDS it: every
         later turn is frozen against those bytes, so a caller holding the old
-        ones would block itself on the correction it just paid for.
+        ones would block itself on the correction it just paid for.  That rebind
+        is also why the graph travels as `request` and every turn is frozen
+        against `request.stored.raw`: the window replaces the graph and its bytes
+        together, so there is one fact to carry forward and not two that can
+        disagree.
         """
-        selected = owners if owners is not None else prepared
+        prepared = request.prepared
+        stored = request.stored
+        correction = selection.correction
+        selected = selection.owners if selection.owners is not None else prepared
         silent: dict[tuple[str, ...], str] = {}
         completed: set[str] = set()
         spent: set[str] = set()
@@ -5216,21 +5601,22 @@ class DeliveryContinuationRunner:
                 craft = self._invoke(
                     port,
                     root,
-                    agent,
-                    self._prompt(
-                        **(
-                            {"observation": observation}
-                            if len(observations) == 1
-                            else {"observations": list(observations)}
+                    RoleTurn(
+                        role=agent,
+                        prompt=self._prompt(
+                            **(
+                                {"observation": observation}
+                                if len(observations) == 1
+                                else {"observations": list(observations)}
+                            ),
+                            **self._typed_facts(design),
+                            **self._shared_of(stored.raw),
+                            target_decisions=design.target_decisions,
+                            mutable_targets=mutable,
+                            **(correction or {}),
                         ),
-                        **self._typed_facts(design),
-                        **self._shared_of(handover_bytes),
-                        target_decisions=design.target_decisions,
-                        mutable_targets=mutable,
-                        **(correction or {}),
                     ),
-                    handover_bytes,
-                    root,
+                    FrozenHandover(raw=stored.raw, root=root),
                 )
                 not_accepted = self._accepted(
                     craft,
@@ -5240,26 +5626,32 @@ class DeliveryContinuationRunner:
                 )
                 if not_accepted:
                     if (
-                        not route_blockers
+                        not selection.route_blockers
                         or correction is not None
                         or set(observations) & spent
                     ):
                         return not_accepted
                     routed = self._craft_blocker_window(
-                        root, port, prepared, stored, observation, craft, not_accepted
+                        root,
+                        port,
+                        RequestFacts(stored, prepared),
+                        observation,
+                        RefusedCraft(run=craft, terminal=not_accepted),
                     )
                     if isinstance(routed, DeliveryOutcome):
                         return routed
-                    stored, handover_bytes = routed, routed.raw
+                    stored = routed
                     spent.update(observations)
                     reopened = True
                     break
                 drift = self._scope_drift(
                     root,
-                    status,
-                    before,
+                    ScopeWindow(
+                        status=status,
+                        workspace=before,
+                        declared=self._request_owned_paths(prepared),
+                    ),
                     mutable,
-                    self._request_owned_paths(prepared),
                     self._crafter_owns(prepared),
                 )
                 if isinstance(drift, DeliveryOutcome):
@@ -5292,11 +5684,13 @@ class DeliveryContinuationRunner:
                         if pairs is not None and tree is not None:
                             self._record_turn(
                                 root,
-                                base,
-                                stored.request,
-                                pairs,
-                                _CRAFT_TURN,
-                                tree,
+                                TurnRecordTarget(
+                                    base=base,
+                                    request=stored.request,
+                                    values=pairs,
+                                ),
+                                role=_CRAFT_TURN,
+                                tree=tree,
                             )
                             if self._turn_completed(
                                 root,
@@ -5330,12 +5724,12 @@ class DeliveryContinuationRunner:
                 elif base_tree is not None and pairs is not None:
                     self._stamp_craft_record(
                         root,
-                        base,
+                        TurnRecordTarget(
+                            base=base, request=stored.request, values=pairs
+                        ),
                         base_tree,
-                        stored.request,
-                        pairs,
-                        mutable,
-                        self._craft_record_paths(design),
+                        mutable=mutable,
+                        record_paths=self._craft_record_paths(design),
                     )
                 completed.update(observations)
             if not reopened:
@@ -5345,11 +5739,9 @@ class DeliveryContinuationRunner:
         self,
         root: Path,
         port: TaskInvocationPort,
-        prepared: list[tuple[str, AuthorityFacts]],
-        stored: StoredHandover,
+        request: RequestFacts,
         observation: str,
-        craft: ModelRun | DeliveryOutcome,
-        terminal: DeliveryOutcome,
+        refused: RefusedCraft,
     ) -> StoredHandover | DeliveryOutcome:
         """The ONE correction turn a refusing craft batch gets, on the role it names.
 
@@ -5387,10 +5779,13 @@ class DeliveryContinuationRunner:
         batch is there because `_batch_key` found its locator, oracle,
         acceptance paths, target decisions and paradigm identical.
         """
+        prepared = request.prepared
+        stored = request.stored
+        craft = refused.run
         if isinstance(craft, DeliveryOutcome):
-            return terminal
+            return refused.terminal
         if craft.outcome is not ModelOutcome.Rejected:
-            return terminal
+            return refused.terminal
         blocker = craft.craft_blocker
         if blocker is None:
             # DEGRADE LOUD (GDP-6).  The provider's own schema refuses a
@@ -5405,10 +5800,10 @@ class DeliveryContinuationRunner:
                 "correction window was opened",
             )
         if blocker is CraftBlocker.Product:
-            return terminal
+            return refused.terminal
         if blocker is CraftBlocker.Design:
             return self._design_correction(
-                root, port, prepared, stored, craft.diagnostic, observation
+                root, port, request, finding=craft.diagnostic, value=observation
             )
         # The author owes the same two inputs it gets everywhere else: the
         # opaque finding, and WHY each oracle is red right now.  The set is
@@ -5420,7 +5815,11 @@ class DeliveryContinuationRunner:
         if isinstance(executed, DeliveryOutcome):
             return executed
         denied = self._acceptance_correction(
-            root, port, prepared, stored.raw, craft.diagnostic, executed.measured
+            root,
+            port,
+            prepared,
+            AcceptanceAuthoring(raw=stored.raw, finding=craft.diagnostic),
+            executed.measured,
         )
         if denied is not None:
             return denied
@@ -5594,10 +5993,7 @@ class DeliveryContinuationRunner:
         self,
         root: Path,
         prepared: list[tuple[str, AuthorityFacts]],
-        base: str,
-        candidate: str,
-        foreign_baseline: str,
-        foreign_bytes: dict[str, tuple[str, bytes | str]],
+        integration: Integration,
         owned_paths: tuple[str, ...] | None = None,
     ) -> DeliveryOutcome:
         """One compare-and-swap, one owned-index reconciliation, one cleanup.
@@ -5606,6 +6002,7 @@ class DeliveryContinuationRunner:
         a concurrently moved ref refuses instead of yielding a Success nobody
         verified against the destination.
         """
+        candidate = integration.candidate
         owned = owned_paths or self._request_owned_paths(prepared)
         # The observation, the comparison and the swap live in `HeadAdvance`,
         # which the `des lane integrate` step also calls: one implementation of
@@ -5613,7 +6010,7 @@ class DeliveryContinuationRunner:
         # drift apart on the one case a green run never exercises.  The seam is
         # INJECTED rather than imported there, so a caller substituting Git for
         # this runner still substitutes it inside the swap.
-        refused = HeadAdvance(self._git).swap(root, candidate, base)
+        refused = HeadAdvance(self._git).swap(root, candidate, integration.base)
         if refused is not None:
             return self._advance_failure(refused)
         reset = self._git(root, "reset", "HEAD", "--", *owned)
@@ -5629,8 +6026,9 @@ class DeliveryContinuationRunner:
             reset.returncode
             or final.returncode
             or owned_status.returncode
-            or _foreign_status(final.stdout, owned) != foreign_baseline
-            or _workspace_bytes(root, tuple(foreign_bytes)) != foreign_bytes
+            or _foreign_status(final.stdout, owned) != integration.foreign_status
+            or _workspace_bytes(root, tuple(integration.foreign_bytes))
+            != integration.foreign_bytes
             or owned_status.stdout
         ):
             return self._git_failure(
@@ -5653,9 +6051,7 @@ class DeliveryContinuationRunner:
         stored: StoredHandover,
         ready: HandoverValue,
         *,
-        finding: str | None = None,
-        competence: str | None = None,
-        destination: str | None = None,
+        options: DesignOptions = _FIRST_DESIGN,
     ) -> tuple[StoredHandover, AuthorityFacts] | DeliveryOutcome:
         """One architect turn for one value, derived and bound, and nothing more.
 
@@ -5666,10 +6062,10 @@ class DeliveryContinuationRunner:
 
         REPEATABLE, and that is what makes it a correction as well as an
         authoring.  A second call over a value that is already bound carries
-        `finding` plus the CURRENT typed facts, and the facts it returns REPLACE
-        the bound ones.  Which finding goes back to which role, and whether to
-        spend a turn on it at all, is the orchestrator's decision; this method
-        holds no edge and takes none.
+        `options.finding` plus the CURRENT typed facts, and the facts it returns
+        REPLACE the bound ones.  Which finding goes back to which role, and
+        whether to spend a turn on it at all, is the orchestrator's decision;
+        this method holds no edge and takes none.
 
         DERIVE BEFORE BIND.  Binding makes an authority durable, so persisting
         facts the runner then refuses to derive would wedge every later resume
@@ -5690,11 +6086,12 @@ class DeliveryContinuationRunner:
         re-elicits DESIGN, which is what the shipped derive-before-bind order
         already promises.
 
-        `destination` is the configured `documents.design.destination`, resolved
-        by the caller at the application boundary exactly as the closed-document
-        path resolves it.  It is passed in rather than read here so this runner
-        gains no configuration dependency.
+        `options.destination` is the configured `documents.design.destination`,
+        resolved by the caller at the application boundary exactly as the
+        closed-document path resolves it.  It is passed in rather than read here
+        so this runner gains no configuration dependency.
         """
+        finding = options.finding
         self._published_design = None
         current = ready.authority
         facts: dict[str, object] = {
@@ -5715,8 +6112,13 @@ class DeliveryContinuationRunner:
                     return derived_current
                 facts.update(self._typed_facts(derived_current))
             facts["finding"] = finding
-        role_id = qualify_role_id("nw-solution-architect", competence)
-        turn = self._invoke(port, root, role_id, self._prompt(**facts), stored.raw)
+        role_id = qualify_role_id("nw-solution-architect", options.competence)
+        turn = self._invoke(
+            port,
+            root,
+            RoleTurn(role=role_id, prompt=self._prompt(**facts)),
+            FrozenHandover(raw=stored.raw),
+        )
         denied = self._accepted(
             turn,
             rejected="DesignRejected",
@@ -5756,7 +6158,7 @@ class DeliveryContinuationRunner:
         if isinstance(design, DeliveryOutcome):
             return design
         published = self._publish_design_section(
-            root, current, replacement, destination, stored
+            root, current, replacement, options.destination, stored
         )
         if isinstance(published, DeliveryOutcome):
             return published
@@ -5835,18 +6237,23 @@ class DeliveryContinuationRunner:
             root,
             str(destination),
             section,
-            # The same expression the closed-document path uses, so the two
-            # publication paths cannot disagree about what a recoverable
-            # untracked destination means.
-            allow_untracked_recovery=(current is None or current == facts),
-            # A correction replaces its OWN section in place; a correction that
-            # renames the heading refuses rather than orphaning the section this
-            # value already owns.
-            replace_current=recorded == locator,
-            authority_locator=recorded,
-            # The same handover the pre-turn judge read, so the two judgements
-            # cannot disagree about which sections this Request published.
-            published_headings=bound_authority_headings(stored, str(destination)),
+            widenings=DesignPublicationWidenings(
+                # The same expression the closed-document path uses, so the two
+                # publication paths cannot disagree about what a recoverable
+                # untracked destination means.
+                allow_untracked_recovery=(current is None or current == facts),
+                # A correction replaces its OWN section in place; a correction
+                # that renames the heading refuses rather than orphaning the
+                # section this value already owns.
+                replace_current=recorded == locator,
+            ),
+            binding=DesignAuthorityBinding(
+                authority_locator=recorded,
+                # The same handover the pre-turn judge read, so the two
+                # judgements cannot disagree about which sections this Request
+                # published.
+                published_headings=bound_authority_headings(stored, str(destination)),
+            ),
         )
         if isinstance(published, Blocked):
             return self._blocked(published)
@@ -6333,10 +6740,12 @@ class DeliveryContinuationRunner:
         integrated = self._integrate(
             root,
             prepared,
-            base,
-            candidate,
-            _foreign_status(status, owned),
-            _foreign_bytes(workspace, owned),
+            Integration(
+                base=base,
+                candidate=candidate,
+                foreign_status=_foreign_status(status, owned),
+                foreign_bytes=_foreign_bytes(workspace, owned),
+            ),
             owned,
         )
         if integrated.disposition is not Disposition.Success:
@@ -6375,10 +6784,8 @@ class DeliveryContinuationRunner:
             root,
             head,
             port,
-            [(ready.observation, design)],
-            stored.raw,
-            stored,
-            route_blockers=False,
+            RequestFacts(stored, [(ready.observation, design)]),
+            CraftSelection(route_blockers=False),
         )
         if isinstance(contributed, DeliveryOutcome):
             return contributed
@@ -6480,11 +6887,13 @@ class DeliveryContinuationRunner:
             return CraftSettlement.Unsettled
         self._record_turn(
             root,
-            head,
-            stored.request,
-            ((ready.observation, identity),),
-            _CRAFT_TURN,
-            tree,
+            TurnRecordTarget(
+                base=head,
+                request=stored.request,
+                values=((ready.observation, identity),),
+            ),
+            role=_CRAFT_TURN,
+            tree=tree,
         )
         return CraftSettlement.SettledByGreenOracle
 
@@ -6492,9 +6901,7 @@ class DeliveryContinuationRunner:
         self,
         root: Path,
         port: TaskInvocationPort,
-        stored: StoredHandover,
-        ready: HandoverValue,
-        design: AuthorityFacts,
+        selected: SelectedValue,
         *,
         finding: str | None = None,
     ) -> MeasuredOracleSet:
@@ -6526,6 +6933,9 @@ class DeliveryContinuationRunner:
         `_ORACLE_TURN` already states: recording at authoring time would let a
         resume skip a review that had vetoed.
         """
+        stored = selected.stored
+        ready = selected.ready
+        design = selected.design
         prepared = [(ready.observation, design)]
         # A `finding` with NO oracle byte observable on disk is still a FIRST
         # authoring turn wearing one -- a prior rejecting turn owns no byte by
@@ -6546,12 +6956,9 @@ class DeliveryContinuationRunner:
             authored = self._prepare_single(
                 root,
                 port,
-                (ready.observation,),
-                design,
-                stored.raw,
-                status,
-                workspace,
-                finding=finding,
+                DesignedBatch((ready.observation,), design),
+                AcceptanceAuthoring(raw=stored.raw, finding=finding),
+                ScopeWindow(status=status, workspace=workspace),
             )
             if authored is not None:
                 return MeasuredOracleSet((), authored)
@@ -6560,7 +6967,11 @@ class DeliveryContinuationRunner:
             if isinstance(executed, DeliveryOutcome):
                 return MeasuredOracleSet((), executed)
             denied = self._acceptance_correction(
-                root, port, prepared, stored.raw, finding, executed.measured
+                root,
+                port,
+                prepared,
+                AcceptanceAuthoring(raw=stored.raw, finding=finding),
+                executed.measured,
             )
             if denied is not None:
                 return MeasuredOracleSet(executed.measured, denied)
@@ -6614,11 +7025,13 @@ class DeliveryContinuationRunner:
             return False
         self._record_turn(
             root,
-            head,
-            stored.request,
-            ((observation, identity),),
-            _ORACLE_TURN,
-            tree,
+            TurnRecordTarget(
+                base=head,
+                request=stored.request,
+                values=((observation, identity),),
+            ),
+            role=_ORACLE_TURN,
+            tree=tree,
         )
         return True
 
@@ -6765,28 +7178,32 @@ class DeliveryContinuationRunner:
         po = self._invoke(
             port,
             root,
-            "nw-product-owner",
-            self._prompt(
-                rewrite_task=(
-                    "Return the whole ordered value sequence for the supplied "
-                    "Request, addressing the finding when present and reusing "
-                    "a stored observation VERBATIM "
-                    "wherever it still holds -- an observation reused byte for "
-                    "byte keeps everything already paid for it. Write no "
-                    "document, authority or handover."
+            RoleTurn(
+                role="nw-product-owner",
+                prompt=self._prompt(
+                    rewrite_task=(
+                        "Return the whole ordered value sequence for the supplied "
+                        "Request, addressing the finding when present and reusing "
+                        "a stored observation VERBATIM "
+                        "wherever it still holds -- an observation reused byte for "
+                        "byte keeps everything already paid for it. Write no "
+                        "document, authority or handover."
+                    ),
+                    request=request,
+                    previous_request=stored.request,
+                    stored_values=[
+                        [
+                            value.observation,
+                            "design bound"
+                            if value.authority is not None
+                            else "no design",
+                        ]
+                        for value in stored.values
+                    ],
+                    **({} if finding is None else {"finding": finding}),
                 ),
-                request=request,
-                previous_request=stored.request,
-                stored_values=[
-                    [
-                        value.observation,
-                        "design bound" if value.authority is not None else "no design",
-                    ]
-                    for value in stored.values
-                ],
-                **({} if finding is None else {"finding": finding}),
             ),
-            stored.raw,
+            FrozenHandover(raw=stored.raw),
         )
         denied = self._accepted(
             po,
@@ -6974,7 +7391,12 @@ class DeliveryContinuationRunner:
             facts["finding"] = finding
         if operational_facts is not None:
             facts["operational_facts"] = operational_facts
-        po = self._invoke(port, root, "nw-product-owner", self._prompt(**facts), None)
+        po = self._invoke(
+            port,
+            root,
+            RoleTurn(role="nw-product-owner", prompt=self._prompt(**facts)),
+            FrozenHandover(raw=None),
+        )
         after_po = self._path_present(handover_path(root))
         if after_po is None:
             return self._fail(

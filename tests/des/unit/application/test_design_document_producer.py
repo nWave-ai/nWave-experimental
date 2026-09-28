@@ -4,6 +4,8 @@ from dataclasses import replace
 from pathlib import Path
 
 from des.application.design_document_producer import (
+    DesignAuthorityBinding,
+    DesignPublicationWidenings,
     PublishedDesignDocument,
     publish_design_document,
 )
@@ -138,8 +140,8 @@ def test_directory_sync_failure_reports_indeterminate_after_whole_authority_repl
         tmp_path,
         "docs/authority.md",
         updated,
-        replace_current=True,
-        authority_locator="docs/authority.md#Widget",
+        widenings=DesignPublicationWidenings(replace_current=True),
+        binding=DesignAuthorityBinding(authority_locator="docs/authority.md#Widget"),
     )
 
     assert isinstance(result, Blocked)
@@ -194,7 +196,7 @@ def test_legacy_rendering_migration_refuses_a_section_that_is_not_byte_identical
         tmp_path,
         "docs/authority.md",
         document,
-        migrate_legacy_rendering=True,
+        widenings=DesignPublicationWidenings(migrate_legacy_rendering=True),
     )
 
     assert isinstance(result, Blocked)

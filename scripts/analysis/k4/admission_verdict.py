@@ -229,6 +229,54 @@ class Admission:
 # --- reading the archive -----------------------------------------------------
 
 
+@dataclass(frozen=True, kw_only=True)
+class ArmSelection:
+    """Which payload stem is which arm, and where wall-clock is read from.
+
+    Keyword-only, deliberately: `nwave_arm` and `control_arm` carry the same
+    type, so a positional pair constructs cleanly with the two swapped, and a
+    swap inverts every ratio in the report while leaving the report perfectly
+    well-formed. `ArmResolutionError` refuses the UNRESOLVABLE case, an ambiguous
+    alias it cannot map; an explicitly inverted pair is accepted without
+    complaint, which is exactly why the keyword-only form is worth having here.
+    """
+
+    nwave_arm: str | None = None
+    control_arm: str | None = None
+    wall_source: str = "auto"
+
+
+#: The selection that names nothing: both roles are resolved from the payload
+#: stems, and the wall measurement is whatever `auto` resolves to. Bound here
+#: rather than constructed in the signature, so the default every caller gets
+#: is one named value.
+DEFAULT_ARM_SELECTION = ArmSelection()
+
+
+@dataclass(frozen=True, kw_only=True)
+class ArmReadInputs:
+    """What one arm read consults, identical for every arm in a campaign.
+
+    `read_campaign` builds exactly one of these, so the loop below varies only
+    WHICH arm is read. It carries the caller's `ArmSelection` rather than a copy
+    of `wall_source`, so that value exists in exactly one place and the two
+    records cannot disagree about it. Keyword-only because `verdicts` and `rubric` carry the
+    same type: transposed positionally they construct without error, and the
+    result is every delivery UNSCORED and every rubric score absent. That run
+    still ENDS loudly, at `_nothing_was_ever_evaluated`, so the transposition
+    costs a confusing INDETERMINATE rather than a plausible-looking report.
+
+    The guard reaches this record only. `read_campaign` still takes the same two
+    dicts as adjacent positional parameters, and every one of its callers passes
+    them positionally, nine of them by unpacking a tuple where the order is not
+    visible at the call site. Closing that seam is a separate change.
+    """
+
+    verdicts: dict[str, dict]
+    rubric: dict[str, dict]
+    selection: ArmSelection
+
+
 def resolve_roles(
     stems: set[str], *, nwave: str | None = None, control: str | None = None
 ) -> dict[str, str]:
@@ -290,14 +338,15 @@ def read_campaign(
     verdicts: dict[str, dict],
     rubric: dict[str, dict],
     *,
-    nwave_arm: str | None = None,
-    control_arm: str | None = None,
-    wall_source: str = "auto",
+    selection: ArmSelection = DEFAULT_ARM_SELECTION,
 ) -> tuple[PairRecord, ...]:
     """Every pair, every arm, one `ArmRun` each -- none dropped in silence."""
     paths = _payload_paths(campaign)
     stems = {stem for row in paths.values() for stem in row}
-    roles = resolve_roles(stems, nwave=nwave_arm, control=control_arm)
+    roles = resolve_roles(
+        stems, nwave=selection.nwave_arm, control=selection.control_arm
+    )
+    inputs = ArmReadInputs(verdicts=verdicts, rubric=rubric, selection=selection)
 
     records: list[PairRecord] = []
     for index in sorted(paths):
@@ -306,9 +355,7 @@ def read_campaign(
             role = roles.get(stem)
             if role is None:
                 continue
-            arms[role] = _read_arm(
-                index, stem, role, path, verdicts, rubric, wall_source
-            )
+            arms[role] = _read_arm(index, stem, role, path, inputs)
         if "nwave" in arms and "control" in arms:
             records.append(PairRecord(index, arms["nwave"], arms["control"]))
     return tuple(records)
@@ -319,9 +366,7 @@ def _read_arm(
     stem: str,
     role: str,
     path: Path,
-    verdicts: dict[str, dict],
-    rubric: dict[str, dict],
-    wall_source: str,
+    inputs: ArmReadInputs,
 ) -> ArmRun:
     outcome = paired_spread.classify(
         f"pair-{index}/{stem}", path.read_text(errors="replace")
@@ -347,18 +392,18 @@ def _read_arm(
 
     wall_s: float | None = outcome.wall_s
     source = paired_spread.ROOT_PAYLOAD_ONLY
-    if wall_source in ("auto", "transcript"):
+    if inputs.selection.wall_source in ("auto", "transcript"):
         resolved = paired_spread.resolve_transcript_wall(
             outcome.name, outcome.session_id, path
         )
         if isinstance(resolved, paired_spread.TranscriptWall):
             wall_s, source = resolved.wall_s, resolved.scope
-        elif wall_source == "transcript":
+        elif inputs.selection.wall_source == "transcript":
             wall_s, source = None, None
 
-    verdict = verdicts.get(outcome.session_id)
+    verdict = inputs.verdicts.get(outcome.session_id)
     delivery, why = _resolve_delivery(True, verdict)
-    scored = rubric.get(outcome.session_id)
+    scored = inputs.rubric.get(outcome.session_id)
     blocking = tuple(scored.get("blocking_quality_findings", ())) if scored else ()
     criteria = scored.get("criteria") if isinstance(scored, dict) else None
     scores: tuple[tuple[str, int, str], ...] | None = None
@@ -865,9 +910,11 @@ def main(argv: list[str] | None = None) -> int:
             args.campaign,
             verdicts,
             rubric,
-            nwave_arm=args.nwave_arm,
-            control_arm=args.control_arm,
-            wall_source=args.wall_source,
+            selection=ArmSelection(
+                nwave_arm=args.nwave_arm,
+                control_arm=args.control_arm,
+                wall_source=args.wall_source,
+            ),
         )
     except ArmResolutionError as exc:
         sys.stderr.write(str(exc))

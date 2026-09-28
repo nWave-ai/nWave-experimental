@@ -35,11 +35,17 @@ from des.application.delivery_continuation import (
     CraftSettlement,
     DeliveryContinuationRunner,
     DeliveryOutcome,
+    DesignOptions,
     FailureDetail,
+    FrozenHandover,
     OracleSettlement,
     RequestRewrite,
+    RoleTurn,
+    SelectedValue,
 )
 from des.application.design_document_producer import (
+    DesignAuthorityBinding,
+    DesignPublicationWidenings,
     bound_authority_headings,
     bound_value_headings,
     judge_design_destination,
@@ -50,6 +56,7 @@ from des.application.distill_document_producer import publish_distill_document
 from des.application.evolution_document_producer import publish_evolution_document
 from des.application.handover import (
     Blocked,
+    BoundDesign,
     HandoverValue,
     SharedDesign,
     acquire_delivery_lock,
@@ -130,6 +137,86 @@ class RoleInvocation:
 
     outcome: StepOutcome
     model_run: ModelRun | None = None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DecompositionInput:
+    """Everything ONE Product Owner turn is given, carried as one value.
+
+    `request` is the Request to decompose, or `None` to correct the one the
+    handover already carries.  `finding` is the correction the turn must answer.
+    `operational_facts` are the DEVOPS constraints put in front of the Product
+    Owner.  All three reach the runner: `finding` on the rewrite and on the first
+    decomposition alike, `operational_facts` on the decomposition.
+
+    Keyword-only because `request` and `finding` are both `str | None`: nothing
+    here checks annotations at runtime, so a positional transposition would
+    decompose the correction text AS the Request.
+    """
+
+    request: str | None
+    finding: str | None = None
+    operational_facts: dict[str, object] | None = None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ArchitectTurn:
+    """Which value ONE architect turn is for, and how it differs from a first pass.
+
+    `finding` is the correction the turn must answer, `None` on a first pass over
+    an unbound value.  `competence` is an explicit construction parameter: absent,
+    the invoked role resolves exactly as it otherwise would.
+
+    Keyword-only because `finding` and `competence` are both `str | None`: nothing
+    here checks annotations at runtime, so a positional transposition would send
+    the correction text as the competence the role is resolved with.
+    """
+
+    position: int
+    finding: str | None = None
+    competence: str | None = None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReplacementModes:
+    """Which of the three EXCLUSIVE DESIGN replacement or recovery modes was asked.
+
+    They travel as one value because they are one decision: the step refuses when
+    more than one is set, in the step's own words -- «DESIGN replacement and
+    recovery modes are exclusive».
+
+    Deliberately NOT `DesignPublicationWidenings`, which carries these same three
+    beside `allow_untracked_recovery`: that fourth one is MEASURED by the step
+    from what the value already carries, and a caller-facing record holding it
+    would let a caller widen the one recovery the step exists to decide.
+
+    Keyword-only because all three members are `bool`: nothing here checks
+    annotations at runtime, so a positional transposition would ask for a legacy
+    migration where a bound replacement was meant.
+    """
+
+    replace_current: bool = False
+    migrate_legacy_rendering: bool = False
+    replace_unbound: bool = False
+
+    @property
+    def conflicting(self) -> bool:
+        """Whether more than one of the three exclusive modes was asked for."""
+        return (
+            sum(
+                (
+                    self.replace_current,
+                    self.migrate_legacy_rendering,
+                    self.replace_unbound,
+                )
+            )
+            > 1
+        )
+
+
+#: No replacement and no recovery: construct over what is not yet there.  A
+#: module constant rather than a default-argument call, which ruff's B008 refuses.
+_NO_REPLACEMENT = ReplacementModes()
 
 
 def blocked_disposition(blocked: Blocked) -> Disposition:
@@ -325,13 +412,11 @@ class DeliverySteps:
     def decompose(
         self,
         root: Path,
-        request: str | None,
-        finding: str | None = None,
-        operational_facts: dict[str, object] | None = None,
+        given: DecompositionInput,
         feature: DocumentScope | str | None = None,
         project: bool = False,
     ) -> StepOutcome:
-        """One Product Owner turn over `request`, recorded as the owned graph.
+        """One Product Owner turn over the given Request, recorded as the graph.
 
         IDEMPOTENT against the handover, which is what makes a re-invocation
         after a crash a resume rather than a second paid turn: a graph that
@@ -343,10 +428,7 @@ class DeliverySteps:
         self._feature = feature
         self._project = project
         return self._locked(
-            root,
-            lambda runner, port: self._decompose(
-                runner, port, root, request, finding, operational_facts
-            ),
+            root, lambda runner, port: self._decompose(runner, port, root, given)
         )
 
     def design(
@@ -371,11 +453,9 @@ class DeliverySteps:
         this turn needs a different competence than the role's ordinary one.
         """
         self._feature = feature
+        turn = ArchitectTurn(position=position, finding=finding, competence=competence)
         return self._locked(
-            root,
-            lambda runner, port: self._design(
-                runner, port, root, position, finding, competence
-            ),
+            root, lambda runner, port: self._design(runner, port, root, turn)
         )
 
     def design_document(
@@ -384,9 +464,7 @@ class DeliverySteps:
         position: int,
         raw: str,
         *,
-        replace_current: bool = False,
-        migrate_legacy_rendering: bool = False,
-        replace_unbound: bool = False,
+        modes: ReplacementModes = _NO_REPLACEMENT,
         feature: DocumentScope | str | None = None,
     ) -> StepOutcome:
         """Bind a caller-supplied closed v1 document without a provider turn."""
@@ -436,7 +514,7 @@ class DeliverySteps:
                         "keep the original configured path and heading for this value",
                     ),
                 )
-            if sum((replace_current, migrate_legacy_rendering, replace_unbound)) > 1:
+            if modes.conflicting:
                 return StepOutcome(
                     Disposition.Refusal,
                     FailureDetail(
@@ -445,7 +523,7 @@ class DeliverySteps:
                         "choose one of bound replacement, legacy migration, or unbound recovery",
                     ),
                 )
-            if replace_current and (
+            if modes.replace_current and (
                 not isinstance(ready.authority, DesignFacts)
                 or not ready.authority.authority_locator
                 or ready.authority.authority_locator != authority_locator
@@ -459,7 +537,7 @@ class DeliverySteps:
                         "first bind this value through the closed DESIGN constructor",
                     ),
                 )
-            if migrate_legacy_rendering and ready.authority is not None:
+            if modes.migrate_legacy_rendering and ready.authority is not None:
                 return StepOutcome(
                     Disposition.Refusal,
                     FailureDetail(
@@ -468,7 +546,7 @@ class DeliverySteps:
                         "use ordinary DESIGN correction only when the semantic facts change",
                     ),
                 )
-            if replace_unbound and ready.authority is not None:
+            if modes.replace_unbound and ready.authority is not None:
                 return StepOutcome(
                     Disposition.Refusal,
                     FailureDetail(
@@ -486,17 +564,21 @@ class DeliverySteps:
                 root,
                 destination,
                 document,
-                allow_untracked_recovery=allow_untracked_recovery,
-                replace_current=replace_current,
-                migrate_legacy_rendering=migrate_legacy_rendering,
-                replace_unbound=replace_unbound,
-                authority_locator=(
-                    ready.authority.authority_locator
-                    if isinstance(ready.authority, DesignFacts)
-                    and ready.authority.authority_locator
-                    else None
+                widenings=DesignPublicationWidenings(
+                    allow_untracked_recovery=allow_untracked_recovery,
+                    replace_current=modes.replace_current,
+                    migrate_legacy_rendering=modes.migrate_legacy_rendering,
+                    replace_unbound=modes.replace_unbound,
                 ),
-                published_headings=bound_authority_headings(stored, destination),
+                binding=DesignAuthorityBinding(
+                    authority_locator=(
+                        ready.authority.authority_locator
+                        if isinstance(ready.authority, DesignFacts)
+                        and ready.authority.authority_locator
+                        else None
+                    ),
+                    published_headings=bound_authority_headings(stored, destination),
+                ),
             )
             if isinstance(published, Blocked):
                 return _from_blocked(published)
@@ -504,9 +586,8 @@ class DeliverySteps:
                 root,
                 stored,
                 position,
-                facts,
+                BoundDesign(facts, semantic_sha256=document.semantic_sha256),
                 authority_persisted=published.authority_persisted,
-                semantic_sha256=document.semantic_sha256,
             )
             if isinstance(bound, Blocked):
                 if published.authority_persisted:
@@ -538,9 +619,7 @@ class DeliverySteps:
         root: Path,
         raw: str,
         *,
-        replace_current: bool = False,
-        migrate_legacy_rendering: bool = False,
-        replace_unbound: bool = False,
+        modes: ReplacementModes = _NO_REPLACEMENT,
         feature: DocumentScope | str | None = None,
     ) -> StepOutcome:
         """Bind the one DESIGN section shared by every value, buying no turn."""
@@ -597,7 +676,7 @@ class DeliverySteps:
                         "keep the original configured path and heading for the shared design",
                     ),
                 )
-            if sum((replace_current, migrate_legacy_rendering, replace_unbound)) > 1:
+            if modes.conflicting:
                 return StepOutcome(
                     Disposition.Refusal,
                     FailureDetail(
@@ -606,7 +685,7 @@ class DeliverySteps:
                         "choose one of bound replacement, legacy migration, or unbound recovery",
                     ),
                 )
-            if bound is None and replace_current:
+            if bound is None and modes.replace_current:
                 return StepOutcome(
                     Disposition.Refusal,
                     FailureDetail(
@@ -615,7 +694,7 @@ class DeliverySteps:
                         "bind the shared design first, without --replace-current",
                     ),
                 )
-            if migrate_legacy_rendering and bound is not None:
+            if modes.migrate_legacy_rendering and bound is not None:
                 return StepOutcome(
                     Disposition.Refusal,
                     FailureDetail(
@@ -624,7 +703,7 @@ class DeliverySteps:
                         "use ordinary DESIGN correction only when the semantic facts change",
                     ),
                 )
-            if replace_unbound and bound is not None:
+            if modes.replace_unbound and bound is not None:
                 return StepOutcome(
                     Disposition.Refusal,
                     FailureDetail(
@@ -635,7 +714,7 @@ class DeliverySteps:
                 )
             if (
                 bound is not None
-                and not replace_current
+                and not modes.replace_current
                 and bound.semantic_sha256 != document.semantic_sha256
             ):
                 return StepOutcome(
@@ -651,12 +730,16 @@ class DeliverySteps:
                 root,
                 destination,
                 document,
-                allow_untracked_recovery=bound is None or bound.design == facts,
-                replace_current=replace_current,
-                migrate_legacy_rendering=migrate_legacy_rendering,
-                replace_unbound=replace_unbound,
-                authority_locator=bound.authority_locator if bound else None,
-                published_headings=bound_authority_headings(stored, destination),
+                widenings=DesignPublicationWidenings(
+                    allow_untracked_recovery=bound is None or bound.design == facts,
+                    replace_current=modes.replace_current,
+                    migrate_legacy_rendering=modes.migrate_legacy_rendering,
+                    replace_unbound=modes.replace_unbound,
+                ),
+                binding=DesignAuthorityBinding(
+                    authority_locator=bound.authority_locator if bound else None,
+                    published_headings=bound_authority_headings(stored, destination),
+                ),
             )
             if isinstance(published, Blocked):
                 return _from_blocked(published)
@@ -1176,7 +1259,10 @@ class DeliverySteps:
             return RoleInvocation(_from_blocked(lock))
         try:
             invoked = runner._invoke(
-                port, cwd, role_id, prompt, None, semantic_task=semantic_task
+                port,
+                cwd,
+                RoleTurn(role=role_id, prompt=prompt, semantic_task=semantic_task),
+                FrozenHandover(raw=None),
             )
             if isinstance(invoked, DeliveryOutcome):
                 return RoleInvocation(
@@ -1222,10 +1308,12 @@ class DeliverySteps:
         runner: DeliveryContinuationRunner,
         port: TaskInvocationPort,
         root: Path,
-        request: str | None,
-        finding: str | None = None,
-        operational_facts: dict[str, object] | None = None,
+        given: DecompositionInput,
     ) -> StepOutcome:
+        # `request` is the only one of the three that is re-bound below -- an
+        # absent Request resumes the stored one -- so it is the only one taken
+        # out of the record.
+        request = given.request
         stored = stored_handover(root)
         if isinstance(stored, Blocked):
             return _from_blocked(stored)
@@ -1250,7 +1338,7 @@ class DeliverySteps:
                     ),
                 )
             request = stored.request
-        if stored is not None and stored.request == request and finding is None:
+        if stored is not None and stored.request == request and given.finding is None:
             # L1: the same Request over the graph it produced is a resume.
             return StepOutcome(Disposition.Success, facts=_value_facts(stored))
         if stored is not None:
@@ -1258,7 +1346,7 @@ class DeliverySteps:
             # refuse. It is a REWRITE, and the six hand deletions of the
             # handover on 2026-09-05/06 are what it replaces.
             rewritten = runner.rewrite_request(
-                root, port, stored, request, finding=finding
+                root, port, stored, request, finding=given.finding
             )
             diagnostic = runner.last_diagnostic
             if isinstance(rewritten, DeliveryOutcome):
@@ -1274,7 +1362,7 @@ class DeliverySteps:
                 role=runner.last_role,
             )
         decomposed = runner.decompose(
-            root, port, request, operational_facts, finding=finding
+            root, port, request, given.operational_facts, finding=given.finding
         )
         diagnostic = runner.last_diagnostic
         if isinstance(decomposed, DeliveryOutcome):
@@ -1294,17 +1382,15 @@ class DeliverySteps:
         runner: DeliveryContinuationRunner,
         port: TaskInvocationPort,
         root: Path,
-        position: int,
-        finding: str | None,
-        competence: str | None = None,
+        turn: ArchitectTurn,
     ) -> StepOutcome:
         stored = _graph(root)
         if isinstance(stored, StepOutcome):
             return stored
-        ready = _value_at(stored, position)
+        ready = _value_at(stored, turn.position)
         if isinstance(ready, StepOutcome):
             return ready
-        if finding is None and ready.authority is not None:
+        if turn.finding is None and ready.authority is not None:
             # L1 (ADR-DES-003 §2): the second call over a bound value succeeds,
             # changes nothing and costs nothing. Without this it re-bought the
             # architect and SILENTLY REPLACED the bound facts, so a retry after
@@ -1316,7 +1402,7 @@ class DeliverySteps:
             # never confirmed. Intercepted here, ahead of derivation, so the
             # refusal is about that one disagreement.
             disagreement = runner.confirm_recorded_authority(
-                root, ready.authority, position
+                root, ready.authority, turn.position
             )
             if disagreement is not None:
                 return _from_outcome(disagreement, None)
@@ -1326,7 +1412,7 @@ class DeliverySteps:
             return StepOutcome(
                 Disposition.Success,
                 facts=(
-                    f"VALUE-{position}: "
+                    f"VALUE-{turn.position}: "
                     f"{json.dumps(ready.observation, ensure_ascii=False)}",
                     f"PARADIGM: {facts.paradigm}",
                     f"ORACLE: {facts.acceptance_oracle_locator}",
@@ -1338,7 +1424,7 @@ class DeliverySteps:
                     algebra_line(),
                     "RECORDED: this value's typed design facts are already bound "
                     "over these bytes, so no turn was bought; re-bind with "
-                    f"`des design --repo-root <root> --value {position} "
+                    f"`des design --repo-root <root> --value {turn.position} "
                     "--finding -`",
                 ),
             )
@@ -1373,9 +1459,11 @@ class DeliverySteps:
             port,
             stored,
             ready,
-            finding=finding,
-            competence=competence,
-            destination=destination,
+            options=DesignOptions(
+                finding=turn.finding,
+                competence=turn.competence,
+                destination=destination,
+            ),
         )
         diagnostic = runner.last_diagnostic
         if isinstance(designed, DeliveryOutcome):
@@ -1403,7 +1491,8 @@ class DeliverySteps:
         return StepOutcome(
             Disposition.Success,
             facts=(
-                f"VALUE-{position}: {json.dumps(ready.observation, ensure_ascii=False)}",
+                f"VALUE-{turn.position}: "
+                f"{json.dumps(ready.observation, ensure_ascii=False)}",
                 f"PARADIGM: {facts.paradigm}",
                 f"ORACLE: {facts.acceptance_oracle_locator}",
                 "TARGETS: "
@@ -1480,7 +1569,7 @@ class DeliverySteps:
                     ),
                 )
         measurement = runner.oracle_value(
-            root, port, stored, ready, design, finding=finding
+            root, port, SelectedValue(stored, ready, design), finding=finding
         )
         diagnostic = runner.last_diagnostic
         red = _oracle_red_facts(measurement.measured)

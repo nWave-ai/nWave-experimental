@@ -113,13 +113,11 @@ class TestTestPyPIValidatorUnit:
         """Test that TestPyPIValidator initializes correctly."""
         # Import the validator class
         sys.path.insert(0, str(SCRIPT_PATH.parent))
-        from testpypi_validation import TestPyPIValidator
+        from testpypi_validation import ExpectedCounts, TestPyPIValidator
 
         validator = TestPyPIValidator(
             version="1.3.0.dev20260201001",
-            expected_agents=47,
-            expected_commands=23,
-            expected_templates=12,
+            counts=ExpectedCounts(agents=47, commands=23, templates=12),
         )
 
         assert validator.version == "1.3.0.dev20260201001"
@@ -298,13 +296,13 @@ class TestTestPyPIValidatorMocked:
     def test_component_counts_skip_when_zero(self) -> None:
         """Test that component count verification is skipped when expectations are 0."""
         sys.path.insert(0, str(SCRIPT_PATH.parent))
-        from testpypi_validation import TestPyPIValidator
+        from testpypi_validation import ExpectedCounts, TestPyPIValidator
 
+        # The zeros stay written out rather than defaulted: they ARE what this test
+        # exercises, so leaning on `NO_EXPECTED_COUNTS` would hide the stimulus.
         validator = TestPyPIValidator(
             version="1.3.0.dev20260201001",
-            expected_agents=0,
-            expected_commands=0,
-            expected_templates=0,
+            counts=ExpectedCounts(agents=0, commands=0, templates=0),
         )
 
         result = validator.verify_component_counts()

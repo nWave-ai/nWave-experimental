@@ -38,6 +38,8 @@ from des.application.delivery_continuation import (
     AuthorityFacts,
     DeliveryContinuationRunner,
     DeliveryOutcome,
+    DesignOptions,
+    NativeRun,
 )
 from des.ports.driven_ports.task_invocation_port import ModelOutcome, ModelRun
 from tests.des._helpers.step_stimulus import decomposed, designed, oracled
@@ -214,7 +216,11 @@ def test_changed_design_with_unchanged_oracle_bytes_is_not_settled_by_stale_evid
 
     # Correct the DESIGN only (same value, same oracle bytes on disk): D2.
     stored, d2 = runner.design_value(
-        subject, port, stored, stored.values[0], finding="change semantic decision"
+        subject,
+        port,
+        stored,
+        stored.values[0],
+        options=DesignOptions(finding="change semantic decision"),
     )
     assert d1.decisions != d2.decisions, "the probe requires a genuine design change"
     assert d1.acceptance_paths == d2.acceptance_paths, (
@@ -269,7 +275,7 @@ def test_non_utf8_native_output_does_not_crash_and_stays_readable(
             subject,
             (non_utf8_command,),
             dict(os.environ),
-            capture_incomplete=True,
+            run=NativeRun(capture_incomplete=True),
         )
     except UnicodeDecodeError as crashed:
         pytest.fail(
@@ -314,7 +320,10 @@ def test_valid_utf8_native_output_is_unchanged(subject: Path) -> None:
     )
 
     result = runner._native_evidence(
-        subject, (utf8_command,), dict(os.environ), capture_incomplete=True
+        subject,
+        (utf8_command,),
+        dict(os.environ),
+        run=NativeRun(capture_incomplete=True),
     )
 
     assert not isinstance(result, DeliveryOutcome)

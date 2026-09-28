@@ -100,7 +100,11 @@ def _swapped_environ(env: Mapping[str, str] | None):
         os.environ.update(prior)
 
 
-def run_cli_in_process(
+# This mirrors a subprocess invocation in-process: `main`, `env`, `stdin_text`
+# and `catch_all` are the invocation's own dimensions, not a domain concept.
+# 69 call sites, of which roughly 50 set at least one optional, so a record
+# would be constructed at most of them to vary a single field.
+def run_cli_in_process(  # noqa: PLR0913 - see the note above
     argv: list[str],
     *,
     cwd: str | Path,
@@ -196,7 +200,9 @@ def _compiled(program: str, filename: str) -> CodeType:
     return code
 
 
-def run_python_snippet_in_process(
+# The faithful in-process analogue of `python -c`; every keyword mirrors that
+# invocation's own dimensions, as in `run_cli_in_process` above.
+def run_python_snippet_in_process(  # noqa: PLR0913 - see the note above
     program: str,
     *,
     cwd: str | Path,

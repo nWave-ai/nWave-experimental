@@ -49,6 +49,7 @@ from pathlib import Path
 import pytest
 
 from des.application.delivery_continuation import DeliveryOutcome, Disposition
+from des.cli.role_artifacts import RecordedRoleTurn
 from des.cli.role_artifacts import prepare as prepare_role
 from des.cli.role_artifacts import record as record_role_result
 from des.ports.driven_ports.task_invocation_port import (
@@ -573,11 +574,13 @@ def test_native_success_evidence_survives_a_later_host_recorded_role_failure(
         role_payload |= {"defect_owner": "oracle", "defect_value": None}
     recorded, result_locator, _result_digest = record_role_result(
         subject,
-        role,
-        candidate,
-        "host",
-        "host-selected-model",
-        f"later-{role}-{outcome}",
+        RecordedRoleTurn(
+            role=role,
+            candidate=candidate,
+            provider="host",
+            model="host-selected-model",
+            session=f"later-{role}-{outcome}",
+        ),
         json.dumps({"structured_output": role_payload}).encode(),
         prepared_input=Path(input_locator) if role == "examiner" else None,
     )

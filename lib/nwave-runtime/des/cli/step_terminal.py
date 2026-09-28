@@ -119,7 +119,13 @@ def orchestrator_line(rows: list[str]) -> str:
     return f"read {pointed} below: they are {role}'s own answer and what it left"
 
 
-def _emit(
+# The arity IS the terminal block. Every DES step emits the same shape -- the
+# outcome word, the measured rows, the WHAT/WHY/HOW of a non-success, the step
+# name, the turns bought, the role, the diagnostic -- and this is the one place
+# that writes it. Grouping those into a record would name a structure the
+# terminal contract already fixes, and `refuse`/`succeed` below would have to
+# construct it at every call across src/des/cli.
+def _emit(  # noqa: PLR0913 - see the note above
     outcome: str,
     facts: list[str],
     failure: tuple[str, str, str] | None,
@@ -178,7 +184,10 @@ def succeed(
     return 0
 
 
-def refuse(
+# Public, and imported by at least eight `src/des/cli` step modules. Its arity
+# follows `_emit`'s terminal contract above; narrowing it here alone would make
+# every step construct a record to report a refusal.
+def refuse(  # noqa: PLR0913 - see the note above
     refusal: StepRefusal,
     step: str | tuple[str, ...],
     *,

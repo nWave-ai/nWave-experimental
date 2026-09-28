@@ -232,7 +232,11 @@ def install(directory: Path) -> Path:
     return launcher
 
 
-def environment(
+# 19 call sites across 10 files, and every one already passes these BY KEYWORD,
+# so the transposition hazard is absent. They are the paths one fake-provider
+# invocation writes to, each independently optional. `root` is the one positional and
+# all 19 pass it that way; everything after the `*` cannot be transposed at all.
+def environment(  # noqa: PLR0913 - see the note above
     root: Path,
     *,
     launcher_dir: Path,

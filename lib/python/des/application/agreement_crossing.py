@@ -243,6 +243,55 @@ class CrossingOutcome:
     human: str
 
 
+@dataclass(frozen=True, kw_only=True)
+class _CrossingScope:
+    """The population ONE terminal speaks for, carried as a single value.
+
+    ``repo_root`` is the root AS THE OPERATOR GAVE IT, because
+    ``scope.widen_by.rerun`` must be a command they can paste back; ``declaration``
+    is the path they named; and ``declared`` is the DECLARATION ITSELF rather than
+    a bare count, which is what keeps "the contract is known while the population
+    is UNKNOWN" -- and its reverse -- unrepresentable rather than merely avoided by
+    each branch remembering. ``declared`` has no default and may be ``None``: a
+    terminal reached BEFORE any declaration was read genuinely does not know what
+    it was asked to measure, and says exactly that.
+
+    Keyword-only because ``repo_root`` and ``declaration`` are both ``str``:
+    nothing checks annotations at runtime here, so a positional transposition
+    would quietly report the declaration path as the repository root on every
+    terminal, and both fields reach the operator verbatim.
+    """
+
+    repo_root: str
+    declaration: str
+    declared: AgreementDeclaration | None
+
+
+@dataclass(frozen=True, kw_only=True)
+class _CrossingCensus:
+    """What ONE terminal verified, and every structural fact it could not.
+
+    The invariant of every verdict -- ``verified_consumers`` plus the consumer
+    entries in ``unverified`` equals ``declared_consumers`` -- is a statement
+    about these two together, which is why they travel as one value.
+    ``unverified`` carries no default: an indeterminate whose machine surface
+    named nothing it could not verify is exactly the silence the census exists to
+    end, and a default would let a new branch reintroduce it.
+
+    ``verified_consumers`` carries no default EITHER, and the incident that a
+    default would license is specific: a new ``_terminal`` branch omitting it emits
+    ``VERIFIED 0 of N declared consumer(s)`` on a verdict that DID verify some,
+    understating its own result with every assertion still passing. The
+    EIGHT indeterminate constructions state ``verified_consumers=0`` outright, which is
+    the fact each of them means rather than a value inherited from a declaration.
+
+    Keyword-only so every construction names which half it is giving.
+    """
+
+    unverified: list[dict[str, str]]
+    verified_consumers: int
+
+
 def cross_agreement(repo_root: Path, declaration_path: str) -> CrossingOutcome:
     """Execute the agreement declared at ``declaration_path`` under ``repo_root``.
 
@@ -261,35 +310,51 @@ def cross_agreement(repo_root: Path, declaration_path: str) -> CrossingOutcome:
     except Exception as escaped:  # broad on purpose -- totality is the promise here
         return _indeterminate(
             f"the crossing could not be carried to a verdict: {escaped!r}",
-            unverified=[
-                _census_entry(
-                    "declaration",
-                    "whether the declared agreement could be executed to a verdict",
-                    f"{type(escaped).__name__}: {escaped}",
-                )
-            ],
-            repo_root=given_root,
-            declaration=declaration_path,
-            declared=None,
+            census=_CrossingCensus(
+                unverified=[
+                    _census_entry(
+                        "declaration",
+                        "whether the declared agreement could be executed to a verdict",
+                        f"{type(escaped).__name__}: {escaped}",
+                    )
+                ],
+                # STATED LIMIT: the one site where this zero is not a fact.  Every
+                # other `verified_consumers=0` has run no consumer yet, so zero is
+                # what happened.  Here the count is UNREACHABLE -- `reached` died
+                # with the unwound frame -- so a fault raised after some consumers
+                # accepted would report 0 and understate them.  Left as 0 because
+                # carrying a partial count out means widening a totality catch to
+                # hold state, in the one branch whose verdict is "nothing learnt".
+                verified_consumers=0,
+            ),
+            scope=_CrossingScope(
+                repo_root=given_root, declaration=declaration_path, declared=None
+            ),
         )
 
 
 def _cross_agreement(repo_root: Path, declaration_path: str) -> CrossingOutcome:
     given_root = str(repo_root)
+    # Every terminal below this point is reached BEFORE a declaration was read,
+    # so all three speak for the same honestly unknown population.
+    unread = _CrossingScope(
+        repo_root=given_root, declaration=declaration_path, declared=None
+    )
     root = Path(repo_root).resolve()
     if not root.is_dir():
         return _indeterminate(
             f"the repository root is not a directory: {root}",
-            unverified=[
-                _census_entry(
-                    "repository-root",
-                    "whether the repository root is a directory",
-                    f"{root} is not a directory",
-                )
-            ],
-            repo_root=given_root,
-            declaration=declaration_path,
-            declared=None,
+            census=_CrossingCensus(
+                unverified=[
+                    _census_entry(
+                        "repository-root",
+                        "whether the repository root is a directory",
+                        f"{root} is not a directory",
+                    )
+                ],
+                verified_consumers=0,
+            ),
+            scope=unread,
         )
 
     declaration_file = root / declaration_path
@@ -298,16 +363,17 @@ def _cross_agreement(repo_root: Path, declaration_path: str) -> CrossingOutcome:
     except OSError as unreadable:
         return _indeterminate(
             f"the declaration could not be read: {unreadable}",
-            unverified=[
-                _census_entry(
-                    "declaration",
-                    "whether the declaration could be read",
-                    str(unreadable),
-                )
-            ],
-            repo_root=given_root,
-            declaration=declaration_path,
-            declared=None,
+            census=_CrossingCensus(
+                unverified=[
+                    _census_entry(
+                        "declaration",
+                        "whether the declaration could be read",
+                        str(unreadable),
+                    )
+                ],
+                verified_consumers=0,
+            ),
+            scope=unread,
         )
 
     try:
@@ -315,16 +381,17 @@ def _cross_agreement(repo_root: Path, declaration_path: str) -> CrossingOutcome:
     except InvalidDeclaration as invalid:
         return _indeterminate(
             f"the declaration is invalid: {invalid}",
-            unverified=[
-                _census_entry(
-                    "declaration",
-                    "whether the declaration names an executable agreement",
-                    str(invalid),
-                )
-            ],
-            repo_root=given_root,
-            declaration=declaration_path,
-            declared=None,
+            census=_CrossingCensus(
+                unverified=[
+                    _census_entry(
+                        "declaration",
+                        "whether the declaration names an executable agreement",
+                        str(invalid),
+                    )
+                ],
+                verified_consumers=0,
+            ),
+            scope=unread,
         )
 
     # Run-scoped and CHECKER-OWNED: neither party chooses where the artifact
@@ -353,23 +420,27 @@ def _cross(
     # It travels as the DECLARATION ITSELF rather than as a bare count, so a
     # terminal cannot know how many parties it speaks for without knowing WHO.
     total_declared = len(declared.consumers)
+    scope = _CrossingScope(
+        repo_root=given_root, declaration=declaration_path, declared=declared
+    )
 
     declared_producer_argv = substitute_artifact(declared.producer.argv, str(artifact))
     produced = _execute(declared_producer_argv, root)
     if isinstance(produced, str):
         return _indeterminate(
             f"the declared producer could not run: {produced}",
-            repo_root=given_root,
-            declaration=declaration_path,
-            declared=declared,
-            unverified=[
-                _census_entry(
-                    declared.producer.name,
-                    "whether the declared producer could be run at all",
-                    produced,
-                ),
-                *_unbuilt_consumers(declared, "the producer never ran"),
-            ],
+            scope=scope,
+            census=_CrossingCensus(
+                unverified=[
+                    _census_entry(
+                        declared.producer.name,
+                        "whether the declared producer could be run at all",
+                        produced,
+                    ),
+                    *_unbuilt_consumers(declared, "the producer never ran"),
+                ],
+                verified_consumers=0,
+            ),
         )
     producer_argv = produced.argv
     if produced.completed.returncode != 0:
@@ -377,53 +448,56 @@ def _cross(
             f"the declared producer {declared.producer.name!r} exited "
             f"{produced.completed.returncode}; nothing can be concluded about the "
             f"agreement. stderr tail: {_tail(produced.completed.stderr)}",
-            repo_root=given_root,
-            declaration=declaration_path,
-            declared=declared,
-            unverified=[
-                _census_entry(
-                    declared.producer.name,
-                    "whether the declared producer could build the artifact",
-                    f"exited {produced.completed.returncode}. stderr tail: "
-                    f"{_tail(produced.completed.stderr)}",
-                ),
-                *_unbuilt_consumers(declared, "no artifact was ever built"),
-            ],
+            scope=scope,
+            census=_CrossingCensus(
+                unverified=[
+                    _census_entry(
+                        declared.producer.name,
+                        "whether the declared producer could build the artifact",
+                        f"exited {produced.completed.returncode}. stderr tail: "
+                        f"{_tail(produced.completed.stderr)}",
+                    ),
+                    *_unbuilt_consumers(declared, "no artifact was ever built"),
+                ],
+                verified_consumers=0,
+            ),
         )
 
     if not artifact.is_file():
         return _indeterminate(
             f"the declared producer {declared.producer.name!r} exited 0 but wrote "
             f"no artifact at the substituted path",
-            repo_root=given_root,
-            declaration=declaration_path,
-            declared=declared,
-            unverified=[
-                _census_entry(
-                    "artifact",
-                    "whether the producer wrote an artifact at the substituted path",
-                    f"{declared.producer.name} exited 0 but no regular file exists "
-                    f"at the substituted path",
-                ),
-                *_unbuilt_consumers(declared, "no artifact was ever built"),
-            ],
+            scope=scope,
+            census=_CrossingCensus(
+                unverified=[
+                    _census_entry(
+                        "artifact",
+                        "whether the producer wrote an artifact at the substituted path",
+                        f"{declared.producer.name} exited 0 but no regular file exists "
+                        f"at the substituted path",
+                    ),
+                    *_unbuilt_consumers(declared, "no artifact was ever built"),
+                ],
+                verified_consumers=0,
+            ),
         )
     payload_bytes = artifact.read_bytes()
     if not payload_bytes:
         return _indeterminate(
             f"the declared producer {declared.producer.name!r} exited 0 but the "
             f"artifact is empty; an empty artifact crosses nothing",
-            repo_root=given_root,
-            declaration=declaration_path,
-            declared=declared,
-            unverified=[
-                _census_entry(
-                    "artifact",
-                    "whether the artifact carries any bytes to cross",
-                    f"{declared.producer.name} exited 0 but the artifact is empty",
-                ),
-                *_unbuilt_consumers(declared, "the artifact was empty"),
-            ],
+            scope=scope,
+            census=_CrossingCensus(
+                unverified=[
+                    _census_entry(
+                        "artifact",
+                        "whether the artifact carries any bytes to cross",
+                        f"{declared.producer.name} exited 0 but the artifact is empty",
+                    ),
+                    *_unbuilt_consumers(declared, "the artifact was empty"),
+                ],
+                verified_consumers=0,
+            ),
         )
     digest = hashlib.sha256(payload_bytes).hexdigest()
 
@@ -434,7 +508,7 @@ def _cross(
     reached: list[dict[str, object]] = []
     refused: list[dict[str, object]] = []
     unreached: list[str] = []
-    census: list[dict[str, str]] = []
+    unverified: list[dict[str, str]] = []
 
     for consumer in declared.consumers:
         consumed = _execute(substitute_artifact(consumer.argv, str(artifact)), root)
@@ -443,7 +517,7 @@ def _cross(
                 f"the declared consumer {consumer.name!r} could not be reached: "
                 f"{consumed}"
             )
-            census.append(
+            unverified.append(
                 _census_entry(
                     consumer.name,
                     "whether the declared consumer accepts the artifact",
@@ -497,7 +571,7 @@ def _cross(
     # refused. Stating it here -- rather than letting it emerge from whichever
     # branch happens to run first -- is what makes "no missed verification can be
     # green" checkable on the green itself.
-    if census or len(reached) != total_declared:
+    if unverified or len(reached) != total_declared:
         # PRECEDENCE: a consumer that was never reached makes "every declared
         # consumer was reached" false, so neither a green nor a red may be
         # claimed -- even when another consumer really did refuse.
@@ -505,11 +579,10 @@ def _cross(
             f"{declared.contract}: not every declared consumer could be reached, "
             f"so nothing can be concluded about the agreement. " + "; ".join(unreached),
             observed=common,
-            verified_consumers=len(reached),
-            unverified=census,
-            repo_root=given_root,
-            declaration=declaration_path,
-            declared=declared,
+            census=_CrossingCensus(
+                unverified=unverified, verified_consumers=len(reached)
+            ),
+            scope=scope,
         )
 
     if refused:
@@ -527,11 +600,10 @@ def _cross(
                 f"{len(refused)} REFUSED them -- {named}. "
                 + _runtime_clause(consumer_runtimes)
             ),
-            census=census,
-            verified_consumers=len(reached),
-            repo_root=given_root,
-            declaration=declaration_path,
-            declared=declared,
+            census=_CrossingCensus(
+                unverified=unverified, verified_consumers=len(reached)
+            ),
+            scope=scope,
         )
 
     return _terminal(
@@ -545,11 +617,8 @@ def _cross(
             + ". "
             + _runtime_clause(consumer_runtimes)
         ),
-        census=census,
-        verified_consumers=len(reached),
-        repo_root=given_root,
-        declaration=declaration_path,
-        declared=declared,
+        census=_CrossingCensus(unverified=unverified, verified_consumers=len(reached)),
+        scope=scope,
     )
 
 
@@ -664,11 +733,8 @@ def _terminal(
     exit_code: int,
     payload: dict[str, object],
     human: str,
-    census: list[dict[str, str]],
-    verified_consumers: int,
-    repo_root: str,
-    declaration: str,
-    declared: AgreementDeclaration | None,
+    census: _CrossingCensus,
+    scope: _CrossingScope,
 ) -> CrossingOutcome:
     """Project ONE terminal whose two halves account for the same population.
 
@@ -681,22 +747,23 @@ def _terminal(
     stdout: a captured tail containing a newline and a brace must never read as a
     second outcome.
 
-    ``declared`` is REQUIRED and carries the DECLARATION ITSELF rather than a
-    bare count, which makes "the contract is known while the population is
-    UNKNOWN" -- and its reverse -- unrepresentable rather than merely avoided by
-    each branch remembering. Required rather than defaulted, exactly as the
-    census was: a default would let a new branch emit a terminal with no boundary
-    on it.
+    ``scope`` is REQUIRED and carries the DECLARATION ITSELF rather than a bare
+    count, which makes "the contract is known while the population is UNKNOWN" --
+    and its reverse -- unrepresentable rather than merely avoided by each branch
+    remembering. Required rather than defaulted, exactly as the census is: a
+    default would let a new branch emit a terminal with no boundary on it.
     """
+    declared = scope.declared
     declared_consumers = 0 if declared is None else len(declared.consumers)
+    verified_consumers = census.verified_consumers
     clauses = [
         human,
         f"VERIFIED {verified_consumers} of {declared_consumers} declared consumer(s).",
-        _boundary_clause(declaration=declaration, declared=declared),
+        _boundary_clause(declaration=scope.declaration, declared=declared),
     ]
     clauses.extend(
         f"COULD NOT VERIFY: {entry['subject']} -- {entry['fact']}: {entry['detail']}"
-        for entry in census
+        for entry in census.unverified
     )
     return CrossingOutcome(
         exit_code=exit_code,
@@ -704,9 +771,11 @@ def _terminal(
             **payload,
             "declared_consumers": declared_consumers,
             "verified_consumers": verified_consumers,
-            "unverified": list(census),
+            "unverified": list(census.unverified),
             "scope": _scope(
-                repo_root=repo_root, declaration=declaration, declared=declared
+                repo_root=scope.repo_root,
+                declaration=scope.declaration,
+                declared=declared,
             ),
         },
         human=" ".join(" ".join(clause.split()) for clause in clauses),
@@ -782,11 +851,8 @@ def _indeterminate(
     reason: str,
     observed: dict[str, object] | None = None,
     *,
-    unverified: list[dict[str, str]],
-    repo_root: str,
-    declaration: str,
-    declared: AgreementDeclaration | None,
-    verified_consumers: int = 0,
+    census: _CrossingCensus,
+    scope: _CrossingScope,
 ) -> CrossingOutcome:
     """Nothing decisive was learnt. Never green, never a refusal.
 
@@ -796,24 +862,23 @@ def _indeterminate(
     costs nothing and spares the operator a blind re-run, while the verdict
     still refuses to claim a complete traversal that never happened.
 
-    ``unverified`` is REQUIRED rather than defaulted: an indeterminate whose
-    machine surface named nothing it could not verify is exactly the silence this
-    value exists to end, and a default would let a new branch reintroduce it.
+    ``census`` is REQUIRED rather than defaulted, and so is its own
+    ``unverified``: an indeterminate whose machine surface named nothing it could
+    not verify is exactly the silence that value exists to end, and a default
+    would let a new branch reintroduce it.
 
-    ``declared`` is REQUIRED for the same reason and may be ``None``: an
-    indeterminate reached BEFORE any declaration was read genuinely does not know
-    what it was asked to measure, and says exactly that rather than reporting a
-    population of zero -- which reads as "there was nothing to measure".
+    ``scope`` is REQUIRED for the same reason, and its ``declared`` may be
+    ``None``: an indeterminate reached BEFORE any declaration was read genuinely
+    does not know what it was asked to measure, and says exactly that rather than
+    reporting a population of zero -- which reads as "there was nothing to
+    measure".
     """
     return _terminal(
         exit_code=2,
         payload={"verdict": INDETERMINATE, "reason": reason, **(observed or {})},
         human=f"{INDETERMINATE}: {reason}",
-        census=unverified,
-        verified_consumers=verified_consumers,
-        repo_root=repo_root,
-        declaration=declaration,
-        declared=declared,
+        census=census,
+        scope=scope,
     )
 
 

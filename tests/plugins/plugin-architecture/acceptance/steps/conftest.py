@@ -147,7 +147,18 @@ def baseline_file_tree() -> dict:
 # -----------------------------------------------------------------------------
 
 
-def pytest_bdd_step_error(
+# This is a pluggy hook: pytest-bdd owns the signature and injects every
+# argument BY NAME. Grouping or renaming one silently stops the injection, so
+# the arity is not ours to change.
+#
+# PLR0917 is suppressed here rather than answered with a `*` separator, which is the
+# ordinary fix for a positional count. It CANNOT be used on a pluggy hook:
+# `pluggy._hooks.varnames()` reads only the parameters before `*`, so
+# `(request, *, feature, ...)` reports its argument names as `('request',)` and pluggy
+# then never passes the rest. The hook would raise TypeError for missing keyword-only
+# arguments, and only on the path where a bdd step has ALREADY failed, which is the
+# worst place to put a latent break. Measured against pluggy 1.6.0, not assumed.
+def pytest_bdd_step_error(  # noqa: PLR0913, PLR0917 - see the note above
     request, feature, scenario, step, step_func, step_func_args, exception
 ):
     """Log step errors for debugging."""

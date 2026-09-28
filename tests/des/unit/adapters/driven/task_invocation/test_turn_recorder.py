@@ -20,7 +20,10 @@ from des.adapters.driven.task_invocation.codex_task_adapter import CodexTaskAdap
 from des.adapters.driven.task_invocation.turn_recorder import (
     RESERVED_RUN_ID_ENV,
     TURN_LOG_RELATIVE_DIR,
+    IssuedTurn,
     TurnRecorder,
+    TurnResult,
+    TurnTiming,
     _publish_no_replace,
     _write_exclusive,
     reserve_d0,
@@ -299,18 +302,18 @@ def test_crafter_noop_is_captured_for_both_terminals(
     started = recorder.begin(root=tmp_path, role_id="nw-software-crafter")
     projection = recorder.finish(started=started, role_id="nw-software-crafter")
     recorder.record(
-        root=tmp_path,
-        role_id="nw-software-crafter",
-        prompt="craft",
-        argv=None,
-        outcome=outcome,
-        diagnostic="done",
-        exit_status=0,
-        retry_safe=False,
-        provider_stdout=None,
-        provider_stderr=None,
-        started_at=0,
-        ended_at=0,
+        turn=IssuedTurn(
+            root=tmp_path, role_id="nw-software-crafter", prompt="craft", argv=None
+        ),
+        result=TurnResult(
+            outcome=outcome,
+            diagnostic="done",
+            exit_status=0,
+            retry_safe=False,
+            provider_stdout=None,
+            provider_stderr=None,
+        ),
+        timing=TurnTiming(started_at=0, ended_at=0),
         producer_projection=projection,
     )
     document = json.loads(_records(tmp_path)[0].read_text(encoding="utf-8"))
@@ -412,18 +415,18 @@ def test_malformed_existing_turn_never_advances_sequence(
 
     assert (
         recorder.record(
-            root=tmp_path,
-            role_id=ROLE,
-            prompt="no advance",
-            argv=None,
-            outcome="accepted",
-            diagnostic="done",
-            exit_status=0,
-            retry_safe=False,
-            provider_stdout=None,
-            provider_stderr=None,
-            started_at=0,
-            ended_at=0,
+            turn=IssuedTurn(
+                root=tmp_path, role_id=ROLE, prompt="no advance", argv=None
+            ),
+            result=TurnResult(
+                outcome="accepted",
+                diagnostic="done",
+                exit_status=0,
+                retry_safe=False,
+                provider_stdout=None,
+                provider_stderr=None,
+            ),
+            timing=TurnTiming(started_at=0, ended_at=0),
         )
         is None
     )
@@ -442,18 +445,18 @@ def test_tampered_projection_reference_never_publishes_its_turn(
     path.write_bytes(b"{}\n")
 
     written = recorder.record(
-        root=tmp_path,
-        role_id="nw-software-crafter",
-        prompt="craft",
-        argv=None,
-        outcome="accepted",
-        diagnostic="done",
-        exit_status=0,
-        retry_safe=False,
-        provider_stdout=None,
-        provider_stderr=None,
-        started_at=0,
-        ended_at=0,
+        turn=IssuedTurn(
+            root=tmp_path, role_id="nw-software-crafter", prompt="craft", argv=None
+        ),
+        result=TurnResult(
+            outcome="accepted",
+            diagnostic="done",
+            exit_status=0,
+            retry_safe=False,
+            provider_stdout=None,
+            provider_stderr=None,
+        ),
+        timing=TurnTiming(started_at=0, ended_at=0),
         producer_projection=projection,
     )
 
@@ -470,18 +473,18 @@ def test_boolean_transition_count_is_not_a_valid_reference(
     projection["transition_count"] = True
 
     written = recorder.record(
-        root=tmp_path,
-        role_id="nw-software-crafter",
-        prompt="craft",
-        argv=None,
-        outcome="accepted",
-        diagnostic="done",
-        exit_status=0,
-        retry_safe=False,
-        provider_stdout=None,
-        provider_stderr=None,
-        started_at=0,
-        ended_at=0,
+        turn=IssuedTurn(
+            root=tmp_path, role_id="nw-software-crafter", prompt="craft", argv=None
+        ),
+        result=TurnResult(
+            outcome="accepted",
+            diagnostic="done",
+            exit_status=0,
+            retry_safe=False,
+            provider_stdout=None,
+            provider_stderr=None,
+        ),
+        timing=TurnTiming(started_at=0, ended_at=0),
         producer_projection=projection,
     )
 
@@ -506,18 +509,18 @@ def test_forged_symlink_mode_is_not_a_native_projection(
     projection["sha256"] = hashlib.sha256(raw).hexdigest()
 
     written = recorder.record(
-        root=tmp_path,
-        role_id="nw-software-crafter",
-        prompt="craft",
-        argv=None,
-        outcome="accepted",
-        diagnostic="done",
-        exit_status=0,
-        retry_safe=False,
-        provider_stdout=None,
-        provider_stderr=None,
-        started_at=0,
-        ended_at=0,
+        turn=IssuedTurn(
+            root=tmp_path, role_id="nw-software-crafter", prompt="craft", argv=None
+        ),
+        result=TurnResult(
+            outcome="accepted",
+            diagnostic="done",
+            exit_status=0,
+            retry_safe=False,
+            provider_stdout=None,
+            provider_stderr=None,
+        ),
+        timing=TurnTiming(started_at=0, ended_at=0),
         producer_projection=projection,
     )
 
@@ -621,18 +624,16 @@ def test_codex_crafter_records_its_native_transition(
 def _record_in_child(root: str, run_id: str) -> None:
     os.environ[RESERVED_RUN_ID_ENV] = run_id
     TurnRecorder(root=Path(root)).record(
-        root=Path(root),
-        role_id=ROLE,
-        prompt="concurrent",
-        argv=None,
-        outcome="accepted",
-        diagnostic="done",
-        exit_status=0,
-        retry_safe=False,
-        provider_stdout=None,
-        provider_stderr=None,
-        started_at=0,
-        ended_at=0,
+        turn=IssuedTurn(root=Path(root), role_id=ROLE, prompt="concurrent", argv=None),
+        result=TurnResult(
+            outcome="accepted",
+            diagnostic="done",
+            exit_status=0,
+            retry_safe=False,
+            provider_stdout=None,
+            provider_stderr=None,
+        ),
+        timing=TurnTiming(started_at=0, ended_at=0),
     )
 
 
@@ -664,18 +665,16 @@ def test_orphaned_sequence_reservation_refuses_a_later_record(
     (directory / "01.sequence").write_bytes(b"")
 
     written = recorder.record(
-        root=tmp_path,
-        role_id=ROLE,
-        prompt="orphan",
-        argv=None,
-        outcome="accepted",
-        diagnostic="done",
-        exit_status=0,
-        retry_safe=False,
-        provider_stdout=None,
-        provider_stderr=None,
-        started_at=0,
-        ended_at=0,
+        turn=IssuedTurn(root=tmp_path, role_id=ROLE, prompt="orphan", argv=None),
+        result=TurnResult(
+            outcome="accepted",
+            diagnostic="done",
+            exit_status=0,
+            retry_safe=False,
+            provider_stdout=None,
+            provider_stderr=None,
+        ),
+        timing=TurnTiming(started_at=0, ended_at=0),
     )
 
     assert written is None

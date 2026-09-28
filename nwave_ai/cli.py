@@ -130,6 +130,7 @@ from scripts.install.attribution_utils import (  # noqa: E402
     write_attribution_preference,
     write_global_config,
 )
+from scripts.shared.density_config import resolve_density  # noqa: E402
 from scripts.shared.install_paths import (  # noqa: E402
     GLOBAL_CONFIG_FILENAME,
     nwave_config_dir,
@@ -138,7 +139,7 @@ from scripts.shared.version import VersionResolutionError  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
-# D6 + AC-3: install-time density prompt
+# First-install documentation density preference
 # ---------------------------------------------------------------------------
 
 
@@ -174,19 +175,11 @@ def handle_install_density_prompt(
     *,
     non_interactive: bool,
 ) -> DensityPromptOutcome:
-    """Run the D6 first-install density branch.
+    """Set a first-install density preference unless already configured.
 
-    Pure orchestration: caller passes config_dir + interactivity flag, this
-    function decides whether to (a) skip, (b) prompt, or (c) write a silent
-    default, then persists the choice via the existing global-config helpers.
-
-    Cascade:
-      1. Config file exists with `documentation.density` set -> noop.
-      2. Config file exists but no `documentation` key -> silent lean default
-         (AC-3.e — upgrade path).
-      3. No config file at all + non_interactive -> silent lean default
-         (AC-3.d — CI / --yes).
-      4. No config file at all + interactive -> prompt user (AC-3.a/b).
+    Existing configuration is checked before any write. A configured density
+    is left untouched; an existing file without density gets a silent lean
+    default. A fresh installation prompts only when interactive.
 
     Args:
         config_dir: ~/.nwave directory (created lazily by writers).
@@ -198,6 +191,7 @@ def handle_install_density_prompt(
     config_path = config_dir / GLOBAL_CONFIG_FILENAME
     config_file_exists = config_path.exists()
     existing_config = read_global_config(config_dir) if config_file_exists else {}
+    resolve_density(existing_config)
     documentation_block = existing_config.get("documentation", {})
 
     # Case 1: density already set -> idempotent no-op.
@@ -445,12 +439,10 @@ def _announce_density_upgrade(config_dir: Path, outcome: str) -> None:
 
 
 def _handle_install(args: list[str]) -> int:
-    """Run the install pipeline with first-run density prompt (D6).
+    """Run the installer and set a first-install density preference.
 
-    The density prompt is run BEFORE the heavyweight install_nwave.py
-    subprocess so a CI host (--yes) gets the silent default and a
-    real Marco gets one prompt. The density prompt does not block the
-    install on failure — at worst the CI default ("lean") is written.
+    Invalid existing documentation preferences refuse installation before
+    either the installer or the density preference can write user state.
 
     Flags handled here:
         --platform <tool>  target agentic tool to provision for
@@ -533,6 +525,11 @@ def _handle_install(args: list[str]) -> int:
         config_dir = _require_mutating_config_dir()
     except ValueError as error:
         return _refuse_mutating_location(error)
+    try:
+        resolve_density(read_global_config(config_dir))
+    except ValueError as error:
+        print(f"nwave-ai: {error}", file=sys.stderr)
+        return 1
 
     if density_only:
         outcome = handle_install_density_prompt(

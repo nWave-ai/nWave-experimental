@@ -14,6 +14,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -456,9 +457,11 @@ def test_role_guidance_round_trips_an_absolute_root_with_shell_characters(
     code, recorded, out, err = _record(
         spaced_root,
         spaced_step,
-        role="reviewer",
-        candidate=candidate,
-        session_id="shell-safe-reviewer-session",
+        turn=_RecordedTurn(
+            role="reviewer",
+            candidate=candidate,
+            session_id="shell-safe-reviewer-session",
+        ),
         payload=_host_result("reviewer", "rejected", "reviewer rejected"),
     )
     assert code == 0, out + err
@@ -474,16 +477,32 @@ def test_role_guidance_round_trips_an_absolute_root_with_shell_characters(
     ]
 
 
+@dataclass(frozen=True, kw_only=True)
+class _RecordedTurn:
+    """Which role turn a recorded host result belongs to.
+
+    Keyword-only, and load-bearing: all three fields are `str`, so a positional
+    permutation constructs cleanly and records the result against the wrong role
+    or the wrong candidate while every assertion still passes. Nothing here would
+    catch it, because `typecheck` covers `src/des/` and is run by no workflow.
+    """
+
+    role: str
+    candidate: str
+    session_id: str
+
+
 def _record(
     root: Path,
     step,
     *,
-    role: str,
-    candidate: str,
-    session_id: str,
+    turn: _RecordedTurn,
     payload: str,
     prepared_input: Path | None = None,
 ) -> tuple[int, dict[str, str], str, str]:
+    role = turn.role
+    candidate = turn.candidate
+    session_id = turn.session_id
     code, out, err = step(
         "record-role-result",
         "--repo-root",
@@ -507,8 +526,19 @@ def _record(
 
 
 @pytest.mark.parametrize("duplicate", [False, True], ids=["normal", "duplicate"])
-def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_is_observed(
-    root: Path, step, turns: Path, tmp_path: Path, monkeypatch, duplicate: bool
+# Five of these six parameters are pytest FIXTURES and the sixth is the `duplicate`
+# parametrize column, so the arity is pytest's and PLR0913 is suppressed. They are
+# KEYWORD-ONLY because pytest injects both fixtures and parametrize columns by name,
+# verified by probe rather than assumed, and that takes the positional count to zero so
+# PLR0917 has nothing to report.
+def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_is_observed(  # noqa: PLR0913 - see the note above
+    *,
+    root: Path,
+    step,
+    turns: Path,
+    tmp_path: Path,
+    monkeypatch,
+    duplicate: bool,
 ) -> None:
     """Normal chain keeps the native counter at 1 through integrate; the
     duplicate control replays the declared argv inside reviewer prepare and
@@ -680,9 +710,11 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
             code, _, out, err = _record(
                 root,
                 step,
-                role=role,
-                candidate=candidate,
-                session_id=session_id,
+                turn=_RecordedTurn(
+                    role=role,
+                    candidate=candidate,
+                    session_id=session_id,
+                ),
                 payload=invalid,
                 prepared_input=examiner_input if role == "examiner" else None,
             )
@@ -696,9 +728,11 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
         code, recorded, out, err = _record(
             root,
             step,
-            role=role,
-            candidate=candidate,
-            session_id=session_id,
+            turn=_RecordedTurn(
+                role=role,
+                candidate=candidate,
+                session_id=session_id,
+            ),
             payload=payload,
             prepared_input=examiner_input if role == "examiner" else None,
         )
@@ -736,9 +770,11 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
         code, replayed, out, err = _record(
             root,
             step,
-            role=role,
-            candidate=candidate,
-            session_id=session_id,
+            turn=_RecordedTurn(
+                role=role,
+                candidate=candidate,
+                session_id=session_id,
+            ),
             payload=payload,
             prepared_input=examiner_input if role == "examiner" else None,
         )
@@ -748,9 +784,11 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
         code, _, out, err = _record(
             root,
             step,
-            role=role,
-            candidate=candidate,
-            session_id=session_id,
+            turn=_RecordedTurn(
+                role=role,
+                candidate=candidate,
+                session_id=session_id,
+            ),
             payload=_host_result(role, conflicting_outcome, "conflicting host result"),
             prepared_input=examiner_input if role == "examiner" else None,
         )
@@ -771,9 +809,11 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
     code, rejected_examiner, out, err = _record(
         root,
         step,
-        role="examiner",
-        candidate=candidate,
-        session_id="host-examiner-rejected-session",
+        turn=_RecordedTurn(
+            role="examiner",
+            candidate=candidate,
+            session_id="host-examiner-rejected-session",
+        ),
         payload=_host_result("examiner", "rejected", "host examiner rejected"),
         prepared_input=examiner_input,
     )
@@ -801,9 +841,11 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
     code, _, out, err = _record(
         root,
         step,
-        role="reviewer",
-        candidate=candidate,
-        session_id="tampered-payload-session",
+        turn=_RecordedTurn(
+            role="reviewer",
+            candidate=candidate,
+            session_id="tampered-payload-session",
+        ),
         payload=_host_result("reviewer", "accepted", "tampered payload refused"),
     )
     assert code != 0, out + err
@@ -1188,9 +1230,11 @@ def test_host_records_implementation_finding_without_buying_a_correction_turn(
     code, lines, out, err = _record(
         root,
         step,
-        role="reviewer",
-        candidate=candidate,
-        session_id="implementation-owner-session",
+        turn=_RecordedTurn(
+            role="reviewer",
+            candidate=candidate,
+            session_id="implementation-owner-session",
+        ),
         payload=payload,
     )
     assert code == 0, out + err
@@ -1988,9 +2032,11 @@ def test_examiner_observation_revisions_keep_prior_inputs_and_results(
         code, recorded, out, err = _record(
             root,
             step,
-            role="examiner",
-            candidate=candidate,
-            session_id="same-observation-session",
+            turn=_RecordedTurn(
+                role="examiner",
+                candidate=candidate,
+                session_id="same-observation-session",
+            ),
             payload=_host_result("examiner", "indeterminate", "host observation"),
             prepared_input=prepared,
         )
@@ -2007,9 +2053,11 @@ def test_examiner_observation_revisions_keep_prior_inputs_and_results(
     code, _lines, out, err = _record(
         root,
         step,
-        role="examiner",
-        candidate=candidate,
-        session_id="implicit-revision",
+        turn=_RecordedTurn(
+            role="examiner",
+            candidate=candidate,
+            session_id="implicit-revision",
+        ),
         payload=_host_result("examiner", "accepted", "must not guess"),
     )
     assert code != 0 and "--prepared-input" in out + err
@@ -2142,9 +2190,11 @@ def test_examiner_observation_revisions_hold_for_a_generated_packet_population(
         code, recorded, out, err = _record(
             root,
             step,
-            role="examiner",
-            candidate=candidate,
-            session_id=f"generated-revision-session-{index}",
+            turn=_RecordedTurn(
+                role="examiner",
+                candidate=candidate,
+                session_id=f"generated-revision-session-{index}",
+            ),
             payload=_host_result(
                 "examiner", "indeterminate", f"generated recorded {index}"
             ),
@@ -2197,9 +2247,11 @@ def test_examiner_observation_revisions_hold_for_a_generated_packet_population(
     code, _lines, out, err = _record(
         root,
         step,
-        role="examiner",
-        candidate=candidate,
-        session_id="generated-implicit-revision",
+        turn=_RecordedTurn(
+            role="examiner",
+            candidate=candidate,
+            session_id="generated-implicit-revision",
+        ),
         payload=_host_result("examiner", "accepted", "must not guess"),
     )
     assert code != 0 and "--prepared-input" in out + err

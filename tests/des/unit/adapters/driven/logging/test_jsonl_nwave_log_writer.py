@@ -23,7 +23,13 @@ from des.ports.driven_ports.nwave_log_writer import (
 )
 
 
-def _make_entry(
+# A test-data builder: ten keyword arguments, every one defaulted, across ten call
+# sites that name zero to three of them. Four name NOTHING and take the defaults
+# whole, and one names three. Grouping would force every call site to construct a
+# record to vary a single field, and force those four to construct one for no reason
+# at all, making the builder worse to use for no defect prevented. Recorded as a
+# deliberate exclusion in docs/feature/plr0913-ratchet/plan.md.
+def _make_entry(  # noqa: PLR0913 - see the note above
     *,
     level: LogLevel = LogLevel.INFO,
     timestamp: str = "2026-03-15T10:00:00.000Z",

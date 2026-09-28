@@ -20,7 +20,11 @@ import argparse
 import sys
 
 
-def compose_trace_message(
+# All 21 call sites pass every argument BY KEYWORD, so the transposition hazard
+# this burn-down groups to remove is already absent here. Folding the three tag
+# arguments would rewrite 21 sites and buy nothing: they are three distinct
+# release stages, only one of which is ever set per call.
+def compose_trace_message(  # noqa: PLR0913 - see the note above
     *,
     stage: str,
     version: str,

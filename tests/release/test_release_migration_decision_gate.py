@@ -15,6 +15,7 @@ import sys
 import threading
 import zipfile
 from contextlib import contextmanager
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote
@@ -25,6 +26,7 @@ from packaging.utils import parse_wheel_filename
 from tests.release.release_migration_fixtures import (
     FAKE_GH,
     FAKE_TWINE,
+    DecisionBinding,
     candidate_version,
     candidate_wheel,
     decision,
@@ -136,30 +138,60 @@ def _notes(root: Path, title: str) -> Path:
     return path
 
 
+@dataclass(frozen=True, kw_only=True)
+class _DecisionSelection:
+    """What a decision record binds to beyond its channel, units and required
+    flag: the repository its source blob is read from, and the candidate version
+    it declares.
+
+    A predecessor is deliberately NOT here, and `decision()` takes no `predecessor`
+    parameter. It binds a hardcoded prior, the `prior = {"distribution_name": ...}`
+    statement inside `decision()`, because a caller with its own branch predecessor
+    carries it on the BRANCH UNIT instead, where the live writer checks it against
+    its lease. Threading one through this record would document an effect it does
+    not have. The statement is named rather than cited by line, because a line
+    number in prose is stale the moment anything above it moves.
+
+    Keyword-only, though not for transposition safety: these two fields are a
+    `Path` and a `str | None`, so a positional swap fails loudly when `_source`
+    runs with a non-directory cwd. It is here so a third field cannot later be
+    added positionally, which is when a swap would start being silent.
+    """
+
+    source_repo: Path = ROOT
+    version: str | None = None
+
+
+#: The selection that names nothing: this checkout is the source repository and
+#: the channel's own candidate version applies. Bound here rather than
+#: constructed in the signature, so a call site that selects nothing passes
+#: nothing.
+_DEFAULT_DECISION_SELECTION = _DecisionSelection()
+
+
 def _record(
     root: Path,
     *,
     channel: str = "dev",
     units: list[dict[str, object]],
     required: bool = False,
-    source_repo: Path = ROOT,
-    version: str | None = None,
-    predecessor: str | None = None,
+    selection: _DecisionSelection = _DEFAULT_DECISION_SELECTION,
 ) -> Path:
-    source_sha, source_bytes = _source(source_repo)
-    version = candidate_version(channel, version)
+    source_sha, source_bytes = _source(selection.source_repo)
+    version = candidate_version(channel, selection.version)
     wheel = root / "dist" / f"nwave_ai-{version}-py3-none-any.whl"
     return decision(
         root,
         channel=channel,
         units=units,
         required=required,
-        source_sha=source_sha,
-        source_path=SOURCE_PATH,
-        source_bytes=source_bytes,
-        wheel=wheel if wheel.exists() else None,
-        version=version,
-        predecessor=predecessor,
+        binding=DecisionBinding(
+            source_sha=source_sha,
+            source_path=SOURCE_PATH,
+            source_bytes=source_bytes,
+            wheel=wheel if wheel.exists() else None,
+            version=version,
+        ),
     )
 
 
@@ -170,11 +202,19 @@ def _release_units(
     prerelease: bool = True,
     source_repo: Path = ROOT,
     target: object | None = None,
-    version: str | None = None,
 ) -> list[dict[str, object]]:
-    """Bind the exact candidate wheel, title, notes, target, and release state."""
+    """Bind the exact candidate wheel, title, notes, target, and release state.
+
+    There is deliberately no `version` parameter and no selection record here. A
+    `version` parameter existed and no call site ever set it; a selection record never
+    existed at all, so nothing was removed there:
+    `candidate_version(channel, None)` is `candidate_version(channel)`, so it could
+    only ever name the channel's own version. Deleting the dead parameter is what
+    brings this signature under the argument limit, which is cheaper than grouping
+    live arguments around a dead one.
+    """
     source_sha, source_bytes = _source(source_repo)
-    version = candidate_version(channel, version)
+    version = candidate_version(channel)
     wheel, _ = candidate_wheel(
         root, channel=channel, version=version, source_bytes=source_bytes
     )
@@ -449,7 +489,12 @@ def test_wrong_valid_live_github_predecessor_refuses_before_first_tag_push(
             "target_sha": "a" * 40,
         },
     }
-    record = _record(tmp_path, channel="stable", units=[unit], source_repo=work)
+    record = _record(
+        tmp_path,
+        channel="stable",
+        units=[unit],
+        selection=_DecisionSelection(source_repo=work),
+    )
     write_json(
         tmp_path / "gh.json",
         {
@@ -510,7 +555,12 @@ def test_github_predecessor_peels_a_remote_only_tag_sha_before_tag_push(
             "target_sha": remote_sha,
         },
     }
-    record = _record(tmp_path, channel="stable", units=[unit], source_repo=work)
+    record = _record(
+        tmp_path,
+        channel="stable",
+        units=[unit],
+        selection=_DecisionSelection(source_repo=work),
+    )
     write_json(
         tmp_path / "gh.json",
         {
@@ -659,7 +709,12 @@ def test_malformed_github_pagination_refuses_without_tag_mutation(
         "target": source_sha,
         "publication_predecessor": None,
     }
-    record = _record(tmp_path, channel="stable", units=[unit], source_repo=work)
+    record = _record(
+        tmp_path,
+        channel="stable",
+        units=[unit],
+        selection=_DecisionSelection(source_repo=work),
+    )
     write_json(
         tmp_path / "gh.json",
         {
@@ -750,7 +805,11 @@ def test_invalid_decision_starts_valid_and_refuses_only_its_selected_unit(
             "predecessor": predecessor,
             "target": candidate,
         }
-        record = _record(tmp_path, channel="rc", units=[unit], predecessor=predecessor)
+        record = _record(
+            tmp_path,
+            channel="rc",
+            units=[unit],
+        )
         value = json.loads(record.read_text())
         # This is another real selected-repository commit, not a malformed OID.
         value["predecessor"]["target_commit"] = _git(["rev-parse", "HEAD~2"], ROOT)
@@ -1081,7 +1140,11 @@ def test_generated_commit_is_byte_identical_then_publishes_branch_and_tag_with_l
     }
     generated_target = {"kind": "generated-commit", "producer_unit": spec["id"]}
     release, asset = _release_units(
-        tmp_path, "stable", prerelease=False, source_repo=work, target=generated_target
+        tmp_path,
+        "stable",
+        prerelease=False,
+        source_repo=work,
+        target=generated_target,
     )
     units = [
         spec,
@@ -1106,7 +1169,11 @@ def test_generated_commit_is_byte_identical_then_publishes_branch_and_tag_with_l
         asset,
     ]
     record = _record(
-        tmp_path, channel="stable", units=units, required=True, source_repo=work
+        tmp_path,
+        channel="stable",
+        units=units,
+        required=True,
+        selection=_DecisionSelection(source_repo=work),
     )
     record_value = json.loads(record.read_text())
     candidate = record_value["candidate"]
@@ -1293,7 +1360,10 @@ def test_generated_commit_uses_explicit_distinct_source_and_target_repositories(
         },
     ]
     record = _record(
-        tmp_path, channel="rc", units=units, source_repo=source, predecessor=parent
+        tmp_path,
+        channel="rc",
+        units=units,
+        selection=_DecisionSelection(source_repo=source),
     )
     output = tmp_path / "generated-ref.json"
     _must_succeed(
@@ -1362,8 +1432,7 @@ def test_branch_lease_race_refuses_and_preserves_competing_head(tmp_path: Path) 
                 "target": desired,
             }
         ],
-        source_repo=work,
-        predecessor=parent,
+        selection=_DecisionSelection(source_repo=work),
     )
     result = _run(
         tmp_path,
@@ -1414,8 +1483,9 @@ def test_github_prerelease_first_tag_is_a_standalone_tag_unit_not_a_dispatch(
         tmp_path,
         channel="github-prerelease",
         units=[unit],
-        version=GITHUB_PRERELEASE_VERSION,
-        source_repo=work,
+        selection=_DecisionSelection(
+            source_repo=work, version=GITHUB_PRERELEASE_VERSION
+        ),
     )
     _must_succeed(
         _run(

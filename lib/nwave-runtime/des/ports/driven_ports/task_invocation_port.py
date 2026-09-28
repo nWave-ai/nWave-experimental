@@ -207,7 +207,13 @@ class TaskInvocationPort(ABC):
     """Port for invoking one sub-agent turn and observing its terminal."""
 
     @abstractmethod
-    def invoke(
+    # Six keyword-only arguments is the arity every adapter and every test
+    # double must match, so this rule cannot be satisfied here without changing
+    # the contract itself. Grouping them into one record is a real option and a
+    # DESIGN change: it touches 18 `def invoke(` definitions, 8 of them test
+    # doubles, and roughly 51 call sites. Suppressed per FUNCTION rather than
+    # per file, so a new over-wide function in this module is still caught.
+    def invoke(  # noqa: PLR0913 - see the note above
         self,
         *,
         role_id: str,

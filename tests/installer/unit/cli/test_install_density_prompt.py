@@ -24,7 +24,10 @@ import json
 from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
+import pytest
 from nwave_ai.cli import handle_install_density_prompt
+
+from nwave_ai import cli
 
 
 if TYPE_CHECKING:
@@ -137,3 +140,43 @@ class TestInstallDensityPrompt:
             "density": "full",
             "expansion_prompt": "ask-intelligent",
         }
+
+
+@pytest.mark.parametrize("args", [["--yes", "--density-only"], ["--yes"]])
+def test_install_refuses_invalid_expansion_prompt_without_writing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    args: list[str],
+) -> None:
+    config_dir = tmp_path / ".nwave"
+    config_dir.mkdir()
+    config_path = config_dir / "config.json"
+    original = b'{ "documentation": { "expansion_prompt": "typo" } }\n'
+    config_path.write_bytes(original)
+    monkeypatch.setenv("NWAVE_AGENTS_HOME", str(tmp_path))
+
+    with patch.object(cli, "_run_script") as installer:
+        result = cli._handle_install(args)
+
+    assert result != 0
+    error = capsys.readouterr().err
+    assert "documentation.expansion_prompt" in error
+    assert "ask-intelligent" in error
+    assert config_path.read_bytes() == original
+    installer.assert_not_called()
+
+
+def test_direct_density_prompt_rejects_invalid_config_without_writing(
+    tmp_path: Path,
+) -> None:
+    config_dir = tmp_path / ".nwave"
+    config_dir.mkdir()
+    config_path = config_dir / "config.json"
+    original = b'{"documentation":{"density":"full","expansion_prompt":"typo"}}'
+    config_path.write_bytes(original)
+
+    with pytest.raises(ValueError, match="documentation.expansion_prompt"):
+        handle_install_density_prompt(config_dir, non_interactive=True)
+
+    assert config_path.read_bytes() == original

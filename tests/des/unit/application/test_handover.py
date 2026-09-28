@@ -11,6 +11,7 @@ import pytest
 from des.application.handover import (
     _HANDOVER_REPAIR,
     Blocked,
+    BoundDesign,
     HandoverValue,
     StoredHandover,
     _canonical_bytes,
@@ -398,7 +399,7 @@ def test_binding_constructed_facts_does_not_decode_or_revalidate_its_own_bytes(
     monkeypatch.setattr("des.application.handover.read_handover", unexpected)
     monkeypatch.setattr("des.application.handover.design_facts_defect", unexpected)
 
-    bound = bind_design_facts(tmp_path, stored, 1, _facts())
+    bound = bind_design_facts(tmp_path, stored, 1, BoundDesign(_facts()))
 
     assert isinstance(bound, StoredHandover)
     assert bound.values[0].authority == _facts()

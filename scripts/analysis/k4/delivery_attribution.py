@@ -173,7 +173,11 @@ class AttributionAssessment:
     producer_role: str | None = None
 
 
-def construct_producer_receipt(
+# The parameters are deliberately dead. This is a refusal shim for the old
+# API, as its own docstring says: they exist so a caller using the previous
+# signature gets an explicit refusal rather than a TypeError. Grouping dead
+# parameters would document a structure that nothing reads.
+def construct_producer_receipt(  # noqa: PLR0913 - see the note above
     native_turn_path: Path,
     *,
     root_delivery_session: str,

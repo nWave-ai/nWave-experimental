@@ -25,6 +25,8 @@ from typing import TYPE_CHECKING
 from des.application.delivery_continuation import (
     DeliveryContinuationRunner,
     DeliveryOutcome,
+    DesignOptions,
+    SelectedValue,
 )
 from des.application.handover import StoredHandover, load_handover
 
@@ -71,52 +73,77 @@ def decomposed(
     return stored
 
 
-def designed(
+# The leading parameters are the ambient context every step helper in this module
+# needs: the runner to call, its port, the tree, and the stored handover. Folding
+# them into one record would rewrite 45 call sites across the DES unit and
+# acceptance suites and would prevent nothing, because `DeliveryContinuationRunner`,
+# `TaskInvocationPort`, `Path` and `StoredHandover` are four DISTINCT types: a
+# positional transposition fails loudly rather than silently, which is the opposite
+# of the same-typed-neighbour hazard this burn-down groups to remove.
+#
+# These four are not `design_value`'s own arguments forwarded unchanged: `runner` is
+# the RECEIVER, and the fourth argument reaching `design_value` is
+# `stored.values[position]`, derived here rather than passed through.
+def designed(  # noqa: PLR0913 - see the note above
     runner: DeliveryContinuationRunner,
     port: TaskInvocationPort,
     root: Path,
     stored: StoredHandover,
     position: int = 0,
     *,
-    finding: str | None = None,
     competence: str | None = None,
 ) -> tuple[StoredHandover, AuthorityFacts]:
-    """`des design --value N`, once, for the value at `position`."""
+    """`des design --value N`, once, for the value at `position`.
+
+    There is no `finding` parameter. One existed, forwarded to `design_value`,
+    and no caller in the suite ever passed it, so it could only ever forward
+    None. Corrections are driven through `oracled`, which does take one.
+    """
     bound = runner.design_value(
         root,
         port,
         stored,
         stored.values[position],
-        finding=finding,
-        competence=competence,
+        options=DesignOptions(competence=competence),
     )
     if isinstance(bound, DeliveryOutcome):
         raise StepRefused("design", bound)
     return bound
 
 
-def oracled(
+# Same four ambient parameters as `designed` above, plus the bound `design` the
+# oracle is measured against and the `position` selecting the value. Those two are
+# an `AuthorityFacts` and an `int`, so they are not transposable either, and the
+# argument for not folding is `designed`'s argument unchanged.
+def oracled(  # noqa: PLR0913 - see `designed` above
     runner: DeliveryContinuationRunner,
     port: TaskInvocationPort,
     root: Path,
     stored: StoredHandover,
     design: AuthorityFacts,
-    position: int = 0,
     *,
+    position: int = 0,
     finding: str | None = None,
 ):
     """`des oracle --value N`, once. The measured set travels back unjudged."""
     return runner.oracle_value(
-        root, port, stored, stored.values[position], design, finding=finding
+        root,
+        port,
+        SelectedValue(stored, stored.values[position], design),
+        finding=finding,
     )
 
 
-def crafted(
+# Same shape as `oracled` above: the four ambient parameters, the bound `design`,
+# and `position`. All six types are distinct, so no positional pair can swap
+# silently, and folding would churn this module's call sites for no defect.
+def crafted(  # noqa: PLR0913 - see `designed` above
     runner: DeliveryContinuationRunner,
     port: TaskInvocationPort,
     root: Path,
     stored: StoredHandover,
     design: AuthorityFacts,
+    *,
     position: int = 0,
 ) -> DeliveryOutcome | tuple[str, ...]:
     """`des craft --value N`, once. Returns the outcome or the SILENT rows."""
@@ -138,7 +165,7 @@ def through_oracle(
     runner = DeliveryContinuationRunner(port)
     stored = decomposed(runner, port, root, request)
     stored, design = designed(runner, port, root, stored, position)
-    measured = oracled(runner, port, root, stored, design, position)
+    measured = oracled(runner, port, root, stored, design, position=position)
     if measured.refusal is not None:
         refusal = measured.refusal
         outcome = getattr(refusal, "terminal", refusal)

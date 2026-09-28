@@ -21,10 +21,29 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, NamedTuple
 
 
 Installer = Literal["uv", "pipx"]
+
+
+class ExpectedCounts(NamedTuple):
+    """The three component counts a validation run checks, 0 meaning skip.
+
+    Grouped because they are three adjacent same-typed defaulted integers, which is
+    the one transposition a reader cannot see and no test would catch: swapping
+    agents for templates leaves every type valid and every assertion shaped right.
+    """
+
+    agents: int = 0
+    commands: int = 0
+    templates: int = 0
+
+
+# A module constant rather than `ExpectedCounts()` written in the signature, because
+# B008 (function-call-in-default-argument) is selected repo-wide and ignored only for
+# `tests/**`. Safe to share: a NamedTuple is immutable.
+NO_EXPECTED_COUNTS = ExpectedCounts()
 
 
 @dataclass
@@ -47,9 +66,7 @@ class TestPyPIValidator:
     def __init__(
         self,
         version: str,
-        expected_agents: int = 0,
-        expected_commands: int = 0,
-        expected_templates: int = 0,
+        counts: ExpectedCounts = NO_EXPECTED_COUNTS,
         package_name: str = "nwave",
         installer: Installer = "uv",
     ) -> None:
@@ -57,16 +74,14 @@ class TestPyPIValidator:
 
         Args:
             version: PEP 440 version to install from TestPyPI.
-            expected_agents: Expected number of agents (0 to skip check).
-            expected_commands: Expected number of commands (0 to skip check).
-            expected_templates: Expected number of templates (0 to skip check).
+            counts: Expected agent, command and template counts (0 to skip a check).
             package_name: Name of the package to install.
             installer: Which installer to use ("uv" primary, "pipx" fallback).
         """
         self.version = version
-        self.expected_agents = expected_agents
-        self.expected_commands = expected_commands
-        self.expected_templates = expected_templates
+        self.expected_agents = counts.agents
+        self.expected_commands = counts.commands
+        self.expected_templates = counts.templates
         self.package_name = package_name
         self.installer: Installer = installer
         self.results: list[ValidationResult] = []
@@ -419,9 +434,11 @@ def main() -> int:
 
     validator = TestPyPIValidator(
         version=args.version,
-        expected_agents=args.expected_agents,
-        expected_commands=args.expected_commands,
-        expected_templates=args.expected_templates,
+        counts=ExpectedCounts(
+            agents=args.expected_agents,
+            commands=args.expected_commands,
+            templates=args.expected_templates,
+        ),
         package_name=args.package_name,
         installer=args.installer,
     )

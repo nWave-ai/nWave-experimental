@@ -8,9 +8,10 @@ remembering to add one.
 
 Two things are worth pinning here that an end-to-end run states only implicitly:
 
-* the known/unknown distinction is carried by ONE parameter, the declaration
-  itself, so "the contract is known while the population is UNKNOWN" -- and its
-  reverse -- is UNREPRESENTABLE rather than merely avoided;
+* the known/unknown distinction is carried by ONE value, the declaration itself,
+  travelling on the terminal's ``scope``, so "the contract is known while the
+  population is UNKNOWN" -- and its reverse -- is UNREPRESENTABLE rather than
+  merely avoided;
 * nothing in the boundary is measured by reading the tree: the same declaration
   object yields the same ``in_reach`` whatever the repository contains, and
   ``out_of_reach.count`` is never a number.
@@ -25,6 +26,8 @@ from des.application.agreement_crossing import (
     OUT_OF_REACH_RULE,
     UNKNOWN,
     WIDEN_ACTION,
+    _CrossingCensus,
+    _CrossingScope,
     _terminal,
     cross_agreement,
 )
@@ -52,11 +55,10 @@ def _projected(declared: AgreementDeclaration | None):
         exit_code=0,
         payload={"verdict": "AgreementCrossed"},
         human="a verdict",
-        census=[],
-        verified_consumers=0,
-        repo_root=REPO_ROOT,
-        declaration=DECLARATION,
-        declared=declared,
+        census=_CrossingCensus(unverified=[], verified_consumers=0),
+        scope=_CrossingScope(
+            repo_root=REPO_ROOT, declaration=DECLARATION, declared=declared
+        ),
     )
 
 

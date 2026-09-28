@@ -77,9 +77,9 @@ to obtain them would spend twice for one number.
 
 **The two views differ in wall-clock and in essentially nothing else**, and
 saying so is not a caveat but the finding: the direct-DES install is deterministic
-Python, so an arm's setup contributes zero model
-tokens. A cold/warm split that implied two different cost figures would be
-inventing a distinction the mechanism does not have.
+Python, so an arm's setup contributes zero model tokens. A cold/warm split that
+implied two different cost figures would be inventing a distinction the mechanism
+does not have.
 """
 
 from __future__ import annotations
@@ -581,7 +581,14 @@ class DeclaredArmRun:
     delivery_ok: bool | None
 
 
-def execute_declared_arm_once(
+# Six parameters, of which FIVE are keyword-only, so there is no transposition to
+# prevent here at all. The two that a grouping would touch are independent optional
+# observation hooks, and folding them into one record would force both call sites to
+# construct it -- including `test_d0_single_arm_campaign.py`, which passes
+# `before_delivery` and nothing else and would have to name a record to go on
+# passing one callback. That is the same judgement already recorded for
+# `_make_entry`: grouping makes the thing worse to use and prevents no defect.
+def execute_declared_arm_once(  # noqa: PLR0913 - see the note above
     arm: ArmSpec,
     *,
     task: str,

@@ -22,6 +22,7 @@ from pathlib import Path
 from des.application.delivery_continuation import (
     DeliveryContinuationRunner,
     NativeEvidence,
+    NativeRun,
 )
 from des.domain.exercised_modules import INDETERMINATE, MEASURED
 
@@ -104,7 +105,7 @@ def test_a_pytest_run_that_drives_the_product_names_the_module_it_imported(
         root,
         (("pytest", "tests/test_value.py", "-q"),),
         root,
-        changed=("src/product/value.py",),
+        run=NativeRun(changed=("src/product/value.py",)),
     )
 
     item = _one(evidence)
@@ -129,7 +130,7 @@ def test_an_uv_run_pytest_that_drives_the_product_names_the_module_it_imported(
             "UV_CACHE_DIR": str(root / ".uv-cache"),
             "UV_NO_SYNC": "1",
         },
-        changed=("src/product/value.py",),
+        run=NativeRun(changed=("src/product/value.py",)),
     )
 
     item = _one(evidence)
@@ -148,7 +149,7 @@ def test_a_pytest_run_that_drives_only_a_stand_in_names_no_product_module(
         root,
         (("pytest", "tests/test_value.py", "-q"),),
         root,
-        changed=("src/product/value.py",),
+        run=NativeRun(changed=("src/product/value.py",)),
     )
 
     item = _one(evidence)
@@ -166,7 +167,7 @@ def test_a_pytest_session_that_never_finished_is_indeterminate_not_empty(
     root = _subject(tmp_path, DRIVES_PRODUCT)
 
     evidence = DeliveryContinuationRunner()._native(
-        root, (("pytest", "--no-such-option"),), root, changed=()
+        root, (("pytest", "--no-such-option"),), root, run=NativeRun(changed=())
     )
 
     item = _one(evidence)
@@ -182,7 +183,7 @@ def test_a_command_that_is_not_pytest_carries_no_exercise_claim(
     root = _subject(tmp_path, DRIVES_PRODUCT)
 
     evidence = DeliveryContinuationRunner()._native(
-        root, (("python", "-c", "print(1)"),), root, changed=()
+        root, (("python", "-c", "print(1)"),), root, run=NativeRun(changed=())
     )
 
     item = _one(evidence)
@@ -199,7 +200,7 @@ def test_the_evidence_record_delivers_all_three_facts(tmp_path: Path) -> None:
         root,
         (("pytest", "tests/test_value.py", "-q"),),
         root,
-        changed=("src/product/value.py",),
+        run=NativeRun(changed=("src/product/value.py",)),
     )
     assert isinstance(evidence, tuple)
 

@@ -25,7 +25,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from des.application.delivery_steps import DeliverySteps
+from des.application.delivery_steps import DecompositionInput, DeliverySteps
 from des.application.expectation_charter_producer import construct_or_reuse
 from des.application.handover import Blocked, acquire_delivery_lock, stored_handover
 from des.cli._document_scope_args import (
@@ -137,9 +137,9 @@ def main(argv: list[str] | None = None) -> int:
         finding, request = request, None
     outcome = DeliverySteps().decompose(
         root,
-        request,
-        finding,
-        operational_facts,
+        DecompositionInput(
+            request=request, finding=finding, operational_facts=operational_facts
+        ),
         feature=selected_scope(args),
         project=args.project,
     )

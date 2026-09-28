@@ -17,6 +17,7 @@ import pytest
 from des.application.delivery_continuation import (
     DeliveryContinuationRunner,
     DeliveryOutcome,
+    DesignOptions,
 )
 from des.application.handover import StoredHandover
 from des.ports.driven_ports.task_invocation_port import (
@@ -157,7 +158,11 @@ def test_changed_design_invalidates_old_author_and_craft_completion(
     runner, stored, d1 = _authored_and_crafted(subject, port)
 
     corrected = runner.design_value(
-        subject, port, stored, stored.values[0], finding="change the decision"
+        subject,
+        port,
+        stored,
+        stored.values[0],
+        options=DesignOptions(finding="change the decision"),
     )
     assert not isinstance(corrected, DeliveryOutcome), corrected
     stored, d2 = corrected
@@ -195,7 +200,11 @@ def test_identical_design_correction_keeps_completion_and_cheap_resume(
     port.next_design = _design("D1")  # byte-identical replacement
 
     corrected = runner.design_value(
-        subject, port, stored, stored.values[0], finding="repeat the same facts"
+        subject,
+        port,
+        stored,
+        stored.values[0],
+        options=DesignOptions(finding="repeat the same facts"),
     )
     assert not isinstance(corrected, DeliveryOutcome), corrected
     stored, d1_again = corrected
@@ -230,7 +239,11 @@ def test_changed_design_preserves_records_as_historical_without_ref_deletion(
 
     runner._git = deletion_hostile_git  # type: ignore[method-assign]
     corrected = runner.design_value(
-        subject, port, stored, stored.values[0], finding="change the decision"
+        subject,
+        port,
+        stored,
+        stored.values[0],
+        options=DesignOptions(finding="change the decision"),
     )
 
     assert not isinstance(corrected, DeliveryOutcome), corrected

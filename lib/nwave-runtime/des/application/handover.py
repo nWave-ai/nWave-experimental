@@ -474,23 +474,54 @@ def design_basis_sha256(shared: SharedDesign | None, value: HandoverValue) -> st
     ).hexdigest()
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class _CanonicalProjection:
+    """Which OPTIONAL members one canonical encoding of the handover carries.
+
+    Not a preference: persisted bytes must BE the canonical encoding, so every
+    shape a legacy file may still be in has to be reproducible exactly, and these
+    four members are the whole set of differences between those shapes.
+    ``include_acceptance`` is three-valued -- ``None`` carries the acceptance keys
+    of whichever value has any, which is what every current writer produces --
+    and ``include_scope`` selects the tagged ``scope`` key over the legacy bare
+    ``feature_id``.
+
+    Keyword-only because three of the four members are ``bool``: nothing here
+    checks annotations at runtime, so a positional transposition would encode one
+    shape where another was meant, and bytes nobody hand-edited could land in a
+    shape the ladder in :func:`read_handover` does not admit.
+    """
+
+    include_obligations: bool = True
+    include_acceptance: bool | None = None
+    include_authority_locator: bool = True
+    include_scope: bool = True
+
+
+#: The encoding every current writer produces: every optional member the value
+#: actually has, under the tagged scope key.  A module constant rather than a
+#: default-argument call, which ruff's B008 refuses.
+_WHOLE_ENCODING = _CanonicalProjection()
+
+
 def _canonical_bytes(
     request: str,
     values: tuple[HandoverValue, ...],
     *,
-    include_obligations: bool = True,
-    include_acceptance: bool | None = None,
-    include_authority_locator: bool = True,
     feature_id: str | None = None,
-    include_scope: bool = True,
     shared: SharedDesign | None = None,
+    projection: _CanonicalProjection = _WHOLE_ENCODING,
 ) -> bytes:
+    # Bound once, and under the projection's own name, because the acceptance
+    # decision is asked six times inside the value literal below.
+    include_acceptance = projection.include_acceptance
+
     def authority(value: str | DesignFacts | None) -> object:
         if isinstance(value, DesignFacts):
             return _facts_wire(
                 value,
-                include_obligations=include_obligations,
-                include_authority_locator=include_authority_locator,
+                include_obligations=projection.include_obligations,
+                include_authority_locator=projection.include_authority_locator,
             )
         return value
 
@@ -499,7 +530,7 @@ def _canonical_bytes(
             "request": request,
             **(
                 {"scope": scope_json(legacy_scope(feature_id))}
-                if include_scope
+                if projection.include_scope
                 else ({"feature_id": feature_id} if isinstance(feature_id, str) else {})
             ),
             "values": [
@@ -1062,7 +1093,7 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             request=request,
             values=stored,
             shared=shared,
-            include_scope=False,
+            projection=_CanonicalProjection(include_scope=False),
         ),
         _canonical_bytes(
             feature_id=feature_id, request=request, values=stored, shared=shared
@@ -1072,7 +1103,7 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             request=request,
             values=stored,
             shared=shared,
-            include_obligations=False,
+            projection=_CanonicalProjection(include_obligations=False),
         ),
         # Typed handovers from before the section-identity migration have no
         # authority_locator member.  They remain readable as external legacy
@@ -1082,15 +1113,16 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             request=request,
             values=stored,
             shared=shared,
-            include_authority_locator=False,
+            projection=_CanonicalProjection(include_authority_locator=False),
         ),
         _canonical_bytes(
             feature_id=feature_id,
             request=request,
             values=stored,
             shared=shared,
-            include_obligations=False,
-            include_authority_locator=False,
+            projection=_CanonicalProjection(
+                include_obligations=False, include_authority_locator=False
+            ),
         ),
         # Legacy handovers did not carry acceptance facts; their DESIGN facts
         # also predate the optional obligations member.
@@ -1099,16 +1131,18 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             request=request,
             values=stored,
             shared=shared,
-            include_acceptance=False,
+            projection=_CanonicalProjection(include_acceptance=False),
         ),
         _canonical_bytes(
             feature_id=feature_id,
             request=request,
             values=stored,
             shared=shared,
-            include_obligations=False,
-            include_acceptance=False,
-            include_authority_locator=False,
+            projection=_CanonicalProjection(
+                include_obligations=False,
+                include_acceptance=False,
+                include_authority_locator=False,
+            ),
         ),
         # Accept an early optional-field encoding so it can be changed by a
         # real fact update, but never force it onto an idempotent legacy retry.
@@ -1117,15 +1151,16 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             request=request,
             values=stored,
             shared=shared,
-            include_acceptance=True,
+            projection=_CanonicalProjection(include_acceptance=True),
         ),
         _canonical_bytes(
             feature_id=feature_id,
             request=request,
             values=stored,
             shared=shared,
-            include_acceptance=True,
-            include_authority_locator=False,
+            projection=_CanonicalProjection(
+                include_acceptance=True, include_authority_locator=False
+            ),
         ),
     ):
         return Blocked(
@@ -1185,15 +1220,50 @@ def _fsync_directory(
     return None
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AtomicReplaceWords:
+    """What a failed atomic replacement CALLS itself, in the caller's vocabulary.
+
+    ``unavailable`` and ``repair`` are the ``what`` and the ``how`` of every
+    storage failure the replacement reports; ``drift`` is the ``what`` of the
+    compare-and-swap refusal, and ``drift_subject`` names the bytes that moved,
+    in that refusal's ``why`` and in its ``how`` alike.
+
+    A PARAMETER and never a constant: THREE MODULES replace four artifacts over
+    SIX call sites -- this module's handover, the DESIGN authority, and the DEVOPS
+    authority beside its facts sidecar -- and each names its own drift, its own
+    repair and its own subject, so that a terminal sends the operator to the file
+    that actually moved.  Those artifacts are described by FOUR module constants
+    of these words, not three: ``operational_document_producer`` holds two,
+    ``_AUTHORITY_WORDS`` and ``_SIDECAR_WORDS``, one per file it writes.
+
+    Keyword-only because all four members are ``str``: nothing here checks
+    annotations at runtime, so a positional transposition would put a repair
+    sentence where a refusal's name belongs, and the terminal would carry a
+    ``what`` no reader can match on.
+    """
+
+    unavailable: str
+    repair: str
+    drift: str
+    drift_subject: str
+
+
+#: The one vocabulary every writer of .nwave/des/handover.json replaces under.
+_HANDOVER_REPLACE_WORDS = AtomicReplaceWords(
+    unavailable="HandoverUnavailable",
+    repair="restore handover storage",
+    drift="HandoverDrift",
+    drift_subject="handover",
+)
+
+
 def replace_exact_bytes(
     path: Path,
     expected: bytes | None,
     raw: bytes,
     *,
-    unavailable: str,
-    repair: str,
-    drift: str,
-    drift_subject: str = "stored bytes",
+    words: AtomicReplaceWords,
 ) -> Blocked | None:
     """Atomically replace ``path`` only when it still holds ``expected``.
 
@@ -1204,7 +1274,9 @@ def replace_exact_bytes(
     callers that update a second projection must report a mixed outcome rather
     than claim a transaction they do not own.
     """
-    temporary = _write_temporary(path, raw, unavailable=unavailable, repair=repair)
+    temporary = _write_temporary(
+        path, raw, unavailable=words.unavailable, repair=words.repair
+    )
     if isinstance(temporary, Blocked):
         return temporary
     try:
@@ -1214,23 +1286,25 @@ def replace_exact_bytes(
             actual = None
         if actual != expected:
             return Blocked(
-                drift,
-                f"{drift_subject} changed before atomic replace",
-                f"inspect {drift_subject} before restart",
+                words.drift,
+                f"{words.drift_subject} changed before atomic replace",
+                f"inspect {words.drift_subject} before restart",
                 refusal=True,
             )
         temporary.replace(path)
-        synced = _fsync_directory(path.parent, unavailable=unavailable, repair=repair)
+        synced = _fsync_directory(
+            path.parent, unavailable=words.unavailable, repair=words.repair
+        )
         if synced is not None:
             return Blocked(
-                unavailable,
+                words.unavailable,
                 "the complete replacement may now be visible but its directory "
                 f"could not be synced: {synced.why}",
-                repair,
+                words.repair,
             )
         return None
     except OSError as error:
-        return Blocked(unavailable, str(error), repair)
+        return Blocked(words.unavailable, str(error), words.repair)
     finally:
         try:
             temporary.unlink()
@@ -1497,13 +1571,7 @@ def rewrite_handover(
     if isinstance(validated, Blocked):
         return validated
     replaced = replace_exact_bytes(
-        handover_path(root),
-        expected,
-        raw,
-        unavailable="HandoverUnavailable",
-        repair="restore handover storage",
-        drift="HandoverDrift",
-        drift_subject="handover",
+        handover_path(root), expected, raw, words=_HANDOVER_REPLACE_WORDS
     )
     if replaced is not None:
         return replaced
@@ -1525,27 +1593,37 @@ def rewrite_constructed_handover(
     shared = _bound_shared(expected)
     raw = _canonical_bytes(request, values, feature_id=feature_id, shared=shared)
     replaced = replace_exact_bytes(
-        handover_path(root),
-        expected,
-        raw,
-        unavailable="HandoverUnavailable",
-        repair="restore handover storage",
-        drift="HandoverDrift",
-        drift_subject="handover",
+        handover_path(root), expected, raw, words=_HANDOVER_REPLACE_WORDS
     )
     if replaced is not None:
         return replaced
     return StoredHandover(request, values, raw, legacy_scope(feature_id), shared)
 
 
+@dataclass(frozen=True, slots=True)
+class BoundDesign:
+    """The DESIGN identity bound to ONE value: its facts and their full input.
+
+    ``semantic_sha256`` identifies the complete normalized constructor input the
+    facts were built from; ``None`` means the caller cannot name that input,
+    which keeps the facts-only comparison instead of clearing an identity nobody
+    claimed.  The two travel as one value because they are written in ONE
+    compare-and-swap and compared together when deciding a no-op: which input
+    produced these facts is part of the same fact about the value, not a second
+    one a caller may supply separately.
+    """
+
+    facts: DesignFacts
+    semantic_sha256: str | None = None
+
+
 def bind_design_facts(
     root: Path,
     stored: StoredHandover,
     position: int,
-    facts: DesignFacts,
+    design: BoundDesign,
     *,
     authority_persisted: bool = False,
-    semantic_sha256: str | None = None,
 ) -> StoredHandover | Blocked:
     """CAS the one facts projection after its authority section was persisted.
 
@@ -1565,14 +1643,15 @@ def bind_design_facts(
         )
     values = list(stored.values)
     current = values[position - 1]
-    if current.authority == facts and (
-        semantic_sha256 is None or current.design_semantic_sha256 == semantic_sha256
+    if current.authority == design.facts and (
+        design.semantic_sha256 is None
+        or current.design_semantic_sha256 == design.semantic_sha256
     ):
         return stored
     values[position - 1] = replace(
         current,
-        authority=facts,
-        design_semantic_sha256=semantic_sha256,
+        authority=design.facts,
+        design_semantic_sha256=design.semantic_sha256,
     )
     bound = rewrite_constructed_handover(
         root, stored.raw, stored.request, tuple(values)
@@ -1614,13 +1693,7 @@ def bind_shared_design(
     if isinstance(validated, Blocked):
         return validated
     replaced = replace_exact_bytes(
-        handover_path(root),
-        stored.raw,
-        raw,
-        unavailable="HandoverUnavailable",
-        repair="restore handover storage",
-        drift="HandoverDrift",
-        drift_subject="handover",
+        handover_path(root), stored.raw, raw, words=_HANDOVER_REPLACE_WORDS
     )
     if replaced is not None:
         return replaced

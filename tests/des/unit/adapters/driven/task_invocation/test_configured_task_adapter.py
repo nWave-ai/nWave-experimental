@@ -12,7 +12,11 @@ from des.adapters.driven.task_invocation.configured_task_adapter import (
     ConfiguredTaskAdapter,
     ModelRuntimeUnavailable,
 )
-from des.application.delivery_continuation import DeliveryContinuationRunner
+from des.application.delivery_continuation import (
+    DeliveryContinuationRunner,
+    FrozenHandover,
+    RoleTurn,
+)
 from des.domain.delivery_disposition import Disposition
 from des.ports.driven_ports.task_invocation_port import ModelOutcome
 
@@ -64,7 +68,10 @@ def test_runner_reports_selected_launcher_absence_without_provider_fallback(
         return_value=None,
     ):
         outcome = DeliveryContinuationRunner()._invoke(
-            adapter, tmp_path, "nw-product-owner", "x", None
+            adapter,
+            tmp_path,
+            RoleTurn(role="nw-product-owner", prompt="x"),
+            FrozenHandover(raw=None),
         )
 
     assert outcome.disposition is Disposition.Retry

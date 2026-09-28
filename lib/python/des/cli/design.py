@@ -23,7 +23,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from des.application.delivery_steps import DeliverySteps
+from des.application.delivery_steps import DeliverySteps, ReplacementModes
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.step_next import after_step, moves_after_refusal
 from des.cli.step_terminal import (
@@ -40,6 +40,25 @@ from des.domain.design_document import DesignDocument
 #: prose -- newlines, quotes, whatever it wrote -- so it travels on a stream and
 #: never through a shell argument that would have to be escaped to survive.
 STDIN = "-"
+
+
+def _modes(args: argparse.Namespace) -> ReplacementModes:
+    """The three replacement/recovery modes this invocation asked for.
+
+    Both document forms -- one value's and the shared section's -- read them off
+    the SAME namespace, so they are built once here rather than spelled out again
+    at each call.
+
+    NOT exclusive: all three are independent ``store_true`` flags added straight to
+    the parser, so any combination is accepted and nothing downstream enforces an
+    arity over them.  The one mutually exclusive group in this CLI is ``--value``
+    against ``--shared``.
+    """
+    return ReplacementModes(
+        replace_current=args.replace_current,
+        migrate_legacy_rendering=args.migrate_legacy_rendering,
+        replace_unbound=args.replace_unbound,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -140,13 +159,7 @@ def main(argv: list[str] | None = None) -> int:
                 (own.format(root=root),),
             )
         outcome = DeliverySteps().design_document(
-            root,
-            args.value,
-            manifest,
-            replace_current=args.replace_current,
-            migrate_legacy_rendering=args.migrate_legacy_rendering,
-            replace_unbound=args.replace_unbound,
-            feature=args.feature,
+            root, args.value, manifest, modes=_modes(args), feature=args.feature
         )
         if not outcome.succeeded:
             return refuse(
@@ -236,12 +249,7 @@ def _shared(args: argparse.Namespace, root: Path, own: str) -> int:
             move,
         )
     outcome = DeliverySteps().shared_design_document(
-        root,
-        manifest,
-        replace_current=args.replace_current,
-        migrate_legacy_rendering=args.migrate_legacy_rendering,
-        replace_unbound=args.replace_unbound,
-        feature=args.feature,
+        root, manifest, modes=_modes(args), feature=args.feature
     )
     if not outcome.succeeded:
         return refuse(

@@ -8,7 +8,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from des.application.handover import Blocked, StoredHandover, replace_exact_bytes
+from des.application.handover import (
+    AtomicReplaceWords,
+    Blocked,
+    StoredHandover,
+    replace_exact_bytes,
+)
 from des.domain.verification_authority_resolver import (
     AmbiguousAuthorityReference,
     UnresolvedAuthorityReference,
@@ -41,6 +46,18 @@ class PublishedDesignDocument:
     locator: str
     digest: str
     authority_persisted: bool
+
+
+#: What a failed replacement of the DESIGN authority calls itself.  The words
+#: are this producer's own, not the handover's: the file being replaced is a
+#: tracked architecture document, so naming its drift `HandoverDrift` would send
+#: an operator to inspect the wrong artifact.
+_AUTHORITY_WORDS = AtomicReplaceWords(
+    unavailable="DesignAuthorityUnavailable",
+    repair="restore authority storage; the complete replacement may already be visible",
+    drift="DesignAuthorityDrift",
+    drift_subject="authority",
+)
 
 
 def _tracked(root: Path, path: Path) -> bool | Blocked:
@@ -235,9 +252,8 @@ def judge_design_destination(
     from the handover through :func:`bound_authority_headings`.  The default
     empty set is the conservative rule: nothing was published, so an untracked
     destination carrying anything at all is refused.  Because it is decidable
-    BEFORE an
-    architect turn is bought, a caller that would otherwise pay for a turn and
-    then be refused can ask here first and refuse at zero cost -- printing the
+    BEFORE an architect turn is bought, a caller that would otherwise pay for a
+    turn and then be refused can ask here first and refuse at zero cost, printing the
     very same refusal bytes, because both callers compose the same private
     steps rather than two spellings of one rule.
 
@@ -285,18 +301,60 @@ def _blank_line_separator(snapshot: bytes) -> bytes:
     return last[len(last.rstrip(b"\r\n")) :]
 
 
+#: The empty heading set, bound once so the default is a named value rather than
+#: a `frozenset()` call in a signature, which is RUF009.
+_NO_PUBLISHED_HEADINGS: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DesignPublicationWidenings:
+    """The explicit widenings ONE invocation is authorized to apply.
+
+    Every field admits a write this publisher refuses by default, so the four
+    together are the whole of what a caller may loosen. Keyword-only, and that is
+    load-bearing rather than decorative: all four are `bool`, so a positional
+    permutation constructs cleanly and silently authorizes a different write.
+    Nothing here would catch it, because `typecheck` is executed by no workflow.
+    """
+
+    allow_untracked_recovery: bool = False
+    replace_current: bool = False
+    migrate_legacy_rendering: bool = False
+    replace_unbound: bool = False
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DesignAuthorityBinding:
+    """What this Request has ALREADY bound in the destination document.
+
+    Keyword-only for the same reason, though the swap here fails rather than
+    lies: a `str | None` and a `frozenset[str]` transposed would compare a set
+    against a locator and iterate a string as headings.
+    """
+
+    authority_locator: str | None = None
+    published_headings: frozenset[str] = _NO_PUBLISHED_HEADINGS
+
+
+#: The invocation that widens nothing and claims no prior binding.
+_NO_WIDENINGS = DesignPublicationWidenings()
+_UNBOUND_AUTHORITY = DesignAuthorityBinding()
+
+
 def publish_design_document(
     root: Path,
     destination: str,
     document: DesignAuthoritySection,
     *,
-    allow_untracked_recovery: bool = False,
-    replace_current: bool = False,
-    migrate_legacy_rendering: bool = False,
-    replace_unbound: bool = False,
-    authority_locator: str | None = None,
-    published_headings: frozenset[str] = frozenset(),
+    widenings: DesignPublicationWidenings = _NO_WIDENINGS,
+    binding: DesignAuthorityBinding = _UNBOUND_AUTHORITY,
 ) -> PublishedDesignDocument | Blocked:
+    allow_untracked_recovery = widenings.allow_untracked_recovery
+    replace_current = widenings.replace_current
+    migrate_legacy_rendering = widenings.migrate_legacy_rendering
+    replace_unbound = widenings.replace_unbound
+    authority_locator = binding.authority_locator
+    published_headings = binding.published_headings
     candidate = Path(destination)
     if candidate.is_absolute() or ".." in candidate.parts or not candidate.parts:
         return _unsafe_relative()
@@ -415,13 +473,7 @@ def publish_design_document(
             rendered = snapshot + _blank_line_separator(snapshot) + section
         if rendered != snapshot:
             replaced = replace_exact_bytes(
-                path,
-                existing,
-                rendered,
-                unavailable="DesignAuthorityUnavailable",
-                repair="restore authority storage; the complete replacement may already be visible",
-                drift="DesignAuthorityDrift",
-                drift_subject="authority",
+                path, existing, rendered, words=_AUTHORITY_WORDS
             )
             if replaced is not None:
                 return replaced

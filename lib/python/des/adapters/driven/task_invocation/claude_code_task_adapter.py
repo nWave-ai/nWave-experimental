@@ -34,7 +34,12 @@ from des.adapters.driven.task_invocation.model_envelope import (
     decode_model_run,
 )
 from des.adapters.driven.task_invocation.role_instructions import load_role_instructions
-from des.adapters.driven.task_invocation.turn_recorder import TurnRecorder
+from des.adapters.driven.task_invocation.turn_recorder import (
+    IssuedTurn,
+    TurnRecorder,
+    TurnResult,
+    TurnTiming,
+)
 from des.domain.agent_capability import (
     REPLY_CHANNEL_TOOLS,
     ClaimRegister,
@@ -170,7 +175,18 @@ class ClaudeCodeTaskAdapter(TaskInvocationPort):
         """The id naming this run's turn-record directory (diagnostic only)."""
         return self._recorder.run_id
 
-    def argv_for(
+    # Five of these six are the CALL's own declarations rather than this adapter's
+    # choices: `role_id`, `max_product_values`, `defect_values` and `semantic_task` are
+    # `TaskInvocationPort.invoke`'s per-call facts, and `role_instructions` is the
+    # preloaded knowledge one semantic task requires. Narrowing this means grouping them
+    # AT `invoke`, the DESIGN change the port's own note declines: 18 definitions and
+    # roughly 51 call sites. All six are keyword-only, so nothing here can be transposed.
+    #
+    # The sibling `CodexTaskAdapter.argv_for` reaches five instead, because the fields it
+    # groups into `CodexTurnPolicy` are Codex's own (sandbox, tool-free profile, model
+    # catalog) rather than the port's. The symmetric `ClaudeTurnPolicy` would churn this
+    # method's 12 test call sites, which is a change that wants its own review.
+    def argv_for(  # noqa: PLR0913 - see the note above
         self,
         *,
         role_id: str,
@@ -258,7 +274,9 @@ class ClaudeCodeTaskAdapter(TaskInvocationPort):
             argv[2:2] = ["--agent", role_id]
         return argv
 
-    def invoke(
+    # Arity is fixed by TaskInvocationPort.invoke, which this implements.
+    # Narrowing it here alone would break the contract.
+    def invoke(  # noqa: PLR0913 - see the note above
         self,
         *,
         role_id: str,
@@ -309,19 +327,19 @@ class ClaudeCodeTaskAdapter(TaskInvocationPort):
                 started=recorder_start, role_id=role_id
             )
             self._recorder.record(
-                root=cwd,
-                role_id=role_id,
-                prompt=prompt,
-                argv=captured["argv"],
-                outcome=ModelOutcome.Indeterminate.value,
-                diagnostic=f"{type(error).__name__}: {error}",
-                exit_status=-1,
-                retry_safe=False,
-                provider_stdout=captured["stdout"],
-                provider_stderr=captured["stderr"],
-                started_at=started_at,
-                ended_at=time.time(),
-                raised=type(error).__name__,
+                turn=IssuedTurn(
+                    root=cwd, role_id=role_id, prompt=prompt, argv=captured["argv"]
+                ),
+                result=TurnResult(
+                    outcome=ModelOutcome.Indeterminate.value,
+                    diagnostic=f"{type(error).__name__}: {error}",
+                    exit_status=-1,
+                    retry_safe=False,
+                    provider_stdout=captured["stdout"],
+                    provider_stderr=captured["stderr"],
+                    raised=type(error).__name__,
+                ),
+                timing=TurnTiming(started_at=started_at, ended_at=time.time()),
                 producer_projection=producer_projection,
             )
             raise
@@ -329,23 +347,26 @@ class ClaudeCodeTaskAdapter(TaskInvocationPort):
             started=recorder_start, role_id=role_id
         )
         self._recorder.record(
-            root=cwd,
-            role_id=role_id,
-            prompt=prompt,
-            argv=captured["argv"],
-            outcome=run.outcome.value,
-            diagnostic=run.diagnostic,
-            exit_status=run.exit_status,
-            retry_safe=run.retry_safe,
-            provider_stdout=captured["stdout"],
-            provider_stderr=captured["stderr"],
-            started_at=started_at,
-            ended_at=time.time(),
+            turn=IssuedTurn(
+                root=cwd, role_id=role_id, prompt=prompt, argv=captured["argv"]
+            ),
+            result=TurnResult(
+                outcome=run.outcome.value,
+                diagnostic=run.diagnostic,
+                exit_status=run.exit_status,
+                retry_safe=run.retry_safe,
+                provider_stdout=captured["stdout"],
+                provider_stderr=captured["stderr"],
+            ),
+            timing=TurnTiming(started_at=started_at, ended_at=time.time()),
             producer_projection=producer_projection,
         )
         return run
 
-    def _run_turn(
+    # Arity is TaskInvocationPort.invoke's six arguments plus the `captured`
+    # evidence map this seam fills. It cannot be narrower than the contract it
+    # carries; see the note on `invoke` above.
+    def _run_turn(  # noqa: PLR0913 - see the note above
         self,
         *,
         role_id: str,

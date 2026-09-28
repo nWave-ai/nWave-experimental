@@ -15,6 +15,7 @@ import socket
 import stat
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -285,7 +286,11 @@ def _bootstrap_value(
     )
 
 
-def _design(
+# 47 in-file call sites, and the three booleans are the CLI's own flags
+# (--replace-current, --migrate-legacy-rendering, --replace-unbound) forwarded
+# verbatim to `des design`. Grouping them would name a record on the test side
+# that the command line does not have.
+def _design(  # noqa: PLR0913 - see the note above
     root: Path,
     environment: dict[str, str],
     manifest: dict,
@@ -2115,10 +2120,22 @@ ROLE_TURN_FINDING = (
 )
 
 
+@dataclass(frozen=True, kw_only=True)
+class _ArchitectWorkspace:
+    """WHERE one real architect turn runs: its repository and its scratch dir.
+
+    Keyword-only: both fields are `Path`, so a positional pair constructs cleanly
+    with the two swapped and the turn then runs against the scratch directory as
+    though it were the repository. Nothing here checks that at runtime.
+    """
+
+    root: Path
+    tmp_path: Path
+
+
 def _design_turn(
-    root: Path,
+    workspace: _ArchitectWorkspace,
     environment: dict[str, str],
-    tmp_path: Path,
     facts: dict | None,
     *,
     label: str,
@@ -2132,6 +2149,8 @@ def _design_turn(
     derivable from those typed facts alone.  The returned log path lets a caller
     prove a turn was, or was not, bought.
     """
+    root = workspace.root
+    tmp_path = workspace.tmp_path
     results, turns, counter = (
         tmp_path / f"{label}-answers.json",
         tmp_path / f"{label}-turns.json",
@@ -2228,7 +2247,10 @@ def test_the_design_turn_publishes_the_section_its_record_names(
     expected_locator = f"{REPOSITORY_DESTINATION}#Widget color"
 
     code, out, err, turns = _design_turn(
-        root, environment, tmp_path, ROLE_TURN_FACTS, label="role"
+        _ArchitectWorkspace(root=root, tmp_path=tmp_path),
+        environment,
+        ROLE_TURN_FACTS,
+        label="role",
     )
     rows = _terminal(out, err)
     published = authority.read_bytes()
@@ -2328,7 +2350,10 @@ def test_the_design_turn_publishes_the_section_its_record_names(
     }
 
     gap_code, gap_out, gap_err, _gap_turns = _design_turn(
-        gap_root, environment, gap_workspace, gap_facts, label="gap"
+        _ArchitectWorkspace(root=gap_root, tmp_path=gap_workspace),
+        environment,
+        gap_facts,
+        label="gap",
     )
     gap_rows = _terminal(gap_out, gap_err)
     gap_transcript = _words(gap_out + "\n" + gap_err)

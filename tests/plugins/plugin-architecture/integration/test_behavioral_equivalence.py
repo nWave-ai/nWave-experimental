@@ -256,7 +256,11 @@ def test_installation_snapshot_captures_all_files(
     )
 
 
-def test_identical_installations_produce_matching_snapshots(
+# Every parameter here is a pytest FIXTURE, so the arity is pytest's and not ours.
+# KEYWORD-ONLY because pytest injects fixtures by name, verified by probe, which takes
+# the positional count to zero and leaves PLR0917 nothing to report.
+def test_identical_installations_produce_matching_snapshots(  # noqa: PLR0913 - see the note above
+    *,
     plugin_registry: PluginRegistry,
     install_context: InstallContext,
     project_root: Path,
