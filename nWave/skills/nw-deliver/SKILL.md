@@ -9,6 +9,10 @@ argument-hint: '<request>'
 Before creating or inheriting a lane, or finalizing/resuming its cleanup,
 apply the worktree lifecycle in `nw-throughput`. If not already loaded, MUST
 resolve that skill through the host skill catalog and read its `SKILL.md`.
+Before authoring tests or changing code, load `nw-auto` and report the
+existing test baseline for the affected work to the user as required by its
+visible-baseline rule. A broken setup is not an intentional feature RED.
+
 
 Interactive, one step at a time:
 ```bash

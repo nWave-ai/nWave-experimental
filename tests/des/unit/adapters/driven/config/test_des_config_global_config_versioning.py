@@ -48,6 +48,41 @@ REAL_V0_MINIMAL_EXAMPLE = {
 REAL_V0_ACTIVATION_EXAMPLE = {"activation": {"mode": "opt-in"}}
 
 
+def test_effective_config_sources_follow_valid_fields_without_writing(tmp_path):
+    global_path = tmp_path / "global.json"
+    project_path = tmp_path / ".nwave" / "config.json"
+    project_path.parent.mkdir()
+    global_path.write_text(
+        json.dumps({"enabled": True, "verbosity": "verbose", "attribution": "on"}),
+        encoding="utf-8",
+    )
+    project_path.write_text(
+        json.dumps({"enabled": False, "verbosity": 4, "attribution": "off"}),
+        encoding="utf-8",
+    )
+    original_global = global_path.read_bytes()
+    original_project = project_path.read_bytes()
+
+    config = DESConfig(config_path=project_path, global_config_path=global_path)
+    values, sources = config.effective_config_with_sources()
+
+    assert values == {
+        "enabled": False,
+        "verbosity": "verbose",
+        "attribution": False,
+        "documents": {},
+    }
+    assert sources == {
+        "enabled": "project",
+        "verbosity": "global",
+        "attribution": "project",
+        "documents": "default",
+    }
+    assert config.effective_config() == values
+    assert global_path.read_bytes() == original_global
+    assert project_path.read_bytes() == original_project
+
+
 class TestLegacyGlobalConfigIsUpcast:
     def test_real_v0_minimal_example_still_reads_correct_defaults(self, tmp_path):
         """The real v3.21.0 minimal file carries no `attribution` key -- the

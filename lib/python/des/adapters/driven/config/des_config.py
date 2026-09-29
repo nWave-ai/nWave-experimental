@@ -19,7 +19,11 @@ from des.adapters.driven.config.repository_config_root import (
 )
 from des.domain.artifact_versioning import ArtifactVersioningKernel
 from des.domain.blast_radius import BlastRadiusConfigRejected, BlastRadiusThresholds
-from des.domain.config_merge import declared_enabled, merge_config
+from des.domain.config_merge import (
+    declared_enabled,
+    merge_config,
+    merge_config_with_sources,
+)
 from des.domain.document_scope import DocumentScope, Epic, Feature, Project, Slice
 from des.domain.feature_documents import (
     DEFAULT_TEMPLATES,
@@ -651,6 +655,13 @@ class DESConfig:
         """
         global_upcast, repo_upcast = self._unified_upcast_tiers()
         return merge_config(global_upcast, repo_upcast)
+
+    def effective_config_with_sources(
+        self,
+    ) -> tuple[dict[str, Any], dict[str, str]]:
+        """Read effective config and its per-field project/global/default provenance."""
+        global_upcast, repo_upcast = self._unified_upcast_tiers()
+        return merge_config_with_sources(global_upcast, repo_upcast)
 
     @property
     def attribution_enabled(self) -> bool:

@@ -34,7 +34,6 @@ def test_bootstrap_constructs_two_versioned_authorities_from_empty_roots(
             "enabled": True,
             "trailer": "Co-Authored-By: nWave <nwave@nwave.ai>",
         },
-        "documentation": {"density": "lean", "expansion_prompt": "ask-intelligent"},
     }
     assert json.loads(result.repo_path.read_text()) == {
         "audit_log_dir": ".nwave/des/logs",
@@ -63,9 +62,54 @@ def test_bootstrap_coalesces_the_two_tiers_when_an_isolated_root_is_both(
             "enabled": True,
             "trailer": "Co-Authored-By: nWave <nwave@nwave.ai>",
         },
-        "documentation": {"density": "lean", "expansion_prompt": "ask-intelligent"},
         "schema-version": 1,
     }
+
+
+def test_explicit_writes_retire_only_update_check_and_preserve_preferences(
+    tmp_path: Path,
+) -> None:
+    home, repo = tmp_path / "home", tmp_path / "repo"
+    repo.mkdir()
+    writer = ConfigWriter(home_dir=home, repo_root=repo)
+    _write(
+        writer.global_path,
+        {
+            "update_check": {"frequency": "weekly"},
+            "documentation": {"density": "full", "expansion_prompt": "always-expand"},
+            "attribution": {"enabled": False, "trailer": "Custom"},
+            "model_runtime": {"default": {"provider": "openai", "model": "gpt-4"}},
+            "custom": {"retained": True},
+        },
+    )
+    _write(
+        writer.repo_path,
+        {
+            "update_check": {"frequency": "daily"},
+            "model_runtime": {
+                "roles": {"reviewer": {"provider": "openai", "model": "gpt-4"}}
+            },
+            "custom": {"retained": True},
+        },
+    )
+
+    writer.update_global(lambda config: config.update(verbosity="verbose"))
+    writer.update_repo(lambda config: config.update(enabled=True))
+    global_config = json.loads(writer.global_path.read_text())
+    repo_config = json.loads(writer.repo_path.read_text())
+
+    assert "update_check" not in global_config
+    assert "update_check" not in repo_config
+    assert global_config["documentation"] == {
+        "density": "full",
+        "expansion_prompt": "always-expand",
+    }
+    assert global_config["attribution"] == {"enabled": False, "trailer": "Custom"}
+    assert global_config["model_runtime"] == {
+        "default": {"provider": "openai", "model": "gpt-4"}
+    }
+    assert repo_config["model_runtime"]["roles"]["reviewer"]["model"] == "gpt-4"
+    assert global_config["custom"] == repo_config["custom"] == {"retained": True}
 
 
 def test_migration_preserves_values_backs_up_and_retires_every_legacy_source(

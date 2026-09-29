@@ -5,6 +5,10 @@ user-invocable: true
 argument-hint: '<observed defect>'
 ---
 # NW-BUGFIX
+Before authoring regression tests or changing code, load `nw-auto` and report
+the affected project's existing test baseline to the user as required by its
+visible-baseline rule. A broken setup is not the bug's intentional RED.
+
 Set the observed defect as `$REQUEST`:
 Interactive, one step at a time:
 ```bash

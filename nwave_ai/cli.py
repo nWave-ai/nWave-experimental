@@ -5,7 +5,6 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Literal
 
 
 _DISTRIBUTION_ROOT = str(Path(__file__).resolve().parent.parent)
@@ -125,114 +124,12 @@ from scripts.install.attribution_utils import (  # noqa: E402
     cleanup_legacy_attribution_hook,
     migrate_legacy_hook,
     migrate_legacy_settings_attribution,
-    read_attribution_preference,
     read_global_config,
     write_attribution_preference,
     write_global_config,
 )
-from scripts.shared.density_config import resolve_density  # noqa: E402
-from scripts.shared.install_paths import (  # noqa: E402
-    GLOBAL_CONFIG_FILENAME,
-    nwave_config_dir,
-)
+from scripts.shared.install_paths import nwave_config_dir  # noqa: E402
 from scripts.shared.version import VersionResolutionError  # noqa: E402
-
-
-# ---------------------------------------------------------------------------
-# First-install documentation density preference
-# ---------------------------------------------------------------------------
-
-
-DensityPromptOutcome = Literal[
-    "prompted",  # interactive prompt fired, user picked
-    "default_silent",  # CI / --yes -> silent lean default
-    "upgrade_silent",  # existing config without documentation key
-    "noop_already_configured",  # documentation.density already set
-]
-
-
-def _prompt_density_choice() -> str:
-    """Ask Marco once, interactively, which density to use.
-
-    Returns "lean" or "full". Default if user just presses enter is "lean".
-    Wrapped in its own function so unit tests can mock the I/O without faking
-    typer's prompt machinery.
-    """
-    import typer
-
-    print("Documentation density: lean (experienced) / full (first feature)?")
-    raw_answer: str = typer.prompt("Choice", default="lean")
-    answer = raw_answer.strip().lower()
-    if answer not in {"lean", "full"}:
-        # Unknown reply -> default to lean rather than loop forever.
-        # (DELIVER scope: keep simple; rich validation deferred.)
-        return "lean"
-    return answer
-
-
-def handle_install_density_prompt(
-    config_dir: Path,
-    *,
-    non_interactive: bool,
-) -> DensityPromptOutcome:
-    """Set a first-install density preference unless already configured.
-
-    Existing configuration is checked before any write. A configured density
-    is left untouched; an existing file without density gets a silent lean
-    default. A fresh installation prompts only when interactive.
-
-    Args:
-        config_dir: ~/.nwave directory (created lazily by writers).
-        non_interactive: True when `--yes` was passed or stdin is not a TTY.
-
-    Returns:
-        Outcome literal describing which branch fired (helps callers log).
-    """
-    config_path = config_dir / GLOBAL_CONFIG_FILENAME
-    config_file_exists = config_path.exists()
-    existing_config = read_global_config(config_dir) if config_file_exists else {}
-    resolve_density(existing_config)
-    documentation_block = existing_config.get("documentation", {})
-
-    # Case 1: density already set -> idempotent no-op.
-    if documentation_block.get("density") is not None:
-        return "noop_already_configured"
-
-    # Case 2: config exists but no documentation block -> silent default.
-    if config_file_exists:
-        _write_density_choice(config_dir, choice="lean")
-        return "upgrade_silent"
-
-    # Case 3: fresh install + non-interactive -> silent default.
-    if non_interactive:
-        _write_density_choice(config_dir, choice="lean")
-        return "default_silent"
-
-    # Case 4: fresh install + interactive -> prompt.
-    choice = _prompt_density_choice()
-    _write_density_choice(config_dir, choice=choice)
-    return "prompted"
-
-
-def _write_density_choice(config_dir: Path, *, choice: str) -> None:
-    """Persist the chosen density alongside `expansion_prompt: ask-intelligent`.
-
-    Uses read-modify-write to preserve unrelated keys (e.g. attribution).
-    Per Decision 4 (2026-04-28), the fresh-install expansion prompt default
-    is `ask-intelligent` (scoped trigger-based menu) — only Tier-2 items
-    that match a fired trigger are shown to the user. This replaces the
-    older broad `ask` default that surfaced the entire 8-item catalog.
-    """
-    # A fresh public install creates the bundled DES runtime after this CLI
-    # module was imported. Refresh sys.path before the shared writer imports
-    # ConfigWriter from that newly installed runtime.
-    _ensure_des_importable()
-    config = read_global_config(config_dir)
-    documentation_block = config.get("documentation", {})
-    documentation_block["density"] = choice
-    documentation_block.setdefault("expansion_prompt", "ask-intelligent")
-    config["documentation"] = documentation_block
-    write_global_config(config_dir, config)
 
 
 def _refuse_version_resolution(exc: VersionResolutionError) -> int:
@@ -421,43 +318,13 @@ def _extract_target_flag(
     return (resolved, remaining, None)
 
 
-def _announce_density_upgrade(config_dir: Path, outcome: str) -> None:
-    """Print the one-line upgrade notice, for EVERY path that runs the prompt.
-
-    ``--density-only`` exists to drive exactly this behaviour, so a notice only
-    the full-install path emitted made the driving surface quieter than the one
-    it stands in for: the flag reported success having skipped the observable it
-    was added to exercise.
-    """
-    if outcome != "upgrade_silent":
-        return
-    config_path = config_dir / GLOBAL_CONFIG_FILENAME
-    print(
-        "Documentation density default 'lean' written to "
-        f"{config_path} (existing configuration upgraded)."
-    )
-
-
 def _handle_install(args: list[str]) -> int:
-    """Run the installer and set a first-install density preference.
+    """Run the installer without prompting for inert documentation density.
 
-    Invalid existing documentation preferences refuse installation before
-    either the installer or the density preference can write user state.
-
-    Flags handled here:
-        --platform <tool>  target agentic tool to provision for
-                           (claude-code / codex / opencode). Forwarded
-                           unchanged to install_nwave.py; this is the
-                           entry point the cross-OS RC smoke matrix depends
-                           on (ADR-PLAT-007).
-        --target <path>    install into <path> instead of ~/.claude/
-                           (sets CLAUDE_CONFIG_DIR for the subprocess; see
-                           ADR-001). $HOME is refused with exit 2.
-        --yes              non-interactive (CI / silent default)
-        --density-only     run ONLY the density prompt and exit (test driving
-                           port for acceptance tests; never a user flag)
-
-    All other args (including --platform) pass through to install_nwave.py.
+    ``--yes`` bypasses interactive project guidance prompts; ``--platform``
+    and other installer arguments pass through unchanged. ``--target`` selects
+    a Claude Code profile, with ``$HOME`` refused as an unsafe target. An
+    invalid active wave-end expansion preference refuses before installation.
     """
     # The installer already owns this subcommand's public help text.  Dispatch
     # it before parsing targets or constructing any write-capable preflight so
@@ -472,28 +339,29 @@ def _handle_install(args: list[str]) -> int:
     if target is not None:
         os.environ["CLAUDE_CONFIG_DIR"] = str(target)
 
-    pass_through_args: list[str] = []
-    non_interactive = False
-    density_only = False
+    pass_through_args = [arg for arg in args if arg != "--yes"]
+    non_interactive = "--yes" in args or not sys.stdin.isatty()
 
-    for arg in args:
-        if arg == "--yes":
-            non_interactive = True
-            # Don't forward --yes to install_nwave.py (it doesn't recognise it).
-            continue
-        if arg == "--density-only":
-            density_only = True
-            continue
-        pass_through_args.append(arg)
+    # A completed wave reads expansion_prompt, so reject an invalid explicit
+    # choice before installing. Legacy density is not an install control.
+    try:
+        config_dir = _require_mutating_config_dir()
+        documentation = read_global_config(config_dir).get("documentation")
+        if isinstance(documentation, dict) and "expansion_prompt" in documentation:
+            from scripts.shared.density_config import resolve_density
 
-    # Detect non-interactive mode from environment if not explicit.
-    if not non_interactive and not sys.stdin.isatty():
-        non_interactive = True
+            resolve_density(
+                {
+                    "documentation": {
+                        "expansion_prompt": documentation["expansion_prompt"]
+                    }
+                }
+            )
+    except ValueError as error:
+        print(f"nwave-ai: {error}", file=sys.stderr)
+        return 1
 
-    # The public entry point owns the first possible write (the density
-    # preference below).  Refuse unsafe Codex ownership before that write, so
-    # an invalid manifest, hook document, or reserved-path collision leaves
-    # the complete user state byte-identical.
+    # Refuse unsafe Codex ownership before installation writes user state.
     from scripts.install.install_nwave import (
         NWaveInstaller,
         _resolve_platform_override,
@@ -518,26 +386,6 @@ def _handle_install(args: list[str]) -> int:
             user_project_root=caller_project_root,
         )
 
-    # The density preference is a CLI-owned write that follows installer
-    # preflight. Resolve its destination strictly before either density-only
-    # or full installation can persist user state.
-    try:
-        config_dir = _require_mutating_config_dir()
-    except ValueError as error:
-        return _refuse_mutating_location(error)
-    try:
-        resolve_density(read_global_config(config_dir))
-    except ValueError as error:
-        print(f"nwave-ai: {error}", file=sys.stderr)
-        return 1
-
-    if density_only:
-        outcome = handle_install_density_prompt(
-            config_dir=config_dir, non_interactive=non_interactive
-        )
-        _announce_density_upgrade(config_dir, outcome)
-        return 0
-
     # The installer runs from its packaged source root so it can find its
     # assets. Preserve the caller's repository separately: configuration and
     # generated guidance belong to that user project, never the source tree.
@@ -548,12 +396,6 @@ def _handle_install(args: list[str]) -> int:
     )
     if result != 0:
         return result
-
-    outcome = handle_install_density_prompt(
-        config_dir=config_dir, non_interactive=non_interactive
-    )
-
-    _announce_density_upgrade(config_dir, outcome)
 
     # ADR-CFG-001 Slice 2: sync the managed guidance section into the
     # installed surface (same directory install just populated with
@@ -701,47 +543,31 @@ def _handle_attribution(args: list[str]) -> int:
         return 0
 
     if action == "status":
-        config_dir = _get_config_dir()
-        # ADR-CA-007: the EFFECTIVE attribution scope is the preference
-        # (attribution.enabled) AND this repo's resolved activation. Report
-        # BOTH so a user can tell on+active from on+inactive. Reuse the
-        # canonical resolve_activation policy over the marker + global mode —
-        # never re-derive it here (DDD discipline, mirrors the doctor check).
-        preference = read_attribution_preference(config_dir)
-        if preference is True:
-            print("Attribution is currently on.")
-            active = _repo_attribution_active()
-            scope = "active" if active else "inactive"
-            print(f"Attribution is {scope} for this repo.")
-        else:
+        from des.adapters.driven.config.des_config import DESConfig
+        from des.domain.activation_policy import resolve_activation
+
+        try:
+            config = DESConfig(cwd=Path.cwd())
+            effective, sources = config.effective_config_with_sources()
+            active = resolve_activation(config.enabled_for_repo, config.activation_mode)
+        except Exception:
+            # A diagnostic cannot claim credit when the config cannot be read.
             print("Attribution is currently off.")
+            print("Attribution is inactive for this repo.")
+            return 0
+
+        print(
+            f"Attribution is currently {'on' if effective['attribution'] else 'off'}."
+        )
+        print(f"Preference source: {sources['attribution']}.")
+        print(
+            f"Attribution is {'active' if active and effective['attribution'] else 'inactive'} for this repo."
+        )
         return 0
 
     print(f"Unknown attribution action: {action}", file=sys.stderr)
     print("Usage: nwave-ai attribution <on|off|status>", file=sys.stderr)
     return 1
-
-
-def _repo_attribution_active() -> bool:
-    """Resolve THIS repo's activation, failing to INACTIVE on a read error.
-
-    Reuses the canonical ``resolve_activation`` policy over the two scalars the
-    ``DESConfig`` reader exposes (marker ``enabled_for_repo`` + global
-    ``activation.mode``) — the policy is NOT re-derived here (mirrors the
-    activation-aware doctor check).
-
-    On a config-read exception we fail to INACTIVE (return False), matching the
-    activation gate's fail-to-inactive-under-opt-in semantics: a diagnostic must
-    never be more optimistic than the enforcement gate.
-    """
-    try:
-        from des.adapters.driven.config.des_config import DESConfig
-        from des.domain.activation_policy import resolve_activation
-
-        config = DESConfig(cwd=Path.cwd())
-        return resolve_activation(config.enabled_for_repo, config.activation_mode)
-    except Exception:
-        return False
 
 
 def _handle_doctor(args: list[str]) -> int:
@@ -1141,7 +967,9 @@ def _print_usage(version: str) -> int:
     print("  plugin         Manage tool plugins (install/uninstall/list)")
     print("  project        Enable, disable, or configure nWave for this project")
     print("  mode           Set the global activation mode (all/opt-in)")
-    print("  status         Show global mode and this project's resolved state")
+    print(
+        "  status         Show this project's effective configuration and host assets"
+    )
     print("  completion     Print a shell-completion script (bash/zsh)")
     print("  update --check Discover the latest stable public release")
     print("  version        Show nwave-ai version")
@@ -1384,16 +1212,18 @@ def _handle_mode(args: list[str]) -> int:
 
 
 def _handle_status(args: list[str]) -> int:
-    """Handle 'status' — print global mode + resolved state (read-only)."""
-    from des.adapters.driven.config.des_config import DESConfig
-    from des.domain.activation_policy import resolve_activation
+    """Show the selected project's effective settings without writes or network."""
+    from nwave_ai.status import render_status
 
-    config = DESConfig(cwd=Path.cwd())
-    mode = config.activation_mode
-    active = resolve_activation(config.enabled_for_repo, mode)
-    state = "active" if active else "inactive"
-    print(f"Global activation mode: {mode}")
-    print(f"This project is {state}.")
+    try:
+        report = render_status(Path.cwd())
+    except ValueError as exc:
+        print(
+            f"WHAT: status unavailable. WHY: {exc}. HOW: fix the selected home override.",
+            file=sys.stderr,
+        )
+        return 1
+    print(report)
     return 0
 
 

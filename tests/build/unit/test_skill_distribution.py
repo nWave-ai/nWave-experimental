@@ -249,6 +249,27 @@ class TestCopySkillsToTarget:
             assert target_skill.is_dir()
             assert (target_skill / "SKILL.md").exists()
 
+    def test_does_not_publish_generated_python_bytecode(
+        self, flat_source: Path, tmp_path: Path
+    ) -> None:
+        skill_scripts = flat_source / "nw-tdd-methodology" / "scripts"
+        cache = skill_scripts / "__pycache__"
+        cache.mkdir(parents=True)
+        (skill_scripts / "helper.py").write_text("print('ready')\n", encoding="utf-8")
+        (skill_scripts / "helper.pyc").write_bytes(b"compiled")
+        (cache / "helper.cpython-312.pyc").write_bytes(b"compiled")
+
+        target = tmp_path / "target"
+        target.mkdir()
+        copy_skills_to_target(enumerate_skills(flat_source), target)
+
+        published_scripts = target / "nw-tdd-methodology" / "scripts"
+        assert (published_scripts / "helper.py").read_text(encoding="utf-8") == (
+            "print('ready')\n"
+        )
+        assert not (published_scripts / "helper.pyc").exists()
+        assert not (published_scripts / "__pycache__").exists()
+
     def test_returns_zero_for_empty_entries(self, tmp_path: Path) -> None:
         target = tmp_path / "target"
         target.mkdir()

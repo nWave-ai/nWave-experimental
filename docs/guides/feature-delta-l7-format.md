@@ -404,51 +404,21 @@ git merge ../feature-distill
 
 ---
 
-## Density control and section types
+## Section types and documentation preferences
 
-The density setting controls which section types are auto-produced:
+`[REF]`, `[WHY]`, and `[HOW]` identify the purpose of a section. Choose
+sections from the facts the document must retain, not from
+`documentation.density`: that retained preference does not change wave
+output. There is no shipped `--expand` CLI flag that adds a section.
 
-| Density | Auto-produced | Available via `--expand` |
-|---------|---|---|
-| `lean` | `[REF]` only | `[WHY]`, `[HOW]` (per expansion ID) |
-| `full` | `[REF]` + `[WHY]` + `[HOW]` | All (already present) |
+`documentation.expansion_prompt` affects only an assistant's optional
+explanation **after a completed wave**. It does not edit `feature-delta.md`
+or generate `[WHY]`/`[HOW]` sections. Ask the assistant directly for more
+detail; change accepted documents through their normal authoring process.
 
-**Example**: When density is `lean`, DISCUSS produces:
-
-```markdown
-## Wave: DISCUSS / [REF] Persona
-## Wave: DISCUSS / [REF] Job-to-be-done
-## Wave: DISCUSS / [REF] User stories
-```
-
-If you request `--expand jtbd-narrative`, DISCUSS adds:
-
-```markdown
-## Wave: DISCUSS / [WHY] JTBD narrative
-```
-
----
-
-## Expansion catalog: Making optional content discoverable
-
-Each wave lists available expansions in an `[REF]` section called `Expansion catalog`:
-
-```markdown
-## Wave: DISCUSS / [REF] Expansion catalog
-
-| Expansion ID | Type | One-line description |
-|---|---|---|
-| `jtbd-narrative` | [WHY] | Full Job-to-be-Done analysis with four forces |
-| `persona-narrative` | [WHY] | Extended persona (goals, frustrations, environment) |
-| `alternatives-considered` | [WHY] | Design alternatives weighed and rejected |
-| `migration-playbook` | [HOW] | Procedural notes for migrating existing surfaces |
-```
-
-**When authoring expansions**:
-
-1. Add the expansion section to `feature-delta.md` (e.g., `## Wave: DISCUSS / [WHY] JTBD narrative`)
-2. Register it in the Expansion catalog table with a one-line description
-3. Test with the validator: `des validate-feature-delta ...`
+If an authored feature uses an `[REF] Expansion catalog`, its entries are
+references to documented optional sections, not an automatically populated
+menu or a commitment that every wave produces one.
 
 ---
 
@@ -563,5 +533,5 @@ grep "^## Wave: DISCUSS / \[REF\] Expansion catalog" -A 20 feature-delta.md
 ## Related documentation
 
 - **[Feature directory format reference](../reference/feature-format.md)** — bimodal layout details and schema
-- **[How to configure documentation density](configuring-doc-density.md)** — control lean vs full output
+- **[Legacy documentation density preferences](configuring-doc-density.md)** — diagnostic-only; do not change wave output
 - **[nWave Global Config Reference](../reference/global-config.md)** — all configuration options

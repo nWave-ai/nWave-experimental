@@ -60,17 +60,11 @@ class ConfigWriter:
         "audit_logging_enabled": True,
         "audit_log_dir": ".nwave/des/logs",
     }
-    # These are published on a first install, rather than being implicit
-    # reader fallbacks.  The same selected-home document is subsequently read
-    # by CLI status, doctor, rendered guidance, and the installed hook.
+    # Only operational preferences are published on first install.
     _GLOBAL_DEFAULTS: dict[str, Any] = {
         "attribution": {
             "enabled": True,
             "trailer": "Co-Authored-By: nWave <nwave@nwave.ai>",
-        },
-        "documentation": {
-            "density": "lean",
-            "expansion_prompt": "ask-intelligent",
         },
     }
 
@@ -125,12 +119,16 @@ class ConfigWriter:
             legacy_repo = {**legacy_repo, "enabled": value}
 
         global_doc = self._versioned(
-            self._with_global_defaults(
-                self._reconcile(existing_global, legacy_global, global_legacy)
+            self._without_retired_update_check(
+                self._with_global_defaults(
+                    self._reconcile(existing_global, legacy_global, global_legacy)
+                )
             )
         )
         repo_doc = self._versioned(
-            self._reconcile(existing_repo, legacy_repo, repo_legacy)
+            self._without_retired_update_check(
+                self._reconcile(existing_repo, legacy_repo, repo_legacy)
+            )
         )
         if not existing_repo and not legacy_repo:
             repo_doc = self._versioned({**repo_doc, **self._REPO_DEFAULTS})
@@ -400,7 +398,7 @@ class ConfigWriter:
     def _commit_authority(
         self, path: Path, document: dict[str, Any], legacy_paths: tuple[Path, ...]
     ) -> dict[str, Any]:
-        versioned = self._versioned(document)
+        versioned = self._versioned(self._without_retired_update_check(document))
         old = path.read_bytes() if path.exists() else None
         legacy_bytes = {
             legacy: legacy.read_bytes() for legacy in legacy_paths if legacy.exists()
@@ -449,7 +447,7 @@ class ConfigWriter:
     ) -> dict[str, Any]:
         merged_overrides: dict[str, Any] = {}
         for key in existing.keys() & legacy.keys():
-            if key == "schema-version":
+            if key in ("schema-version", "update_check"):
                 continue
             if key == "attribution":
                 merged_overrides["attribution"] = cls._reconcile_attribution(
@@ -511,6 +509,11 @@ class ConfigWriter:
         if not legacy_extra:
             return existing_value
         return {**translated_legacy, **translated_existing}
+
+    @staticmethod
+    def _without_retired_update_check(document: dict[str, Any]) -> dict[str, Any]:
+        """Retire the inert preference only when publishing a config document."""
+        return {key: value for key, value in document.items() if key != "update_check"}
 
     @classmethod
     def _with_global_defaults(cls, document: dict[str, Any]) -> dict[str, Any]:

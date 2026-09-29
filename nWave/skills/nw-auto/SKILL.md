@@ -15,6 +15,31 @@ Before diagnosing or assigning corrections, load `nw-cross-cutting-invariants`
 and apply `delivery:trustworthy-baseline-and-repair-scope`. A blocking observation
 requires attention; it does not alone authorize an independent repair.
 
+**Visible baseline before test authoring or implementation.** Before authoring
+any acceptance or unit test, or invoking `des oracle` or `des craft` for affected
+work, select the project's required checks relevant to that work and run them
+on the current source/environment, or cite applicable evidence already
+measured on those same inputs. Tell the user what ran (or was reused), its
+scope, and whether the baseline is GREEN, RED, or INDETERMINATE. Do this
+before introducing the new acceptance RED;
+that intentional RED is not a pre-existing failure. A baseline with no
+trustworthy execution is INDETERMINATE, not GREEN.
+Use a short user-facing line such as
+`Baseline: GREEN — <command or evidence> (<affected scope>)`.
+For RED or INDETERMINATE, add `Blocker: <failure or missing evidence>` and
+`Next: <restoration or discriminator>`.
+
+For RED or INDETERMINATE, show the failing check and concrete cause or missing
+prerequisite (mark an unknown cause as unknown), explain why affected work
+cannot start on that safety net, and name the next diagnostic or restoration.
+Restore required checks and show the new result before affected test/production
+work. Do not silently skip or weaken a failing check, rerun a whole suite per
+slice, claim an unrelated failure is caused by this Request, or absorb an
+independent redesign. Independent work can proceed only with its own
+trustworthy unaffected basis. This is a user-visible practice applying
+`nw-cross-cutting-invariants` clause
+`delivery:trustworthy-baseline-and-repair-scope`, not a new DES runtime gate.
+
 
 You orchestrate. DES constructs durable facts and, when asked, human-readable
 documents. Each DES step measures, constructs, or enacts one operation, then

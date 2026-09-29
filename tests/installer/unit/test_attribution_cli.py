@@ -148,35 +148,24 @@ class TestAttributionCLI:
         captured = capsys.readouterr()
         assert "disabled" in captured.out.lower()
 
-    def test_attribution_status_enabled(self, tmp_path: Path, capsys) -> None:
-        """'attribution status' shows 'on' when enabled."""
-        nwave_dir = tmp_path / ".nwave"
-        _write_config(nwave_dir, enabled=True)
+    @pytest.mark.parametrize("enabled", [True, False])
+    def test_attribution_status_uses_selected_machine_preference(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys, enabled: bool
+    ) -> None:
+        """Read the effective preference from the selected global tier."""
+        home = tmp_path / "home"
+        repo = tmp_path / "project"
+        repo.mkdir()
+        _write_config(home / ".nwave", enabled=enabled)
+        monkeypatch.setenv("NWAVE_AGENTS_HOME", str(home))
+        monkeypatch.chdir(repo)
 
-        with (
-            patch("sys.argv", ["nwave-ai", "attribution", "status"]),
-            patch("nwave_ai.cli._get_config_dir", return_value=nwave_dir),
-        ):
-            result = main()
+        with patch("sys.argv", ["nwave-ai", "attribution", "status"]):
+            assert main() == 0
 
-        assert result == 0
-        captured = capsys.readouterr()
-        assert "on" in captured.out.lower()
-
-    def test_attribution_status_disabled(self, tmp_path: Path, capsys) -> None:
-        """'attribution status' shows 'off' when disabled."""
-        nwave_dir = tmp_path / ".nwave"
-        _write_config(nwave_dir, enabled=False)
-
-        with (
-            patch("sys.argv", ["nwave-ai", "attribution", "status"]),
-            patch("nwave_ai.cli._get_config_dir", return_value=nwave_dir),
-        ):
-            result = main()
-
-        assert result == 0
-        captured = capsys.readouterr()
-        assert "off" in captured.out.lower()
+        output = capsys.readouterr().out
+        assert f"Attribution is currently {'on' if enabled else 'off'}." in output
+        assert "Preference source: global." in output
 
     def test_off_calls_both_legacy_cleanups(self, tmp_path: Path) -> None:
         """'attribution off' calls both legacy cleanup paths.

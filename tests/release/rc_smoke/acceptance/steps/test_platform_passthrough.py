@@ -37,12 +37,8 @@ def run_state(monkeypatch, tmp_path: Path) -> dict:
         state["user_project_root"] = user_project_root
         return 0
 
-    # Pin the seam: capture what the CLI forwards to install_nwave.py and
-    # short-circuit the density prompt + non-interactive detection.
+    # Capture the script args without launching the installer.
     monkeypatch.setattr(cli, "_run_script", _spy_run_script)
-    monkeypatch.setattr(
-        cli, "handle_install_density_prompt", lambda **_: "noop", raising=False
-    )
     state["monkeypatch"] = monkeypatch
     return state
 

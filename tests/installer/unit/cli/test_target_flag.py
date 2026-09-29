@@ -60,12 +60,7 @@ class TestInstallTargetFlag:
     def test_target_is_consumed_and_not_forwarded(self, tmp_path: Path):
         captured, fake = _captured_run_script_args()
         target = tmp_path / ".claude-nwave"
-        with (
-            patch.object(cli, "_run_script", side_effect=fake),
-            patch.object(
-                cli, "handle_install_density_prompt", return_value="default_silent"
-            ),
-        ):
+        with patch.object(cli, "_run_script", side_effect=fake):
             rc = cli._handle_install(
                 ["--target", str(target), "--yes", "--platform", "claude-code"]
             )
@@ -77,12 +72,7 @@ class TestInstallTargetFlag:
     def test_target_sets_claude_config_dir_env(self, tmp_path: Path):
         captured, fake = _captured_run_script_args()
         target = tmp_path / ".claude-nwave"
-        with (
-            patch.object(cli, "_run_script", side_effect=fake),
-            patch.object(
-                cli, "handle_install_density_prompt", return_value="default_silent"
-            ),
-        ):
+        with patch.object(cli, "_run_script", side_effect=fake):
             cli._handle_install(
                 ["--target", str(target), "--yes", "--platform", "claude-code"]
             )
@@ -91,12 +81,7 @@ class TestInstallTargetFlag:
     def test_target_with_user_expansion(self, tmp_path: Path, monkeypatch):
         captured, fake = _captured_run_script_args()
         monkeypatch.setenv("HOME", str(tmp_path))
-        with (
-            patch.object(cli, "_run_script", side_effect=fake),
-            patch.object(
-                cli, "handle_install_density_prompt", return_value="default_silent"
-            ),
-        ):
+        with patch.object(cli, "_run_script", side_effect=fake):
             cli._handle_install(["--target", "~/.claude-nwave", "--yes"])
         # ~/.claude-nwave is resolved against the HOME we just set
         assert captured["claude_config_dir"] == str(
@@ -108,12 +93,7 @@ class TestInstallTargetFlag:
     ):
         captured, fake = _captured_run_script_args()
         monkeypatch.chdir(tmp_path)
-        with (
-            patch.object(cli, "_run_script", side_effect=fake),
-            patch.object(
-                cli, "handle_install_density_prompt", return_value="default_silent"
-            ),
-        ):
+        with patch.object(cli, "_run_script", side_effect=fake):
             cli._handle_install(
                 ["--target", "./.claude", "--yes", "--platform", "claude-code"]
             )
@@ -143,12 +123,7 @@ class TestInstallTargetFlag:
 
     def test_omitting_target_does_not_set_claude_config_dir(self, tmp_path: Path):
         captured, fake = _captured_run_script_args()
-        with (
-            patch.object(cli, "_run_script", side_effect=fake),
-            patch.object(
-                cli, "handle_install_density_prompt", return_value="default_silent"
-            ),
-        ):
+        with patch.object(cli, "_run_script", side_effect=fake):
             cli._handle_install(["--yes"])
         assert captured["claude_config_dir"] is None, (
             "Default behavior must not set CLAUDE_CONFIG_DIR; existing env-var "

@@ -114,12 +114,7 @@ def test_cli_status_reports_inactive_when_activation_resolution_raises(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`attribution status` (preference on) fails OPEN to inactive on a read error.
-
-    With the preference ON, a config-read failure must print 'inactive for this
-    repo', agreeing with the gate — never 'active'.
-    """
-    monkeypatch.setattr(cli, "read_attribution_preference", lambda _config_dir: True)
+    """A config-read failure must not claim attribution is active."""
     monkeypatch.setattr(
         "des.adapters.driven.config.des_config.DESConfig",
         _raise,

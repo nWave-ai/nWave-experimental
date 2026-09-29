@@ -21,7 +21,7 @@ python -m nwave_ai.cli <command> [options] [arguments]
 All commands accept `--help` / `-h` and return exit code 0 on success, nonzero on failure.
 
 ```
-nwave-ai install [--platform <tool>] [--target <path>] [--yes] [--density-only]
+nwave-ai install [--platform <tool>] [--target <path>] [--yes]
                  [--dry-run] [--backup-only] [--restore]
 
 nwave-ai uninstall [--target <path>]
@@ -52,12 +52,12 @@ nwave-ai plugin <list|install|uninstall> [name]
 
 ## nwave-ai install
 
-Install nWave framework into Claude's configuration directory (`~/.claude/` by default), or a custom target. On first install, prompts for documentation density preference (lean/full) unless `--yes` is passed.
+Install nWave framework into Claude's configuration directory (`~/.claude/` by default), or a custom target. Installation does not ask for or write documentation-density preferences.
 
 ### Synopsis
 
 ```
-nwave-ai install [--platform <tool>] [--target <path>] [--yes] [--density-only] \
+nwave-ai install [--platform <tool>] [--target <path>] [--yes] \
                  [--dry-run] [--backup-only] [--restore]
 ```
 
@@ -67,32 +67,25 @@ nwave-ai install [--platform <tool>] [--target <path>] [--yes] [--density-only] 
 |-------------------|----------|--------|----------------------------------------------------------------------------|
 | `--platform`      | no       | enum   | Target agentic tool: `claude-code`, `codex`, or `opencode`. Forwarded to the installer subprocess. Default: inferred. |
 | `--target`        | no       | path   | Install into <path> instead of `~/.claude/`. Must not be `$HOME` (rejected with exit 2). Sets `CLAUDE_CONFIG_DIR` for subprocess. Default: `~/.claude/`. |
-| `--yes`           | no       | bool   | Non-interactive mode. Suppresses the density prompt; silently defaults to `lean`. Recommended for CI. |
-| `--density-only`  | no       | bool   | Run only the first-run documentation density prompt and exit (test-driving fixture; not a user flag). Exit 0 on completion. |
+| `--yes`           | no       | bool   | Non-interactive mode. Recommended for CI. |
 | `--dry-run`       | no       | bool   | Preview changes without modifying the filesystem. Passed through to install script. |
 | `--backup-only`   | no       | bool   | Create a backup only without installing. Passed through to install script. |
 | `--restore`       | no       | bool   | Restore nWave from a previous backup. Passed through to install script. |
 
-**Pass-through behavior**: All flags except `--yes`, `--density-only`, and `--target` are forwarded to the `scripts/install/install_nwave.py` subprocess, which may recognize additional flags (e.g. `--help`, `--dry-run`). The `--target` flag is consumed by the wrapper to set the subprocess environment variable `CLAUDE_CONFIG_DIR`; `--yes` is consumed to control the density prompt.
+**Pass-through behavior**: All flags except `--yes` and `--target` are forwarded to `scripts/install/install_nwave.py`. `--target` sets `CLAUDE_CONFIG_DIR` for the subprocess; `--yes` selects non-interactive mode.
 
 ### Exit codes
 
 | Code | Condition                                                              |
 |------|--------|
 | 0    | Installation succeeded. Package manager recorded in global config if needed. |
-| 1    | Installation failed (subprocess error or density prompt failure). |
+| 1    | Installation failed (subprocess error). |
 | 2    | Configuration error: `--target` points to `$HOME`, or `--target` argument missing. |
 
 ### Output
 
-**stdout** on success:
-
-```
-Documentation density default 'lean' written to ~/.nwave/global-config.json (existing configuration upgraded).
-```
-
-(or no output if density already configured)
-
+Installation reports its actual installer result; it does not report a
+documentation-density preference being written.
 **stderr** on error:
 
 ```
@@ -102,10 +95,10 @@ nwave-ai: --target must point to a Claude config directory (e.g. ~/.claude-nwave
 ### Example
 
 ```bash
-# First-time install, interactive prompt for documentation density
+# First-time install, without a density prompt
 nwave-ai install
 
-# CI environment: silent lean default, no user interaction
+# CI environment: no user interaction
 nwave-ai install --yes
 
 # Install to a custom Claude config directory
@@ -296,29 +289,33 @@ nwave-ai attribution <on|off|status>
 
 ### Output
 
+`on` and `off` write the machine preference. A project override takes
+precedence; credit also requires an active project and a supported commit
+hook. These commands do not change project activation or overrides.
+
 **stdout** on `attribution on`:
 
 ```
-Attribution enabled. Your commits will include the nWave credit line.
+Attribution enabled. New Claude commits will carry the nWave credit via the universal handler (observes the preference at commit time).
 ```
 
 **stdout** on `attribution off`:
 
 ```
-Attribution disabled. Your commits will not include the nWave credit line.
+Attribution disabled. New Claude commits will not carry the nWave credit (the universal handler observes the preference at commit time).
 ```
 
-**stdout** on `attribution status` (enabled):
+**stdout** on `attribution status` with an active project override:
 
 ```
 Attribution is currently on.
+Preference source: project.
+Attribution is active for this repo.
 ```
 
-**stdout** on `attribution status` (disabled):
-
-```
-Attribution is currently off.
-```
+`status` reads the effective preference (project, global, or default) and
+reports attribution as inactive if the project is inactive or the preference
+is off. It does not change any configuration.
 
 **stderr** on invalid action:
 
@@ -461,7 +458,12 @@ nwave-ai mode opt-in
 
 ## nwave-ai status
 
-Print the current global activation mode and whether nWave is active for the current project. Read-only; no changes to configuration.
+Show effective activation, attribution, verbosity, running CLI version, and
+detected Claude Code/Codex assets with the source of each setting. Labels
+distinguish detected host files from a validated installation. Persisted
+`update_check` is retired and ignored. Documentation density is diagnostic-only;
+the global expansion preference controls optional explanation after completed
+waves. This command reads local state without writing files or checking releases.
 
 ### Synopsis
 
@@ -474,22 +476,31 @@ nwave-ai status
 | Code | Condition         |
 |------|------|
 | 0    | Status printed.   |
+| 1    | Invalid selected home override; no status printed. |
 
 ### Output
 
-**stdout**:
+**stdout**, for example:
 
 ```
-Global activation mode: all
+Global activation mode: opt-in (default)
 This project is active.
+Activation source: project.
+Version: 4.0.0 (running CLI; check releases: nwave-ai update --check)
+Attribution: off (global); nWave co-author credit will not be added here.
+Verbosity: terse (global).
+Claude Code: framework files found.
+Codex: installation manifests not detected.
+Retired update_check: ignored (global); no automatic update prompt.
+Documentation density: diagnostic-only (global); does not reshape waves.
+Wave-end explanation: ask-intelligent (default; after completed waves only).
+To credit future nWave commits: nwave-ai attribution on (machine-wide).
+Host detection is not validation; use nwave-ai doctor for Claude Code or the Codex installer's validation.
 ```
 
-or
-
-```
-Global activation mode: opt-in
-This project is inactive.
-```
+Activation and other settings can come from a project override, the machine
+config, or a default. An inactive repo instead shows
+`nwave-ai project enable`. Status does not turn attribution on automatically.
 
 ### Example
 

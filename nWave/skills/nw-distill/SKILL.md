@@ -9,6 +9,11 @@ Compile the value observation and executable oracle from durable product and
 architecture authority. Provide only consumed facts to the resident owner; do
 not create a workflow handoff or execute delivery.
 
+Before authoring an executable oracle, load `nw-auto` and give the user its
+visible baseline result for the affected checks. A broken existing test run
+or setup is not the oracle's intended RED.
+
+
 For an uncertain boundary, use the existing constructor and resident oracle
 delegation to make one concrete public-port case executable before expanding the
 affected design or solution. Preserve the RED observation for that oracle;

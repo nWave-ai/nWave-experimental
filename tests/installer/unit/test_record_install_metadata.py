@@ -38,7 +38,7 @@ def test_creates_parent_directory_when_absent(tmp_path: Path) -> None:
     )
 
 
-def test_preserves_unrelated_existing_keys(tmp_path: Path) -> None:
+def test_preserves_user_settings_while_retiring_update_check(tmp_path: Path) -> None:
     cfg = tmp_path / ".nwave" / "config.json"
     cfg.parent.mkdir(parents=True)
     cfg.write_text(
@@ -55,9 +55,9 @@ def test_preserves_unrelated_existing_keys(tmp_path: Path) -> None:
     record_install_metadata(cfg, installed_version="3.0.0", repo_root=tmp_path / "repo")
 
     data = json.loads(cfg.read_text(encoding="utf-8"))
-    # Unrelated blocks untouched.
+    # Active user settings and unrelated install metadata remain intact.
     assert data["rigor"] == {"profile": "thorough"}
-    assert data["update_check"] == {"frequency": "weekly"}
+    assert "update_check" not in data
     # install block updated, sibling install keys preserved.
     assert data["install"]["installed_version"] == "3.0.0"
     assert data["install"]["user_owned_key"] == "uv"

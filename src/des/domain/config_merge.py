@@ -105,37 +105,30 @@ def _resolve_field(
     well_typed: Callable[[Any], bool],
     default: object,
     unwrap: Callable[[Any], object] = _same_value,
-) -> object:
+) -> tuple[object, str]:
     if field in tiers.repo_config and well_typed(tiers.repo_config[field]):
-        return unwrap(tiers.repo_config[field])
+        return unwrap(tiers.repo_config[field]), "project"
     if field in tiers.global_config and well_typed(tiers.global_config[field]):
-        return unwrap(tiers.global_config[field])
-    return default
+        return unwrap(tiers.global_config[field]), "global"
+    return default, "default"
 
 
-def merge_config(
+def merge_config_with_sources(
     global_config: dict, repo_config: dict, legacy_repo_config: dict | None = None
-) -> dict:
-    """Resolve the effective ``enabled``/``verbosity``/``attribution``/``documents`` values
-    from the repo-over-global cascade (ADR-CFG-001 Config-merge law). Pure:
-    never mutates ``global_config`` or ``repo_config``, never raises on
-    malformed input -- a malformed value degrades to "absent for this tier".
-
-    ``legacy_repo_config`` is the optional translated legacy per-repo marker
-    tier (``.nwave/config.json``), which participates ONLY in the
-    ``enabled`` field and only below the unified repo tier (P-SSOT-1 P5-bis).
-    ``enabled`` is resolved through :func:`declared_enabled` so there is ONE
-    precedence chain, shared with the tri-state activation reader.
-    """
-    declared = declared_enabled(global_config, repo_config, legacy_repo_config)
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Resolve each field once, retaining the tier supplying its value."""
     tiers = _ConfigTiers(repo_config=repo_config, global_config=global_config)
-    return {
-        "enabled": ENABLED_DEFAULT if declared is None else declared,
+    if declares_enabled(repo_config):
+        enabled = (repo_config["enabled"], "project")
+    elif legacy_repo_config and declares_enabled(legacy_repo_config):
+        enabled = (legacy_repo_config["enabled"], "project")
+    else:
+        enabled = _resolve_field(tiers, "enabled", _enabled_well_typed, ENABLED_DEFAULT)
+
+    resolved = {
+        "enabled": enabled,
         "verbosity": _resolve_field(
-            tiers,
-            "verbosity",
-            _verbosity_well_typed,
-            VERBOSITY_DEFAULT,
+            tiers, "verbosity", _verbosity_well_typed, VERBOSITY_DEFAULT
         ),
         "attribution": _resolve_field(
             tiers,
@@ -145,9 +138,17 @@ def merge_config(
             unwrap=_attribution_value,
         ),
         "documents": _resolve_field(
-            tiers,
-            "documents",
-            _documents_well_typed,
-            DOCUMENTS_DEFAULT,
+            tiers, "documents", _documents_well_typed, DOCUMENTS_DEFAULT
         ),
     }
+    return (
+        {field: value for field, (value, _) in resolved.items()},
+        {field: source for field, (_, source) in resolved.items()},
+    )
+
+
+def merge_config(
+    global_config: dict, repo_config: dict, legacy_repo_config: dict | None = None
+) -> dict:
+    """Resolve the effective repo-over-global config without mutating either tier."""
+    return merge_config_with_sources(global_config, repo_config, legacy_repo_config)[0]

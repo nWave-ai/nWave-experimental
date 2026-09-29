@@ -202,7 +202,8 @@ def copy_skills_to_target(
     from target_dir before copying. Non-nw-* directories (user custom
     skills) are preserved.
 
-    For NEW_FLAT entries (source_path is a directory), copies the full directory.
+    For NEW_FLAT entries (source_path is a directory), copies source files but
+    excludes generated Python bytecode and cache directories.
     For OLD_HIERARCHICAL entries (source_path is a file), copies the file into
     a directory named after the skill.
 
@@ -230,7 +231,12 @@ def copy_skills_to_target(
     for entry in entries:
         destination = target_dir / entry.name
         if entry.source_path.is_dir():
-            shutil.copytree(entry.source_path, destination, dirs_exist_ok=True)
+            shutil.copytree(
+                entry.source_path,
+                destination,
+                dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+            )
         else:
             destination.mkdir(parents=True, exist_ok=True)
             shutil.copy2(entry.source_path, destination / entry.source_path.name)

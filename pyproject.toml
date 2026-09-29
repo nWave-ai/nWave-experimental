@@ -34,7 +34,7 @@ path = "scripts/release/offline_wheelhouse_hook.py"
 
 [project]
 name = "nwave-ai"
-version = "4.0.0+atddpure.6fc9d71b2"
+version = "4.0.0+atddpure.0b7a60fd2"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -75,7 +75,7 @@ dependencies = [
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
     "httpx>=0.27.0",
-    "platformdirs>=4.11.12",
+    "platformdirs>=4.11.15",
     "pyyaml>=6.0",
     "packaging>=26.3",
     "tomli>=2.0.0; python_version < '3.11'",

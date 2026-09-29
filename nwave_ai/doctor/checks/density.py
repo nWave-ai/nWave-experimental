@@ -75,45 +75,38 @@ def _format_provenance_label(density: Density) -> str:
 
 
 def _format_density_message(density: Density) -> str:
-    """Render the message line asserted verbatim by the acceptance scenarios."""
+    """Render the retained preference with its non-operational scope."""
     label = _format_provenance_label(density)
-    return f"Documentation density: {density.mode} ({label})"
+    return (
+        f"Documentation density: {density.mode} ({label}); diagnostic-only "
+        "(does not change wave output)"
+    )
 
 
 class DensityCheck:
-    """Surface the active documentation density on the doctor report."""
+    """Report a retained preference without claiming it controls wave output."""
 
     name: str = "documentation_density"
-    description: str = (
-        "Documentation density resolved from global config (D6 + D12 cascade)"
-    )
+    description: str = "Legacy documentation preference (diagnostic-only)"
 
     def run(self, context: DoctorContext) -> CheckResult:
-        """Return a CheckResult capturing the resolved density and provenance.
+        """Report a retained preference, without treating it as product health.
 
-        The check passes whenever the cascade resolves successfully — including
-        the fresh-install branch that falls back to ("lean", "default"). It
-        only fails when the cascade itself raises (e.g. an unknown
-        rigor.profile invalidates upstream rigor configuration), in which case
-        the failure surfaces with the cascade's error message and a
-        remediation pointer to the rigor configuration.
+        Invalid legacy values are visible, but cannot fail diagnostics for a
+        setting that no shipped wave consumes.
         """
         global_config = _read_global_config(context.home_dir)
         try:
             density = resolve_density(global_config)
         except ValueError as exc:
             return CheckResult(
-                passed=False,
-                error_code="DENSITY_RESOLUTION_FAILED",
+                passed=True,
+                error_code=None,
                 message=(
-                    "Documentation density could not be resolved: "
-                    f"{exc}. Check `rigor.profile` in ~/.nwave/config.json."
+                    f"Legacy documentation preference ignored: {exc}; "
+                    "diagnostic-only, does not change wave output"
                 ),
-                remediation=(
-                    "Set `rigor.profile` to one of: lean, standard, thorough, "
-                    "exhaustive, custom — or set `documentation.density` "
-                    "explicitly to 'lean' or 'full'."
-                ),
+                remediation=None,
             )
         return CheckResult(
             passed=True,

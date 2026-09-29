@@ -13,9 +13,9 @@ unless a project sets its own override.
   of your home directory, when that environment variable is set to an
   absolute path).
 - **Project path**: `<repo>/.nwave/config.json`.
-- **Created by**: `nwave-ai install` (first run), or any `nwave-ai` command
-  that writes configuration (`mode`, `model set`, `attribution`,
-  `project enable|disable|set`).
+- **Created by**: A fresh install may leave both files absent. Configuration
+  writes create the relevant tier: `mode`, `model set`, or `attribution` for
+  machine settings; `project enable|disable|set` for project settings.
 - **User-editable**: Yes, with a text editor.
 - **Verification**: Run `nwave-ai doctor` to validate your config.
 
@@ -42,6 +42,14 @@ directly.
   "model_runtime": { "default": { "provider": "...", "model": "..." }, "roles": {} }
 }
 ```
+
+`documentation` is optional. Fresh installs do not write it. The retained
+`density` value does not reshape wave documents; `expansion_prompt` controls
+optional explanation after a completed wave and does not open a CLI menu.
+
+`update_check` is retired. It does not control update checks and is removed
+on the next explicit global or project config write; read-only commands do
+not rewrite the file.
 
 Per-project overrides live in `<repo>/.nwave/config.json` instead, with a
 smaller, closed set of public keys: `enabled` (activation marker),
@@ -104,12 +112,12 @@ set, it is the fallback source the documentation-density resolver uses for
 `documentation.density` and `documentation.expansion_prompt` **whenever those
 keys are absent** (see the cascade table below).
 
-**There is no `nwave-ai` command that sets `rigor.profile`.** It must be
-edited by hand in `~/.nwave/config.json` (or a project's
-`.nwave/config.json`). The `nw-rigor` skill/command configures a different
-key — `model_runtime.default` or `model_runtime.roles.<role>`, an explicit
-provider/model pair — via `nwave-ai model set`. It does not read, write, or
-choose `rigor.profile`, and it never derives a model from a rigor level.
+**There is no `nwave-ai` command that sets `rigor.profile`.** The global
+fallback affects the wave-end explanation mode when an explicit
+`documentation.expansion_prompt` is absent; a project copy is not an override.
+The `nw-rigor` skill/command configures `model_runtime.default` or
+`model_runtime.roles.<role>` via `nwave-ai model set` instead. It never derives
+a model from a rigor level.
 
 **Example**:
 ```json
@@ -126,13 +134,9 @@ choose `rigor.profile`, and it never derives a model from a rigor level.
 
 #### `documentation.density` (string, optional)
 
-Valid values: `lean`, `full`. Resolved by
-`scripts/shared/density_config.py:resolve_density()` and surfaced by
-`nwave-ai doctor` as a `documentation_density` check line. As of this
-writing the resolved value is exposed for diagnostics; no shipped wave
-producer branches its output section set on it, so treat it as declared
-intent to verify with `doctor`, not as a lever that currently reshapes wave
-output on its own.
+Valid values: `lean`, `full`. The resolver reports this preference through
+`nwave-ai doctor`; it is diagnostic-only. No shipped wave producer changes its
+output sections based on this value. Fresh installs do not set it.
 
 **Cascade** (first match wins):
 1. Explicit `documentation.density` in config.
@@ -150,12 +154,12 @@ output on its own.
 
 #### `documentation.expansion_prompt` (string, optional)
 
-`ask`, `always-skip`, `always-expand`, `smart`, `ask-intelligent`. The
-existing density resolver validates this preference; `nwave-ai doctor` reports
-the resolved configuration. For the seven installed waves, `des wave-entry`
-reads it once from global config before work starts. The assistant applies it
-only after that wave completes; it never opens an interactive CLI menu and
-does not make an offer after a lone DES step or an unsuccessful wave.
+Valid values: `ask`, `always-skip`, `always-expand`, `smart`,
+`ask-intelligent`. For the seven installed waves, `des wave-entry` reads the
+global preference once before work starts. The assistant applies it only
+after that wave completes; it never opens an interactive CLI menu and makes
+no offer after a lone DES step or an unsuccessful wave. `nwave-ai status`
+shows the resolved value; `doctor` reports density, not this value.
 
 | Value | Assistant response after a completed wave |
 |---|---|
@@ -169,11 +173,10 @@ The offer is a chat response, not a document edit. Accepting or ignoring it
 does not change accepted documents or execute another DES step. You may ask
 for more detail directly at any time, even with `always-skip`.
 
-`nwave-ai install` checks existing documentation preferences before writing any
-installation files, including when `--density-only` is used. An invalid
-`documentation.expansion_prompt` stops the install with an error that lists
-valid values. Correct the value in `~/.nwave/config.json` and run install again;
-the refused install leaves that file unchanged.
+`nwave-ai install` checks an explicit active `documentation.expansion_prompt`
+before writing installation files. An invalid value stops the install with
+accepted values in the error; correct the global value and retry. Installation
+does not ask for or write a density preference.
 
 
 **Cascade** (independent of the density cascade above): explicit value wins;
@@ -192,9 +195,11 @@ else the `rigor.profile` mapping; else hard default `ask-intelligent`.
 
 ### `attribution` (object, optional)
 
-Controls whether commits get an attribution trailer. Managed by
-`nwave-ai attribution <on|off|status>`; see that command's own `--help` for
-the exact shape written (`{"enabled": bool, "trailer": "..."}`).
+Sets the machine attribution preference; project configuration can override
+it, and credit is added only for active repositories with a supported commit
+hook. Managed by `nwave-ai attribution <on|off|status>`; `status` reports the
+effective preference and its source. See that command's own `--help` for the
+shape written (`{"enabled": bool, "trailer": "..."}`).
 
 ---
 
@@ -250,16 +255,13 @@ built-in default cap of `10`.
 nwave-ai doctor
 ```
 
-`doctor` reports the resolved documentation density and its provenance, one
-of:
-
-- `Documentation density: lean (explicit override)`
-- `Documentation density: lean (inherited from rigor.profile=standard)`
-- `Documentation density: lean (default (no config))`
-
-An unknown `rigor.profile` value, or a non-object `documentation`/`rigor`
-section, fails this check with a remediation message rather than falling
-back silently.
+`doctor` reports the resolved legacy documentation density and its provenance,
+for example `Documentation density: lean (explicit override); diagnostic-only
+(does not change wave output)`. `nwave-ai status` reports the active wave-end
+explanation preference and source. An invalid `documentation.expansion_prompt`
+refuses installation and `des wave-entry`; `doctor` is not a substitute for
+either validation. An invalid old density does not select output, but current
+`des wave-entry` refuses it: remove that obsolete key.
 
 ---
 
@@ -267,13 +269,19 @@ back silently.
 
 **Q: My config file doesn't exist. What's the default?**
 
-Run `nwave-ai install` to initialize it. The first-run prompt asks for a
-density preference and writes the file.
+No file is needed to read defaults. New repositories are inactive under
+`opt-in`; attribution defaults to off and verbosity to standard when no tier
+declares a value. The density resolver defaults to `lean` (diagnostic-only);
+wave-end explanations default to `ask-intelligent` after completed waves.
+Installation does not ask for density or create a file just to store it.
+A command that writes configuration creates its relevant file.
 
 **Q: Can I edit the config manually?**
 
-Yes. After editing, run `nwave-ai doctor` to validate; a malformed-JSON or
-out-of-range value is reported with an error code and remediation text.
+Yes. Run `nwave-ai status` afterward to see effective values and their
+sources. `nwave-ai doctor` checks installation health, but wave-entry can
+refuse an invalid documentation choice even if a legacy density diagnostic
+did not fail.
 
 **Q: Can I override density per project or per feature?**
 
