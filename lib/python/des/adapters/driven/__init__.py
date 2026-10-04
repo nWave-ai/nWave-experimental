@@ -14,9 +14,6 @@ from des.adapters.driven.config.in_memory_config_adapter import (
 from des.adapters.driven.filesystem.real_filesystem import RealFileSystem
 from des.adapters.driven.logging.silent_logger import SilentLogger
 from des.adapters.driven.logging.structured_logger import StructuredLogger
-from des.adapters.driven.task_invocation.claude_code_task_adapter import (
-    ClaudeCodeTaskAdapter,
-)
 from des.adapters.driven.task_invocation.mocked_task_adapter import (
     MockedTaskAdapter,
 )
@@ -28,8 +25,6 @@ RealFilesystem = RealFileSystem
 SystemTime = SystemTimeProvider
 
 __all__ = [
-    # Task invocation adapters
-    "ClaudeCodeTaskAdapter",
     # Config adapters
     "EnvironmentConfigAdapter",
     "InMemoryConfigAdapter",

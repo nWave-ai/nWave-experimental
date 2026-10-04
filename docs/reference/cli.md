@@ -1,6 +1,6 @@
 # nWave CLI Reference
 
-The `nwave-ai` command-line tool installs, configures, and manages the nWave framework in your Claude AI environment. For hands-on setup, see the **[Installation Guide](../guides/installation-guide/README.md)**. For per-project activation, see the **[Activation Guide](../guides/activating-nwave-per-project.md)**.
+The `nwave-ai` command-line tool installs, configures, and manages the nWave framework in supported agentic hosts. For hands-on setup, see the **[Installation Guide](../guides/installation-guide/README.md)**. For per-project activation, see the **[Activation Guide](../guides/activating-nwave-per-project.md)**.
 
 ## Invocation
 
@@ -52,7 +52,7 @@ nwave-ai plugin <list|install|uninstall> [name]
 
 ## nwave-ai install
 
-Install nWave framework into Claude's configuration directory (`~/.claude/` by default), or a custom target. Installation does not ask for or write documentation-density preferences.
+Install nWave into the selected host's configuration directories. `--target` selects a custom Claude configuration directory; native OMP installation uses its own discovery roots. Installation does not ask for or write documentation-density preferences.
 
 ### Synopsis
 
@@ -65,7 +65,7 @@ nwave-ai install [--platform <tool>] [--target <path>] [--yes] \
 
 | Flag              | Required | Type   | Description                                                                |
 |-------------------|----------|--------|----------------------------------------------------------------------------|
-| `--platform`      | no       | enum   | Target agentic tool: `claude-code`, `codex`, or `opencode`. Forwarded to the installer subprocess. Default: inferred. |
+| `--platform`      | no       | enum   | Target agentic tool: `claude-code`, `codex`, `opencode`, `copilot`, `omp`, or `all`; `auto` infers available hosts. Forwarded to the installer subprocess. |
 | `--target`        | no       | path   | Install into <path> instead of `~/.claude/`. Must not be `$HOME` (rejected with exit 2). Sets `CLAUDE_CONFIG_DIR` for subprocess. Default: `~/.claude/`. |
 | `--yes`           | no       | bool   | Non-interactive mode. Recommended for CI. |
 | `--dry-run`       | no       | bool   | Preview changes without modifying the filesystem. Passed through to install script. |
@@ -73,6 +73,8 @@ nwave-ai install [--platform <tool>] [--target <path>] [--yes] \
 | `--restore`       | no       | bool   | Restore nWave from a previous backup. Passed through to install script. |
 
 **Pass-through behavior**: All flags except `--yes` and `--target` are forwarded to `scripts/install/install_nwave.py`. `--target` sets `CLAUDE_CONFIG_DIR` for the subprocess; `--yes` selects non-interactive mode.
+
+For `--platform omp`, public skills and native task agents use OMP's separate discovery roots. `PI_CONFIG_DIR` selects the configuration-root name under the user home; `PI_CODING_AGENT_DIR` selects the native skill/data root when set. Named `OMP_PROFILE`/`PI_PROFILE` installations are refused rather than silently writing to the default profile. The installer reports capabilities that OMP cannot project, including Claude-specific hooks and unsupported scoped tool permissions. User-owned skills and agents are not nWave-managed assets.
 
 ### Exit codes
 

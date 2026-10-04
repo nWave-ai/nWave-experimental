@@ -7,9 +7,10 @@ Invocation::
 Behaviour:
 
 1. ``cd tests/polyglot-pilot/csharp/``.
-2. If ``dotnet`` is absent on PATH: log ``[polyglot-smoke] dotnet absent —
-   skipped`` and exit 0 with WARNING. (Fail-open robustness — CI without
-   .NET should not break unrelated test suites.)
+2. If no .NET SDK is available (``dotnet`` absent on PATH, or a runtime-only
+   ``dotnet`` host whose ``--list-sdks`` lists none): log ``[polyglot-smoke]
+   .NET SDK absent — skipped`` and exit 0 with WARNING. (Fail-open robustness —
+   CI without .NET should not break unrelated test suites.)
 3. ``dotnet restore`` (only if ``obj/`` absent).
 4. ``dotnet test``.
 5. Exit 0 on success; non-zero on failure.
@@ -40,8 +41,23 @@ def _log(message: str) -> None:
 
 
 def _toolchain_present() -> bool:
-    """Return True iff `dotnet` is resolvable on PATH."""
-    return shutil.which("dotnet") is not None
+    """Return True iff a `dotnet` host on PATH lists at least one SDK.
+
+    A runtime-only host resolves on PATH yet cannot restore or build anything,
+    so the host binary alone is not the C# toolchain.
+    """
+    dotnet = shutil.which("dotnet")
+    if dotnet is None:
+        return False
+    listed = subprocess.run(
+        [dotnet, "--list-sdks"],
+        check=True,
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        timeout=60,
+    )
+    return bool(listed.stdout.strip())
 
 
 def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -59,8 +75,13 @@ def main() -> int:
         _log(f"pilot directory missing: {PILOT_DIR}")
         return EXIT_TOOLCHAIN_BROKEN
 
-    if not _toolchain_present():
-        _log("dotnet absent — skipped (dotnet not on PATH)")
+    try:
+        toolchain_present = _toolchain_present()
+    except (OSError, subprocess.SubprocessError) as exc:
+        _log(f".NET SDK probe failed: {exc}")
+        return EXIT_TOOLCHAIN_BROKEN
+    if not toolchain_present:
+        _log(".NET SDK absent — skipped (no SDK listed by a dotnet on PATH)")
         return EXIT_OK
 
     obj_dir = PILOT_DIR / "obj"

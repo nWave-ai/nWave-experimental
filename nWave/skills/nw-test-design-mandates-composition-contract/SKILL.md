@@ -17,17 +17,17 @@ Numbering is an SSOT-internal index defined in the recomposing core `nw-test-des
 
 Domain concepts are expressed once via the type system; logic lives in composition-root services as the single source of truth; step methods invoke services and never inline business logic.
 
-- Domain concepts live in `tests/{path}/acceptance/steps/domain_types.py` (Python pilot; host-language equivalent otherwise) as typed enums / dataclasses / NewTypes.
+- Domain concepts live once in a test-side domain-vocabulary module in the project's native language and layout, as native typed constructs (enums / variants / records / newtypes / value objects). Python binding (illustrative only): `tests/{path}/acceptance/steps/domain_types.py` with enums / dataclasses / NewTypes.
 - Business logic lives in composition-root services, not in step bodies.
-- The DSL emerges from typed domain concepts — parameterized templates over enum-typed parameters, NOT hundreds of unique step decorators.
+- The DSL emerges from typed domain concepts — parameterized templates over domain-typed parameters, NOT hundreds of unique one-off step definitions.
 
-Compliance is mechanical via four criteria:
-1. **(criterion 1)** Domain types module exists with typed enums / dataclasses / NewTypes for every domain noun used in the Gherkin.
-2. **(criterion 2)** Composition methods consume typed parameters from `domain_types.py`; no raw `str` parameter where a domain enum exists.
-3. **(criterion 3)** No business logic in step bodies — AST: ≤2 statements, final statement is `composition.<service>.<method>(...)`, no control flow (`if`/`for`/`while`/`try`).
-4. **(criterion 4)** Step-reuse-ratio (`total_step_invocations / unique_step_decorators`) measured and documented as INFORMATIONAL natural ceiling per feature — NOT a gate; below 4× is acceptable when criteria 1-3 are met (forcing ≥4× would sacrifice Pillar 1 readability).
+Compliance is mechanical via four language-neutral criteria (checked with the project's own syntax tooling or by review; absent tooling is a declared EVIDENCE_GAP with cause, never a stack change; see `nw-tdd-cross-language` and the language-convention frame in `nw-test-design-mandates`):
+1. **(criterion 1)** A domain-type declaration exists, in the language's own constructs, for every domain noun used in the scenarios.
+2. **(criterion 2)** Composition methods consume those domain types; no raw primitive (string/int) parameter where a domain type exists.
+3. **(criterion 3)** No business logic in step/test-case bodies — at most two statements, the final one a call on a composition-root service, no branching or looping control flow.
+4. **(criterion 4)** Step-reuse-ratio (`total_step_invocations / unique_step_definitions`) measured and documented as INFORMATIONAL natural ceiling per feature — NOT a gate; below 4× is acceptable when criteria 1-3 are met (forcing ≥4× would sacrifice Pillar 1 readability).
 
-Anti-pattern: a scenario rewrites Given/When/Then verbatim with hard-coded literals, OR collapses readable Gherkin into ratio-maximizing parameterized templates that degrade domain coherence. Reference: ADR-026; `[[feedback_atdd_ssot_via_types_services_dsl_2026_05_18]]`, `[[feedback_mandate12_refinement_2026_05_18]]`.
+Anti-pattern: a scenario rewrites Given/When/Then verbatim with hard-coded literals, OR collapses readable scenarios into ratio-maximizing parameterized templates that degrade domain coherence. Reference: ADR-026; `[[feedback_atdd_ssot_via_types_services_dsl_2026_05_18]]`, `[[feedback_mandate12_refinement_2026_05_18]]`.
 
 **DISTILL-before-DELIVER timing (atdd_pure)**: under `atdd_pure`, DISTILL authors `domain_types.{py,ts,...}` BEFORE DELIVER has created any production domain module — at authoring time there is nothing to import. <!-- mode-ref-ok --> This is expected and NOT a violation of "expressed once": the DISTILL-authored module is a PLACEHOLDER for the slice(s) still to ship, not a permanent second definition. Two rules follow:
 - The placeholder's doc comment MUST say it is a DISTILL-time placeholder pending DELIVER (e.g. "placeholder until DELIVER lands `src/domain/...` — at implementation, this declaration MOVES into production source and this module IMPORTS it from there, it does not keep its own copy"). A comment stating the split as a PERMANENT design choice ("these are NOT imported from production code" with no reconciliation obligation) is the anti-pattern this note exists to close — it re-introduces exactly the "test passes against the old behavior — silent drift" failure Mandate 12 forbids, because production and test-side types WILL diverge in shape the moment either evolves independently.
@@ -58,7 +58,7 @@ Two conditions, BOTH mandatory — the boundary is not satisfied by traversal al
 
 **Anti-pattern — *tautological test / self-fulfilling fixture***: a green test whose oracle is data the test fabricated (the fixture supplies the expected output, the assertion re-reads the fixture). Zero validation power: passes with the production code deleted. (Phenomenon naming per `docs/research/walking-skeleton-atdd-best-practices-2026-06-12.md`; the term "The Mockery" is Bugayenko-specific and NOT used here.) nWave term: **fixture-theater** (Critical Rule 7).
 
-**Prose-surface case** — when the shipped surface is a markdown asset (skill / task / agent under `nWave/...`): the AT MUST read the **real file shipped from the repo** (not an inline test string), and every marker MUST be a **discriminating phrase**, never a substring that matches a common word. Empirical false-positives: `"table"` matches `"acceptable"`; `"rigor"` matches `"rigorous"`. Assert on a multi-word phrase unique to the shipped surface.
+**Prose-surface case** — observe the real shipped/rendered/installed asset through its consumer. Validate reachable references, parseable deliberate machine contracts and actual user behavior; do not test source phrases, headings, hash snapshots or incidental wording. Exact public text may be asserted only when the authorized contract itself promises that text. A fixture string or content-pin assertion cannot establish that loaded guidance was applied.
 
 ### Artifact Lineage Closure — assembled surfaces
 
@@ -123,9 +123,9 @@ A new acceptance test is INDUCED onto exactly one of six composition levels. The
 | **L1 walking-skeleton** | the installed artifact is wired end-to-end (real fork, real terminal) | no — **ONLY** the one `@walking_skeleton` per command | always exactly one per command (terminal-wiring facet) |
 | **L2 in-process acceptance** | the command computes + emits the right output, driven in-process | **YES — the default** | every non-WS behavioural AT; the in-memory ↔ prod-like config-switch is owned by `nw-distill-port-treatment-policy` |
 | **L3 integration (adapter ↔ real)** | a driven adapter works against its real I/O | no | a driven adapter ships → ≥1 `@real-io @adapter-integration` AT names it (Mandate 6) |
-| **L4 contract (per port)** | a port's method contract holds for all implementations | no | a port/Protocol ships → ≥1 contract test exercises its contract |
-| **L5 architecture** | layering / forbidden-imports hold | no | structural invariants (arch-tests under `tests/build/**`) |
-| **L6 unit / PBT** | a pure function's law holds + the executed path is covered | no | a declared law needs a property test, or an AT cannot reach GREEN without a unit-level pin |
+| **L4 contract** | a port's method contract holds for all implementations; or independently changing producer and consumer still agree | no | a port/Protocol ships → ≥1 contract test exercises its contract; DESIGN declares an applicable `contract_tests` obligation → real producer output drives the real consumer at its declared locator |
+| **L5 architecture** | a declared dependency/boundary/owner law holds | no | DESIGN declares an applicable `architectural_tests` obligation → one check falsifies that law over its whole governed scope at its declared locator |
+| **L6 law-bearing seam / PBT** | a declared broad input/state/failure law holds at the nearest honest law-bearing seam; unit checks pin otherwise unreachable behavior | no | a broad law needs native generative exploration, or an AT cannot reach GREEN without a unit-level pin; preserve its public-port observation explicitly; PBT is not restricted to pure functions and never bypasses the acceptance driving-port boundary |
 
 - **Default = L2.** Absent a specific contract reason to descend, a new AT is L2 in-process acceptance — it is the speed default. Reaching for L1 subprocess on a non-WS scenario is the regression the subprocess-overuse gate flags.
 - **L1 is singular.** One walking-skeleton per command, never per scenario (the terminal-wiring facet of the CLI split; see `nw-distill-port-treatment-policy`).
@@ -136,11 +136,13 @@ The active-RED authoring pattern (P1-P4) lives in `nw-distill-red-scaffolding`. 
 
 ## Mandate 14 — Contract Shape Classification
 
-Each scenario declares its contract shape so the reviewer can verify the assertion style matches. The scenario tag MUST match the composition root it drives, per the Mandate 9 v2 OR-reduction rule:
+Each scenario declares its contract shape so the reviewer can verify the tag matches the composition root it actually drives. OR-reduction classifies adapter realness only; it does not select example-based versus generative treatment:
 
-- `@in-memory` — ALL driven adapters in the composition root are in-memory / mock / stub fakes. PBT + universe + parametrize treatment applies.
-- `@real-io` — AT LEAST ONE driven adapter is a real I/O adapter (real filesystem, subprocess, network, HMAC keys). Example-based + `assert_state_delta` treatment applies; PBT is precluded by OR-reduction.
+- `@in-memory` — ALL driven adapters in the composition root are in-memory / mock / stub fakes.
+- `@real-io` — AT LEAST ONE driven adapter is a real I/O adapter (real filesystem, subprocess, network, HMAC keys). Observe the actual public-port output/effect; for mutable state, observe the promised before/after universe with native assertions or incumbent helpers.
 - `@mixed` — disallowed; OR-reduction collapses the mixed case to `@real-io`.
+
+Select law treatment under Mandate 9 in `nw-test-design-mandates-layered-mechanics` and `nw-property-based-testing`: broad laws receive native generative properties with independent oracles, shrinking and replay; closed finite domains receive native examples or exhaustive finite checks. Real I/O does not categorically preclude PBT. If it is slow, use the cheapest honest law-bearing seam with an explicit preservation map to the promised real-port observation, retaining representative real journeys and persistent-storage laws. Tag each resulting scenario by its actual composition, never label a fake seam `@real-io` to borrow integration evidence. No honest seam or unavailable native capability is `EVIDENCE_GAP` to DESIGN with its concrete cause, not permission to downgrade a broad law to examples.
 
 A scenario tagged `@real-io` whose composition is observably all-mock is a TAG-COMPOSITION MISMATCH (reviewer flags NEEDS_REVISION). Enforced by `nw-acceptance-designer-reviewer` Critique Vector S3 (mock-tag consistency) and the `@contract-shape:` machine-parseable tag. Spike source: `docs/analysis/adapter-integration-slice-design-2026-05-27.md` §3/§6.
 

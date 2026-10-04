@@ -80,5 +80,5 @@ def main(argv: list[str] | None = None) -> int:
         )
     return succeed(
         list(outcome.facts),
-        f"des po --repo-root {root} {scope_flags} --operational-facts <repository-relative-json>",
+        f"des po --repo-root {root} {scope_flags} --input -",
     )

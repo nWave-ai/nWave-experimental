@@ -83,44 +83,10 @@ _PYTHON_MODULE_ALLOWLIST = frozenset(
 )
 _PYTHON_MODULE_ALLOWED_PREFIXES = ("des",)
 
-# A span only counts as a file-path CLAIM with a recognizable extension
-# (or an explicit trailing "/"): bare words with slashes ("either/or",
-# "input/output") never qualify.
-_KNOWN_EXTENSIONS = frozenset(
-    {
-        ".cfg",
-        ".cjs",
-        ".css",
-        ".csv",
-        ".env",
-        ".go",
-        ".html",
-        ".ini",
-        ".ipynb",
-        ".java",
-        ".js",
-        ".json",
-        ".jsonl",
-        ".jsx",
-        ".lock",
-        ".md",
-        ".mjs",
-        ".ps1",
-        ".py",
-        ".rb",
-        ".rs",
-        ".sh",
-        ".sql",
-        ".tf",
-        ".toml",
-        ".ts",
-        ".tsx",
-        ".txt",
-        ".xml",
-        ".yaml",
-        ".yml",
-    }
-)
+# File claims are explicit repo-relative code spans under an existing root.
+# Any suffix can identify a filename; no closed language-extension vocabulary.
+# Extensionless native paths must use "./" or a trailing "/" to disambiguate
+# them from prose such as "input/output".
 _PATH_FORBIDDEN_CHARS = frozenset("<>{}*$()[]\\\"'|;,?!=&#@ \t")
 
 # Top-level segments that are runtime/config state, not committed-tree
@@ -410,7 +376,7 @@ def _is_checkable_path_claim(
     candidate = span.removeprefix("./")
     if not candidate or candidate.startswith("/"):
         return False
-    if not (candidate.endswith("/") or Path(candidate).suffix in _KNOWN_EXTENSIONS):
+    if not (candidate.endswith("/") or Path(candidate).suffix or span.startswith("./")):
         return False
     top_level = candidate.split("/", 1)[0]
     # Runtime-state guard: `.nwave/...` / `.git/...` (plus any top-level dir
@@ -420,7 +386,7 @@ def _is_checkable_path_claim(
         return False
     # Example-tree guard: a path whose top-level directory does not exist
     # in this repo is a claim about some OTHER tree, not about this one.
-    return (repo / top_level).is_dir()
+    return span.startswith("./") or (repo / top_level).is_dir()
 
 
 def _check_path_claims(

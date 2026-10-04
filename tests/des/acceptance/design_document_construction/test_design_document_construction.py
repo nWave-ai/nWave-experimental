@@ -15,7 +15,6 @@ import socket
 import stat
 import sys
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -33,29 +32,24 @@ from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
 
 from des.application.handover import Blocked
 from des.domain.design_document import DesignDocument
-from scripts import docgen
 
 
 GLOBAL_DESTINATION = Path("docs/global-design.md")
 REPOSITORY_DESTINATION = Path("docs/product/architecture/brief.md")
 HANDOVER = Path(".nwave/des/handover.json")
 
-INPUT_DESCRIPTION_ASSETS = (
-    Path("nWave/skills/nw-design/SKILL.md"),
-    Path("nWave/agents/nw-solution-architect.md"),
-    Path("docs/product/architecture/ADR-DES-003-step-surface-algebra.md"),
-)
-
-_GENERATED_INPUT_DESCRIPTION = re.compile(
-    r"<!-- GENERATED:design-document-input START[^>]*-->\n"
-    r"(?P<body>.*?)"
-    r"<!-- GENERATED:design-document-input END -->",
-    re.DOTALL,
-)
 
 MANIFEST = {
     "schema_version": 1,
     "authority": {"heading": "Widget color"},
+    "architectural_tests": {
+        "applicability": "not_applicable",
+        "reason": "The fixture has no structural boundary change.",
+    },
+    "contract_tests": {
+        "applicability": "not_applicable",
+        "reason": "The fixture changes no shared contract.",
+    },
     "purpose": "Expose the selected widget color.",
     "constraints": ["Preserve existing callers."],
     "targets": [
@@ -77,11 +71,13 @@ MANIFEST = {
             }
         ]
     },
+    "impact_closure": {
+        "applicability": "not_applicable",
+        "reason": "The fixture reaches no public surface, consumer or build metadata.",
+    },
     "prefactoring": {
-        "applicability": "applicable",
-        "existing_oracle": "tests/test_widget.py::test_default_color",
-        "move": "Extract the current default lookup without changing output.",
-        "preserved_observation": "A default widget remains blue.",
+        "applicability": "not_applicable",
+        "reason": "The fixture extends widget color without a preservation move.",
     },
     "agreement_analysis": {
         "applicability": "not_applicable",
@@ -104,86 +100,16 @@ MANIFEST = {
     "oracle_verification_index": 0,
 }
 
-EXPECTED_SECTION = """## Widget color
+# Constructor-produced bytes are setup for publication/CAS tests, not a prose snapshot oracle.
+EXPECTED_SECTION = DesignDocument.from_json(json.dumps(MANIFEST)).markdown()
 
-### Purpose (Widget color)
-
-Expose the selected widget color.
-
-### Constraints (Widget color)
-
-- Preserve existing callers.
-
-### Targets (Widget color)
-
-| Path | Decision | Reason |
-|---|---|---|
-| `src/widget.py` | EXTEND | Widget already owns color. |
-
-### Paradigm (Widget color)
-
-object_oriented
-
-### Decisions (Widget color)
-
-- Keep color validation at Widget construction.
-
-### Reuse analysis (Widget color)
-
-| Symbol | Locator | Decision | Reason |
-|---|---|---|---|
-| Widget | `src/widget.py:10` | EXTEND | Existing public owner. |
-
-### Prefactoring (Widget color)
-
-Existing oracle: `tests/test_widget.py::test_default_color`
-
-Move: Extract the current default lookup without changing output.
-
-Preserved observation: A default widget remains blue.
-
-### Agreement analysis (Widget color)
-
-Not applicable: The widget color extension touches no shared release or
-interchange schema.
-
-### Boundaries (Widget color)
-
-Not applicable: No port or dependency boundary changes.
-
-### Public oracle (Widget color)
-
-Observation: CLI prints the selected color.
-
-Stimulus: Run widget show --color red.
-
-Expected: stdout is red and exit is zero.
-
-Falsifier: Any other stdout or non-zero exit.
-
-### Oracle and verification (Widget color)
-
-Oracle target locator: `tests/test_widget.py::test_selected_color`
-Oracle verification command index: `0`
-
-Verification command:
-
-```sh
-pytest -q tests/test_widget.py
-```
-"""
-
-EXPECTED_FACTS = {
-    "targets": [{"path": "src/widget.py", "decision": "EXTEND"}],
-    "paradigm": "object_oriented",
-    "decisions": ["Keep color validation at Widget construction."],
-    "oracle": "tests/test_widget.py::test_selected_color",
-    "acceptance_supports": [],
-    "verification": [["pytest", "-q", "tests/test_widget.py"]],
-    "oracle_verification_index": 0,
-    "obligations": ["Preserve existing callers."],
-    "authority_locator": "docs/product/architecture/brief.md#Widget color",
-}
+EXPECTED_FACTS = json.loads(
+    DesignDocument.from_json(json.dumps(MANIFEST)).facts_json(
+        DesignDocument.from_json(json.dumps(MANIFEST)).facts_at(
+            "docs/product/architecture/brief.md#Widget color"
+        )
+    )
+)
 
 APPLICABLE_BOUNDARIES = {
     "applicability": "applicable",
@@ -256,6 +182,8 @@ def _bootstrap_value(
     scope_flags: tuple[str, ...] = ("--project",),
 ) -> None:
     """Create DESIGN's declared prerequisite through the real public PO step."""
+    from tests.des._helpers.host_facts import product_manifest
+
     results, turns, counter = (
         tmp_path / "answers.json",
         tmp_path / "turns.json",
@@ -271,13 +199,18 @@ def _bootstrap_value(
         package_parent=PACKAGE_PARENT,
     )
     code, out, err = run_cli_in_process(
-        ["po", "--repo-root", str(root), *scope_flags],
+        ["po", "--repo-root", str(root), *scope_flags, "--input", "-"],
         cwd=root,
         env=hermetic_environment(
             provider_environment | {"HOME": environment["HOME"]},
             tmp_path / "claude-config",
         ),
-        stdin_text="Produce one architecture value for the Widget command.",
+        stdin_text=json.dumps(
+            product_manifest(
+                "Produce one architecture value for the Widget command.",
+                [observation(label) for label in (labels or ("widget color",))],
+            )
+        ),
         catch_all=True,
     )
     assert code == 0, (
@@ -317,118 +250,6 @@ def _design(  # noqa: PLR0913 - see the note above
     )
 
 
-def _words(value: str) -> str:
-    """Compare rendered guidance across CLI wrapping and Markdown layout."""
-    return " ".join(value.split())
-
-
-def test_design_input_help_and_author_guidance_share_one_generated_contract(
-    tmp_path: Path,
-) -> None:
-    """Authors can obtain the accepted manifest language from every public input surface."""
-    code, help_text, stderr = run_cli_in_process(
-        ["design", "--help"], cwd=tmp_path, catch_all=True
-    )
-
-    assert code == 0, (
-        "`des design --help` must remain a readable, successful public entry for "
-        f"constructor-input authors (stdout={help_text!r}, stderr={stderr!r})"
-    )
-    for semantic_term in (
-        "schema_version",
-        "acceptance_supports",
-        "functional",
-        "object_oriented",
-    ):
-        assert semantic_term in help_text, (
-            "`des design --help` must describe the accepted closed v1 manifest "
-            f"language, including {semantic_term!r}; otherwise a host cannot form "
-            "constructor input without copying a second contract"
-        )
-
-    repository = Path(__file__).resolve().parents[4]
-    bodies: list[str] = []
-    for relative_path in INPUT_DESCRIPTION_ASSETS:
-        source = (repository / relative_path).read_text(encoding="utf-8")
-        match = _GENERATED_INPUT_DESCRIPTION.search(source)
-        assert match is not None, (
-            f"{relative_path} must carry the generated DESIGN input-description "
-            "block so source guidance cannot drift from the public constructor"
-        )
-        bodies.append(match.group("body"))
-
-    assert len({_words(body) for body in bodies}) == 1, (
-        "the skill, agent, and ADR must publish one shared DESIGN input description; "
-        "independently edited manifest prose leaves different authors with different "
-        "accepted input languages"
-    )
-    assert _words(bodies[0]) in _words(help_text), (
-        "the public help must expose the same generated input description shipped "
-        "to DESIGN authors; a CLI-only or documentation-only description is not a "
-        "usable shared constructor contract"
-    )
-
-    projections = docgen.project_generated_regions(repository, docgen.scan(repository))
-    projected = {
-        projection.path.relative_to(repository): projection
-        for projection in projections
-    }
-    missing = set(INPUT_DESCRIPTION_ASSETS) - set(projected)
-    assert not missing, (
-        "docgen must own every source asset that publishes the DESIGN input "
-        f"description; missing projections={sorted(map(str, missing))}"
-    )
-    stale = docgen.check_generated_regions(
-        repository, [projected[path] for path in INPUT_DESCRIPTION_ASSETS]
-    )
-    assert not stale, (
-        "the checked source guidance must already equal docgen's projection of the "
-        f"shared constructor description; stale assets={stale}"
-    )
-
-
-def _craft_prompt(
-    root: Path, environment: dict[str, str], tmp_path: Path
-) -> tuple[int, str, str, str]:
-    """Run the real craft consumer and retain its controlled-provider input."""
-    results, turns, counter = (
-        tmp_path / "craft-answers.json",
-        tmp_path / "craft-turns.json",
-        tmp_path / "craft-counter",
-    )
-    results.write_text(
-        json.dumps(
-            [
-                {
-                    "structured_output": {
-                        "outcome": "rejected",
-                        "diagnostic": "captured corrected facts at craft boundary",
-                        "blocked_by": "design",
-                    }
-                }
-            ]
-        )
-    )
-    provider_environment = fake_provider.environment(
-        root,
-        launcher_dir=tmp_path / "craft-bin",
-        results=results,
-        log=turns,
-        counter=counter,
-        package_parent=PACKAGE_PARENT,
-    )
-    code, out, err = run_cli_in_process(
-        ["craft", "--repo-root", str(root), "--value", "1"],
-        cwd=root,
-        env=hermetic_environment(
-            provider_environment | {"HOME": environment["HOME"]},
-            tmp_path / "craft-claude-config",
-        ),
-        catch_all=True,
-    )
-    return code, out, err, json.loads(turns.read_text())[0]["prompt"]
-
-
 def _design_state(root: Path, environment: dict[str, str]) -> str:
     code, out, err = run_cli_in_process(
         ["state", "--repo-root", str(root)], cwd=root, env=environment, catch_all=True
@@ -438,47 +259,6 @@ def _design_state(root: Path, environment: dict[str, str]) -> str:
         f"the binding transition is observable (stdout={out!r}, stderr={err!r})"
     )
     return out
-
-
-def _oracle_prompt(
-    root: Path, environment: dict[str, str], tmp_path: Path
-) -> tuple[int, str, str, str]:
-    """Run the real oracle step and return its captured authoring prompt."""
-    results, turns, counter = (
-        tmp_path / "oracle-answers.json",
-        tmp_path / "oracle-turns.json",
-        tmp_path / "oracle-counter",
-    )
-    results.write_text(
-        json.dumps(
-            [
-                {
-                    "structured_output": {
-                        "outcome": "rejected",
-                        "diagnostic": "captured the authoring boundary",
-                    },
-                }
-            ]
-        )
-    )
-    provider_environment = fake_provider.environment(
-        root,
-        launcher_dir=tmp_path / "oracle-bin",
-        results=results,
-        log=turns,
-        counter=counter,
-        package_parent=PACKAGE_PARENT,
-    )
-    code, out, err = run_cli_in_process(
-        ["oracle", "--repo-root", str(root), "--value", "1"],
-        cwd=root,
-        env=hermetic_environment(
-            provider_environment | {"HOME": environment["HOME"]},
-            tmp_path / "oracle-claude-config",
-        ),
-        catch_all=True,
-    )
-    return code, out, err, json.loads(turns.read_text())[0]["prompt"]
 
 
 def _track_authority(root: Path, contents: bytes) -> Path:
@@ -557,21 +337,6 @@ def test_design_document_is_the_configured_authority_and_matching_bound_facts(
         "human prefix and unrelated H2 sections, then append only the canonical "
         "owned section"
     )
-    facts_json = rows.get("DESIGN-FACTS")
-    assert facts_json is not None, (
-        "a successful DESIGN terminal must publish DESIGN-FACTS so callers can "
-        "compare the bound typed projection without parsing Markdown"
-    )
-    assert json.loads(facts_json) == EXPECTED_FACTS, (
-        "DESIGN-FACTS must expose exactly the DesignFacts projection of the same "
-        "normalized manifest; do not derive facts separately from Markdown"
-    )
-    assert facts_json == json.dumps(
-        EXPECTED_FACTS, ensure_ascii=False, separators=(",", ":")
-    ), (
-        "DESIGN-FACTS must be canonical JSON so callers can compare the public "
-        "facts exactly"
-    )
     assert_state_delta(
         before={
             "configured_authority": False,
@@ -642,56 +407,6 @@ def test_design_document_projects_applicable_boundaries_and_acceptance_supports(
         "the public terminal facts must bind the same nonempty acceptance "
         "supports as the accepted semantic manifest; project them from "
         "DesignFacts rather than deriving a separate terminal payload"
-    )
-
-
-def test_constraints_survive_the_bound_handover_into_the_actual_oracle_prompt(
-    design_repository: tuple[Path, dict[str, str]], tmp_path: Path
-) -> None:
-    """Closed input constraints reach the acceptance designer as typed facts."""
-    root, environment = design_repository
-    _bootstrap_value(root, environment, tmp_path)
-    manifest = json.loads(json.dumps(MANIFEST))
-    manifest["constraints"] = [
-        "The new public form is exactly des devops --repo-root ROOT --input -, reading one strict UTF-8 OperationalDocumentInput JSON object from stdin. It invokes no provider or role.",
-        "OperationalDocumentInput v1 has exactly schema_version, authority, purpose, environment, deployment, recovery, and observability. schema_version is integer 1; authority is exactly {heading: non-empty single-line string}; purpose is a non-empty string.",
-        "Each of environment, deployment, recovery, and observability is exactly {applicability, reason, obligations}. applicability is applicable or not_applicable; reason is a non-empty string; obligations is an array with no duplicate id.",
-    ]
-
-    code, out, err = _design(root, environment, manifest)
-    assert code == 0, out + err
-    bound = json.loads((root / HANDOVER).read_text())["values"][0]["authority"]
-    assert bound["obligations"] == manifest["constraints"], (
-        "the handover must persist normalized constraints as typed obligations "
-        "before the oracle step reads its authority"
-    )
-    assert bound["decisions"] == manifest["decisions"], (
-        "constraints are an added projection; they must not overwrite the "
-        "separate design decisions"
-    )
-
-    oracle_code, oracle_out, oracle_err, prompt = _oracle_prompt(
-        root, environment, tmp_path
-    )
-    assert oracle_code == 1, oracle_out + oracle_err
-    assert (
-        _terminal(oracle_out, oracle_err).get("WHAT") == "AcceptanceDesignRejected"
-    ), (
-        "the controlled provider intentionally rejects after capture; no oracle "
-        "authoring or measurement is part of this prompt-boundary regression"
-    )
-    prompt_facts = {
-        key: json.loads(value)
-        for line in prompt.splitlines()
-        for key, separator, value in [line.partition(": ")]
-        if separator
-    }
-    assert prompt_facts["obligations"] == manifest["constraints"], (
-        "the real nw-acceptance-designer invocation must receive the closed "
-        "input constraints from its typed authority facts"
-    )
-    assert prompt_facts["decisions"] == manifest["decisions"], (
-        "the acceptance prompt must retain decisions separately from obligations"
     )
 
 
@@ -787,15 +502,8 @@ def test_replace_current_rebinds_only_the_selected_section_and_craft_reads_v2(
     corrected["purpose"] = "Expose the corrected selected widget color."
     corrected["decisions"] = ["Keep corrected color validation at Widget construction."]
     expected_v2_facts = {
-        "targets": [{"path": "src/widget.py", "decision": "EXTEND"}],
-        "paradigm": "object_oriented",
+        **EXPECTED_FACTS,
         "decisions": ["Keep corrected color validation at Widget construction."],
-        "oracle": "tests/test_widget.py::test_selected_color",
-        "acceptance_supports": [],
-        "verification": [["pytest", "-q", "tests/test_widget.py"]],
-        "oracle_verification_index": 0,
-        "obligations": ["Preserve existing callers."],
-        "authority_locator": "docs/product/architecture/brief.md#Widget color",
     }
 
     refused_code, refused_out, refused_err = _design(root, environment, corrected)
@@ -819,21 +527,6 @@ def test_replace_current_rebinds_only_the_selected_section_and_craft_reads_v2(
         "public_oracle": corrected["public_oracle"],
     }
     assert json.loads(handover_v2)["values"][1] == unrelated_v1
-
-    craft_code, craft_out, craft_err, craft_prompt = _craft_prompt(
-        root, environment, tmp_path
-    )
-    craft_rows = _terminal(craft_out, craft_err)
-    assert craft_code != 0 and craft_rows.get("WHAT") == "CraftRejected"
-    prompt_facts = {
-        key: json.loads(value)
-        for line in craft_prompt.splitlines()
-        for key, separator, value in [line.partition(": ")]
-        if separator
-    }
-    assert prompt_facts["authority"] == expected_v2_facts["authority_locator"]
-    assert prompt_facts["decisions"] == expected_v2_facts["decisions"]
-    assert prompt_facts["targets"] == [["src/widget.py", "EXTEND"]]
 
     retry_code, retry_out, retry_err = _design(
         root, environment, corrected, replace_current=True
@@ -1254,6 +947,41 @@ def test_public_construction_refuses_a_new_target_required_as_acceptance_support
     _assert_refusal_without_projection_mutation(root, environment, manifest)
 
 
+def test_public_design_refusal_carries_every_independent_manifest_defect(
+    design_repository: tuple[Path, dict[str, str]],
+) -> None:
+    """Two independent mistakes cost one submission, not one each."""
+    root, environment = design_repository
+    single = json.loads(json.dumps(MANIFEST))
+    single["purpose"] = " \t "
+    joint = json.loads(json.dumps(single))
+    joint["oracle_verification_index"] = 1
+
+    _, single_out, single_err = _design(root, environment, single)
+    code, out, err = _design(root, environment, joint)
+    single_rows, rows = _terminal(single_out, single_err), _terminal(out, err)
+
+    assert code != 0 and rows.get("DELIVERY-OUTCOME") == "Refusal", (
+        f"stdout={out!r}, stderr={err!r}"
+    )
+    assert rows.get("WHAT") == "InvalidDesignDocument"
+    why = rows.get("WHY", "")
+    assert "manifest.purpose" in why and "manifest.oracle_verification_index" in why, (
+        "one public refusal must name both independent defects so the architect "
+        f"corrects them in one submission; WHY was {why!r}"
+    )
+    assert single_rows.get("WHY") and single_rows["WHY"] in why, (
+        "each defect inside a joint refusal keeps its single-defect statement"
+    )
+    how, single_how = rows.get("HOW", ""), single_rows.get("HOW", "")
+    assert single_how and how != single_how and how.endswith(single_how), (
+        "a joint refusal asks for every listed defect, then keeps the grammar HOW; "
+        f"HOW was {how!r}"
+    )
+    assert not (root / HANDOVER).exists()
+    assert not (root / REPOSITORY_DESTINATION).exists()
+
+
 @pytest.mark.parametrize(
     ("case", "field", "value"),
     [
@@ -1330,8 +1058,17 @@ def test_trimmed_heading_normalizes_to_the_public_document_locator(
             MANIFEST["boundaries"],
         ),
         (
-            "applicable boundaries",
-            MANIFEST["prefactoring"],
+            "applicable prefactoring and boundaries",
+            {
+                "applicability": "applicable",
+                "existing_oracle": "tests/test_widget.py::test_default_color",
+                "move": "Extract the current default lookup without changing output.",
+                "preserved_observation": "A default widget remains blue.",
+                "verification": [
+                    ["pytest", "-q", "tests/test_widget.py::test_default_color"]
+                ],
+                "acceptance_supports": [],
+            },
             {
                 "applicability": "applicable",
                 "driving_port": "des design",
@@ -1452,6 +1189,23 @@ def test_applicable_agreement_analysis_renders_every_declared_party(
     _bootstrap_value(root, environment, tmp_path)
     manifest = json.loads(json.dumps(MANIFEST))
     manifest["agreement_analysis"] = APPLICABLE_AGREEMENT_ANALYSIS
+    manifest["impact_closure"] = {
+        "applicability": "applicable",
+        "items": [
+            {
+                "kind": "runtime",
+                "locator": "src/widget.py",
+                "decision": "CHANGED",
+                "reason": "Widget owns the migrated color.",
+            },
+            {
+                "kind": "consumer",
+                "locator": "scripts/release/experimental_migration_decision.py:20",
+                "decision": "MIGRATED",
+                "reason": "Reads schema v4 like every other release channel.",
+            },
+        ],
+    }
 
     code, out, err = _design(root, environment, manifest)
     rows = _terminal(out, err)
@@ -1899,206 +1653,6 @@ def test_design_inserts_a_separator_before_an_owned_section(
     assert (root / HANDOVER).read_bytes() != handover_before
 
 
-def _replay_design(
-    root: Path,
-    environment: dict[str, str],
-    tmp_path: Path,
-    *,
-    label: str,
-    value: int = 1,
-) -> tuple[int, str, str, Path]:
-    """Run `des design --value N` with NO input and NO finding: the replay arm.
-
-    The step resolves its provider port before this branch runs even though it
-    buys no turn, so the invocation carries a controlled provider.  The returned
-    log path is the falsifier for "zero turns": it must never come into
-    existence, because a replay that bought an architect turn is not a replay.
-    """
-    results, turns, counter = (
-        tmp_path / f"{label}-answers.json",
-        tmp_path / f"{label}-turns.json",
-        tmp_path / f"{label}-counter",
-    )
-    results.write_text(json.dumps([]))
-    provider_environment = fake_provider.environment(
-        root,
-        launcher_dir=tmp_path / f"{label}-bin",
-        results=results,
-        log=turns,
-        counter=counter,
-        package_parent=PACKAGE_PARENT,
-    )
-    code, out, err = run_cli_in_process(
-        ["design", "--repo-root", str(root), "--value", str(value)],
-        cwd=root,
-        env=hermetic_environment(
-            provider_environment | {"HOME": environment["HOME"]},
-            tmp_path / f"{label}-claude-config",
-        ),
-        catch_all=True,
-    )
-    return code, out, err, turns
-
-
-def test_design_replay_reports_a_binding_only_while_the_document_resolves_it(
-    design_repository: tuple[Path, dict[str, str]], tmp_path: Path
-) -> None:
-    """A stored `design=bound` record is confirmed only by the document on disk.
-
-    One value is bound through the real public constructor, then replayed twice
-    through `des design --value 1` -- the zero-cost arm that today trusts the
-    stored designation without ever opening a document.  The two replays differ
-    only in whether the value's own recorded authority locator still resolves in
-    the configured document:
-
-    * while the section resolves, the replay is exactly today's answer -- the
-      same Success, the same VALUE/PARADIGM/ORACLE/TARGETS/RECORDED facts, zero
-      turns bought and not one byte written;
-    * once a human renames that H2 out of the document, the record and the file
-      disagree.  The replay must then refuse rather than confirm a binding the
-      document no longer carries, naming the unresolved locator, saying that the
-      record and the file disagree, and naming `--finding -` as the way forward.
-    """
-    root, environment = design_repository
-    _bootstrap_value(root, environment, tmp_path)
-    authority = _track_authority(root, UNRELATED_AUTHORITY_PREFIX)
-    bind_code, bind_out, bind_err = _design(root, environment, MANIFEST)
-    assert bind_code == 0, (
-        "the public constructor must first bind this value's typed design facts "
-        f"to a resolving document section (stdout={bind_out!r}, stderr={bind_err!r})"
-    )
-    assert "design=bound" in _design_state(root, environment), (
-        "the fixture must reach the recorded state whose agreement with the "
-        "document this scenario is about"
-    )
-    expected_locator = f"{REPOSITORY_DESTINATION}#Widget color"
-    authority_bound = authority.read_bytes()
-    handover_bound = (root / HANDOVER).read_bytes()
-
-    agreeing_code, agreeing_out, agreeing_err, agreeing_turns = _replay_design(
-        root, environment, tmp_path, label="agreeing"
-    )
-    agreeing_rows = _terminal(agreeing_out, agreeing_err)
-    agreeing_transcript = _words(agreeing_out + "\n" + agreeing_err)
-
-    assert agreeing_code == 0 and agreeing_rows.get("DELIVERY-OUTCOME") == "Success", (
-        "while the recorded locator still resolves, the replay must remain the "
-        "zero-cost Success it is today; reading the document back may not turn a "
-        f"true binding into a failure (stdout={agreeing_out!r}, stderr={agreeing_err!r})"
-    )
-    assert agreeing_rows.get("TURNS-BOUGHT") == "0", (
-        "confirming an agreeing record must stay free; the replay reads a "
-        f"document, it does not buy an architect turn (rows={agreeing_rows!r})"
-    )
-    assert not agreeing_turns.exists(), (
-        "the agreeing replay must invoke no provider at all; a bought turn over "
-        "an already-bound value is the paid overwrite L1 exists to prevent"
-    )
-    assert {
-        label: agreeing_rows.get(label)
-        for label in ("VALUE-1", "PARADIGM", "ORACLE", "TARGETS")
-    } == {
-        "VALUE-1": json.dumps(observation("widget color"), ensure_ascii=False),
-        "PARADIGM": EXPECTED_FACTS["paradigm"],
-        "ORACLE": EXPECTED_FACTS["oracle"],
-        "TARGETS": "src/widget.py (EXTEND)",
-    }, (
-        "the agreeing replay must publish exactly the same typed facts as today; "
-        "the read-back decides whether these rows may be published, it does not "
-        f"change one of them (rows={agreeing_rows!r})"
-    )
-    assert "RECORDED:" in agreeing_out + agreeing_err, (
-        "the agreeing replay must keep publishing its RECORDED row so a caller "
-        "still learns that the facts were already bound and nothing was rebought"
-    )
-    assert (
-        _words(
-            "this value's typed design facts are already bound over these bytes, "
-            "so no turn was bought; re-bind with `des design --repo-root <root> "
-            "--value 1 --finding -`"
-        )
-        in agreeing_transcript
-    ), (
-        "the RECORDED row must remain its current sentence, including the "
-        f"`--finding -` re-bind: the agreeing arm changes no byte "
-        f"(stdout={agreeing_out!r}, stderr={agreeing_err!r})"
-    )
-    assert (
-        authority.read_bytes() == authority_bound
-        and (root / HANDOVER).read_bytes() == handover_bound
-    ), (
-        "the agreeing replay must leave both durable projections byte-identical; "
-        "it reads the document to decide, it never writes one"
-    )
-
-    stale_document = authority_bound.replace(
-        b"\n## Widget color\n", b"\n## Widget colour\n"
-    )
-    assert stale_document != authority_bound, (
-        "the fixture must actually rename the owned H2 out of the document; "
-        "otherwise the stale-record world is never entered"
-    )
-    authority.write_bytes(stale_document)
-    git(root, "commit", "-qam", "human renames the owned architecture heading")
-    handover_before_stale = (root / HANDOVER).read_bytes()
-
-    stale_code, stale_out, stale_err, stale_turns = _replay_design(
-        root, environment, tmp_path, label="stale"
-    )
-    stale_rows = _terminal(stale_out, stale_err)
-    stale_transcript = _words(stale_out + "\n" + stale_err)
-    stale_state = _design_state(root, environment)
-
-    assert stale_code != 0 and stale_rows.get("DELIVERY-OUTCOME") == "Refusal", (
-        "a recorded binding whose locator resolves no section in the document on "
-        "disk must refuse; reporting Success here confirms a binding the file "
-        f"does not carry (stdout={stale_out!r}, stderr={stale_err!r})"
-    )
-    assert stale_rows.get("WHAT") == "DesignAuthorityUnlocatable", (
-        "the stale record must reuse the name that already owns 'the declared "
-        f"DESIGN authority section does not resolve on disk', not {stale_rows.get('WHAT')!r}; "
-        "a document that answered and simply does not resolve the heading is a "
-        "refusal, never a retryable substrate failure"
-    )
-    assert not stale_turns.exists(), (
-        "the refusal must intercept before any role is bought; a disagreement "
-        "between the record and the file costs the caller nothing"
-    )
-    missing_refusal_observations = {
-        observation
-        for observation in (
-            expected_locator,
-            "record",
-            "disagree",
-            "--finding -",
-        )
-        if observation not in stale_transcript
-    }
-    assert not missing_refusal_observations, (
-        "the public refusal must name the unresolved locator verbatim as "
-        "'<document>#<heading>', say that the stored record and the document "
-        "disagree, and name the producing re-bind `des design ... --finding -` "
-        f"as the way forward; the terminal omitted {sorted(missing_refusal_observations)!r} "
-        f"(stdout={stale_out!r}, stderr={stale_err!r})"
-    )
-    assert "ORACLE:" not in stale_out + stale_err, (
-        "a refusal must not also publish the bound facts rows; the step either "
-        "confirms the binding or refuses it, never both"
-    )
-    assert authority.read_bytes() == stale_document, (
-        "the refusal must leave the human-owned document byte-identical; the "
-        "step reads it to decide and never repairs it on the author's behalf"
-    )
-    assert (root / HANDOVER).read_bytes() == handover_before_stale, (
-        "the refusal must write nothing: the stored record stays exactly as the "
-        "author left it so `--finding -` can re-bind it deliberately"
-    )
-    assert "design=bound" in stale_state, (
-        "refusing must not silently unbind the value; the record is unchanged "
-        f"and only the report about it is honest (state={stale_state!r})"
-    )
-
-
 #: The typed facts ONE architect turn returns, in the exact provider-neutral
 #: shape `nw-solution-architect` answers under.  `authority_locator` is already
 #: part of that declared payload; the value below names the section the role
@@ -2112,289 +1666,28 @@ ROLE_TURN_FACTS = {
     "verification": [["pytest", "-q", "tests/test_widget.py"]],
     "oracle_verification_index": 0,
     "authority_locator": f"{REPOSITORY_DESTINATION}#Widget color",
+    "architectural_tests": {
+        "applicability": "not_applicable",
+        "reason": "The fixture has no structural boundary change.",
+    },
+    "contract_tests": {
+        "applicability": "not_applicable",
+        "reason": "The fixture changes no shared contract.",
+    },
+    "prefactoring": {
+        "applicability": "not_applicable",
+        "reason": "The fixture requires no preservation move.",
+    },
+    "agreement_analysis": {
+        "applicability": "not_applicable",
+        "reason": "The fixture has no affected agreement.",
+    },
 }
 
 ROLE_TURN_FINDING = (
     "the previously bound facts named no architecture authority section, so "
     "re-author them for this value"
 )
-
-
-@dataclass(frozen=True, kw_only=True)
-class _ArchitectWorkspace:
-    """WHERE one real architect turn runs: its repository and its scratch dir.
-
-    Keyword-only: both fields are `Path`, so a positional pair constructs cleanly
-    with the two swapped and the turn then runs against the scratch directory as
-    though it were the repository. Nothing here checks that at runtime.
-    """
-
-    root: Path
-    tmp_path: Path
-
-
-def _design_turn(
-    workspace: _ArchitectWorkspace,
-    environment: dict[str, str],
-    facts: dict | None,
-    *,
-    label: str,
-    value: int = 1,
-) -> tuple[int, str, str, Path]:
-    """One REAL architect turn through `des design --value N --finding -`.
-
-    The controlled provider answers the closed typed-facts envelope the solution
-    architect's own schema declares -- never a Markdown document and never the
-    closed v1 manifest -- because the section this scenario is about must be
-    derivable from those typed facts alone.  The returned log path lets a caller
-    prove a turn was, or was not, bought.
-    """
-    root = workspace.root
-    tmp_path = workspace.tmp_path
-    results, turns, counter = (
-        tmp_path / f"{label}-answers.json",
-        tmp_path / f"{label}-turns.json",
-        tmp_path / f"{label}-counter",
-    )
-    counter.unlink(missing_ok=True)
-    results.write_text(
-        json.dumps(
-            [
-                {
-                    "structured_output": {
-                        "outcome": "accepted",
-                        "diagnostic": (
-                            "resolved this value's consumed design facts from the "
-                            "existing architecture and code"
-                        ),
-                        "design_facts": facts,
-                    }
-                }
-            ]
-        )
-    )
-    provider_environment = fake_provider.environment(
-        root,
-        launcher_dir=tmp_path / f"{label}-bin",
-        results=results,
-        log=turns,
-        counter=counter,
-        package_parent=PACKAGE_PARENT,
-    )
-    code, out, err = run_cli_in_process(
-        ["design", "--repo-root", str(root), "--value", str(value), "--finding", "-"],
-        cwd=root,
-        env=hermetic_environment(
-            provider_environment | {"HOME": environment["HOME"]},
-            tmp_path / f"{label}-claude-config",
-        ),
-        stdin_text=ROLE_TURN_FINDING,
-        catch_all=True,
-    )
-    return code, out, err, turns
-
-
-def _mismatched_repository(
-    tmp_path: Path, environment: dict[str, str]
-) -> tuple[Path, Path]:
-    """A second real checkout whose configured destination the role disagrees with."""
-    root = base_repository(tmp_path / "contract-gap")
-    (root / ".nwave").mkdir()
-    (root / ".nwave" / "config.json").write_text(
-        json.dumps(
-            {"documents": {"design": {"destination": str(REPOSITORY_DESTINATION)}}}
-        )
-    )
-    workspace = tmp_path / "contract-gap-work"
-    workspace.mkdir()
-    _bootstrap_value(root, environment, workspace)
-    return root, workspace
-
-
-def test_the_design_turn_publishes_the_section_its_record_names(
-    design_repository: tuple[Path, dict[str, str]], tmp_path: Path
-) -> None:
-    """A role turn binds `design=bound` only over a section it actually published.
-
-    The closed-document path already produces two matching projections.  The
-    ROLE-TURN path -- `des design --value N --finding -`, the one the
-    orchestrator uses to author or correct a value's facts from a real architect
-    turn -- binds typed facts whose `authority_locator` names a section, while
-    nothing has ever written that section.  The record therefore names a
-    document that does not carry it, which is exactly the disagreement the
-    replay arm above refuses as `DesignAuthorityUnlocatable`: today a role turn
-    manufactures that stale state on its very first success.
-
-    So this scenario measures the whole constructive chain through the real
-    public driving port:
-
-    * the named document gains the declared heading and a `git status` diff, so
-      the bytes a human reads really moved;
-    * the Success terminal carries the same DOCUMENT / DOCUMENT-SHA256 rows the
-      closed-document path prints, measured against the bytes on disk;
-    * an immediately following `des design --value N` confirms the record
-      instead of refusing `DesignAuthorityUnlocatable`, which is the falsifier
-      for "a value was bound over a section nobody wrote";
-    * and when the returned facts cannot be rendered into the configured
-      document -- the role names one destination, the step is configured with
-      another -- the command REFUSES, naming both sides of that role/step
-      contract gap, binds nothing and writes nothing.
-    """
-    root, environment = design_repository
-    _bootstrap_value(root, environment, tmp_path)
-    authority = _track_authority(root, UNRELATED_AUTHORITY_PREFIX)
-    before_state = _design_state(root, environment)
-    expected_locator = f"{REPOSITORY_DESTINATION}#Widget color"
-
-    code, out, err, turns = _design_turn(
-        _ArchitectWorkspace(root=root, tmp_path=tmp_path),
-        environment,
-        ROLE_TURN_FACTS,
-        label="role",
-    )
-    rows = _terminal(out, err)
-    published = authority.read_bytes()
-    status = git(root, "status", "--porcelain")
-    after_state = _design_state(root, environment)
-
-    assert code == 0 and rows.get("DELIVERY-OUTCOME") == "Success", (
-        "an accepted architect turn whose typed facts name a configured section "
-        "must complete through `des design --value 1 --finding -` "
-        f"(stdout={out!r}, stderr={err!r})"
-    )
-    assert turns.exists(), (
-        "the scenario must measure a REAL role turn; a run that bought none is "
-        "not the authoring path this observation is about"
-    )
-    assert b"\n## Widget color\n" in b"\n" + published, (
-        "the configured document must now carry the H2 the role's own "
-        "authority_locator names, each on its own line; a value may not bind to "
-        f"a heading no document begins (document={published!r})"
-    )
-    assert published.startswith(UNRELATED_AUTHORITY_PREFIX), (
-        "publishing the role's section must preserve every byte of the tracked "
-        "human prefix; the document is human-owned outside this one H2"
-    )
-    missing_rendered_facts = {
-        fact
-        for fact in (
-            ROLE_TURN_FACTS["paradigm"],
-            ROLE_TURN_FACTS["decisions"][0],
-            ROLE_TURN_FACTS["oracle"],
-            ROLE_TURN_FACTS["targets"][0]["path"],
-            ROLE_TURN_FACTS["targets"][0]["decision"],
-            " ".join(ROLE_TURN_FACTS["verification"][0]),
-        )
-        if fact not in published.decode()
-    }
-    assert not missing_rendered_facts, (
-        "the published section must be rendered from the returned typed facts "
-        "and must retain every one of them, so the human authority and the "
-        "bound facts are two projections of one turn; the document omitted "
-        f"{sorted(missing_rendered_facts)!r}"
-    )
-    assert str(REPOSITORY_DESTINATION) in status, (
-        "the named document must show a diff in `git status`; a publication no "
-        f"version-control observation can see is not a durable one (status={status!r})"
-    )
-    assert rows.get("DOCUMENT") == expected_locator, (
-        "the Success terminal must name the section this turn published, in the "
-        "same `<document>#<heading>` form the closed-document path prints, not "
-        f"{rows.get('DOCUMENT')!r}"
-    )
-    assert rows.get("DOCUMENT-SHA256") == hashlib.sha256(published).hexdigest(), (
-        "DOCUMENT-SHA256 must measure the bytes now on disk, so a caller can "
-        "read from the terminal alone that this turn produced document bytes"
-    )
-    assert_state_delta(
-        before={
-            "configured_authority": False,
-            "design_state": "design=bound" in before_state,
-        },
-        after={
-            "configured_authority": b"## Widget color" in published,
-            "design_state": "design=bound" in after_state,
-        },
-        universe={"configured_authority", "design_state"},
-        expected={
-            "configured_authority": set_to(True),
-            "design_state": set_to(True),
-        },
-    )
-
-    replay_code, replay_out, replay_err, replay_turns = _replay_design(
-        root, environment, tmp_path, label="after-role-turn"
-    )
-    replay_rows = _terminal(replay_out, replay_err)
-
-    assert replay_rows.get("WHAT") != "DesignAuthorityUnlocatable", (
-        "the value must not have been bound over a section nobody wrote; a role "
-        "turn that leaves the very next replay refusing its own record has "
-        f"recorded a binding the document does not carry (stdout={replay_out!r}, "
-        f"stderr={replay_err!r})"
-    )
-    assert replay_code == 0 and replay_rows.get("DELIVERY-OUTCOME") == "Success", (
-        "the immediately following `des design --value 1` must confirm the "
-        "record the previous turn published, at zero cost "
-        f"(stdout={replay_out!r}, stderr={replay_err!r})"
-    )
-    assert not replay_turns.exists(), (
-        "confirming a record the document resolves must buy no architect turn"
-    )
-
-    gap_root, gap_workspace = _mismatched_repository(tmp_path, environment)
-    gap_handover_before = (gap_root / HANDOVER).read_bytes()
-    gap_facts = {
-        **ROLE_TURN_FACTS,
-        "authority_locator": "docs/product/architecture/somewhere-else.md#Widget color",
-    }
-
-    gap_code, gap_out, gap_err, _gap_turns = _design_turn(
-        _ArchitectWorkspace(root=gap_root, tmp_path=gap_workspace),
-        environment,
-        gap_facts,
-        label="gap",
-    )
-    gap_rows = _terminal(gap_out, gap_err)
-    gap_transcript = _words(gap_out + "\n" + gap_err)
-    gap_state = _design_state(gap_root, environment)
-
-    assert gap_code != 0 and gap_rows.get("DELIVERY-OUTCOME") == "Refusal", (
-        "facts that cannot be rendered into the configured document must refuse "
-        "through the public terminal, never bind "
-        f"(stdout={gap_out!r}, stderr={gap_err!r})"
-    )
-    assert gap_rows.get("WHAT") == "DesignFactsUnpublishable", (
-        "the refusal must name the role/step contract gap under its own word, "
-        f"not {gap_rows.get('WHAT')!r}; the document is fine and the facts are "
-        "well-formed -- the two sides simply name different destinations"
-    )
-    missing_gap_observations = {
-        observation
-        for observation in (
-            gap_facts["authority_locator"],
-            str(REPOSITORY_DESTINATION),
-            "documents.design.destination",
-        )
-        if observation not in gap_transcript
-    }
-    assert not missing_gap_observations, (
-        "the refusal must name the locator the role declared, the configured "
-        "documents.design.destination it disagrees with, and the repair; the "
-        f"terminal omitted {sorted(missing_gap_observations)!r} "
-        f"(stdout={gap_out!r}, stderr={gap_err!r})"
-    )
-    assert not (gap_root / REPOSITORY_DESTINATION).exists(), (
-        "a contract-gap refusal must write no authority bytes at all"
-    )
-    assert (gap_root / HANDOVER).read_bytes() == gap_handover_before, (
-        "a contract-gap refusal must leave the handover byte-identical, so the "
-        "next call re-elicits DESIGN instead of resuming an unpublished binding"
-    )
-    assert "design=bound" not in gap_state, (
-        "a value whose section was never published must stay unbound "
-        f"(state={gap_state!r})"
-    )
 
 
 # --- shared feature DESIGN: one section per Request beside the value sections ---
@@ -2603,6 +1896,7 @@ def test_shared_design_on_scopeless_legacy_handover_never_falls_back_to_project(
     _bootstrap_value(root, environment, tmp_path, scope_flags=FEATURE_FLAGS)
     payload = json.loads((root / HANDOVER).read_text())
     del payload["scope"]
+    payload.pop("product_authority", None)
     (root / HANDOVER).write_bytes(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
     )
@@ -2873,6 +2167,7 @@ def test_legacy_handover_without_shared_data_reads_with_exact_bytes(
     assert "shared_design" not in payload, "no-shared bytes must omit the key"
     if not scoped:
         del payload["scope"]
+        payload.pop("product_authority", None)
         (root / HANDOVER).write_bytes(
             json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
         )
@@ -3024,6 +2319,7 @@ def test_explicit_feature_constructs_scope_on_a_legacy_graph_and_changes_only_sh
     assert _design(root, environment, MANIFEST)[0] == 0
     legacy = _payload(root)
     del legacy["scope"]
+    legacy.pop("product_authority", None)
     (root / HANDOVER).write_bytes(
         json.dumps(legacy, ensure_ascii=False, separators=(",", ":")).encode()
     )

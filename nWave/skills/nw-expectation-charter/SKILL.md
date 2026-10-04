@@ -42,16 +42,18 @@ des po --repo-root ROOT --project --charter --value N --input FILE
 Use the persisted scope: `--project`, `--epic ID`, `--feature ID`, or
 `--slice FEATURE_ID SLICE_ID`. `--input -` reads stdin. For a missing selected
 charter, input is a closed JSON object with integer `schema_version: 1` and
-nonblank strings `intent`, `observation` and `public_start_recipe`.
+nonblank strings `intent`, `observation` and `public_start_recipe`, plus the
+host role's `structured_output` described below.
 `observation` must equal the persisted selected value's observation exactly.
-Missing semantic facts require clarification before a model turn. Invalid
+Missing semantic facts require clarification before delegation. Invalid
 types, extra keys or conflicting observations refuse. A valid selected member
-ignores supplied input without opening it and buys no new PO turn.
+can be reused without input or a new PO invocation.
 
-DES invokes a fresh installed PO with effective structured-reply-only tools in
-a private directory. It supplies only those three value-side facts and
-independently loads role and charter knowledge. If isolation is unavailable,
-return Indeterminate; do not fall back to a source-reaching invocation.
+The native host invokes a fresh installed PO in an isolated source-blind
+context, with structured-reply-only tools. It supplies only those three
+value-side facts and independently loads the role and charter skill. DES does
+not invoke the PO. If the host cannot preserve isolation and the tools ceiling,
+report Indeterminate; do not fall back to source-reaching invocation.
 
 The PO returns exactly `outcome`, a nonblank `diagnostic`, and `charter`.
 An accepted `charter` contains nonblank `intent`, `exploration`,

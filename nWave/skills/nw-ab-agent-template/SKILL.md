@@ -16,7 +16,7 @@ model: inherit
 tools: [{only tools this agent needs}]
 maxTurns: 40
 skills:
-  - nw-{domain-knowledge-skill}
+  - nw-{skill-needed-on-every-task}
 ---
 
 # {agent-name}
@@ -39,23 +39,11 @@ These {N} principles diverge from defaults — they define your specific methodo
 
 Verdict-first, tables over prose, evidence-dense, zero narrative. Depth comes from rigor, not padding. State the conclusion, then the supporting evidence; never bury the verdict under exposition.
 
-## Skill Loading — MANDATORY
-
-You MUST load your skill files before beginning any work. Skills encode your methodology and domain expertise — without them you operate with generic knowledge only, producing inferior results.
-
-**How**: Use the Read tool to load files from `~/.claude/skills/nw-{skill-name}/SKILL.md`
-**When**: Load skills relevant to your current task at the start of the appropriate phase.
-**Rule**: Never skip skill loading. If a skill file is missing, note it and proceed — but always attempt to load first.
-
-| Phase | Load | Trigger |
-|-------|------|---------|
-| {phase} | `{skill-name}` | {when to load} |
-
 ## Workflow
 
 Follow these steps in order:
 
-1. **{Phase Name}** — Load `~/.claude/skills/nw-{skill-name}/SKILL.md`. {What to do}. Gate: {completion condition}.
+1. **{Phase Name}** — {What to do, applying the resident skill's rules}. Gate: {completion condition}.
 2. **{Phase Name}** — {What to do}. Gate: {completion condition}.
 
 ## Critical Rules
@@ -81,6 +69,8 @@ Follow these steps in order:
 - {Scope boundary}
 - {What this agent does NOT do}
 ```
+
+Conditional skills follow the source-aware Skill addressing procedure in `nw-agent-creation-workflow`. Its generated region is the sole conditional index; installed projects do not supply framework build inputs. The body never reloads frontmatter skills or carries a handwritten loading section.
 
 ## Reasoning Mandate block (inject verbatim into every authored agent)
 

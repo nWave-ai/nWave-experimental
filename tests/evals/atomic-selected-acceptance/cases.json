@@ -2,7 +2,7 @@
  "schema_version": 2,
  "des_grammar_version": 1,
  "distill_target_version": 2,
- "note": "Closed instrument definition. fixture.steps run through the REAL des CLI in a fresh git repository (except the one labelled legacy seed and the setup-only fake provider that authors oracle files). A step whose expect does not hold makes fixture-status setup-failed and the case is never passed to a host. Inputs resolve under fixtures/ ({PYTHON} is substituted by the des interpreter). expected.first_mutating is matched against the normalized FIRST MUTATING des invocation (--repo-root removed); read-only des state/help inspection before it is recorded but never counts as the first operation.",
+ "note": "Closed instrument definition. fixture.steps run through the REAL des CLI in a fresh git repository. The one labelled legacy seed writes historical state; host_setup fixtures deterministically author declared oracle/support files and supply explicit structured host facts, never measured outcomes or model responses. A step whose expect does not hold makes fixture-status setup-failed and the case is never passed to a host. Inputs resolve under fixtures/ ({PYTHON} is substituted by the des interpreter). expected.first_mutating is matched against the normalized FIRST MUTATING des invocation (--repo-root removed); read-only des state/help inspection before it is recorded but never counts as the first operation.",
  "cases": [
   {
    "id": "recovery-incomplete-legacy",
@@ -50,13 +50,16 @@
       "args": [
        "oracle",
        "--value",
-       "1"
+       "1",
+       "--input",
+       "-"
       ],
+      "input": "oracle-host-withheld.json",
       "expect": {
        "exit": "nonzero",
        "what": "SelectedRevisionIncomplete"
       },
-      "purpose": "the terminal the host is told about; refuses without a provider turn"
+      "purpose": "the terminal the host is told about; selected-revision validation precedes withheld host authoring facts"
      }
     ]
    },
@@ -80,7 +83,7 @@
    "role": "nw-acceptance-designer",
    "fixture": {
     "scope": "project",
-    "provenance": "REAL constructors; oracle authored by the setup-only fake provider seam (tests/des/acceptance/fake_provider.py); des oracle then MEASURES it: import at module level -> collection error -> OracleNotRed verdict=broken.",
+    "provenance": "REAL constructors; deterministic host_setup authors the exact declared oracle and support bytes, then des oracle --input - MEASURES them: module-level import error -> OracleNotRed verdict=broken. Supplied authoring facts are synthetic setup, never measured results.",
     "steps": [
      {
       "op": "discuss",
@@ -126,15 +129,17 @@
       "args": [
        "oracle",
        "--value",
-       "1"
+       "1",
+       "--input",
+       "-"
       ],
-      "provider_answers": "oracle-answers-import-fails.json",
+      "host_setup": "oracle-host-setup-broken.json",
       "expect": {
        "exit": "nonzero",
        "what": "OracleNotRed",
        "contains": "verdict=broken"
       },
-      "purpose": "setup-only fake provider authors the broken oracle"
+      "purpose": "host setup authors the broken oracle/support; the real native command measures the failure"
      }
     ]
    },
@@ -146,8 +151,7 @@
      "^des craft\\b",
      "^des distill\\b"
     ],
-    "note": "Repairing the declared support with a non-des edit before des oracle is acceptable; the first mutating DES operation must be des oracle, never craft. New RED cannot be produced under the bounded no-provider stub: the case proves only a support repair (tests/ changed) before des oracle, then the EVAL-NO-PROVIDER first-command terminal.",
-    "provider_bounded": true,
+    "note": "Repairing the declared support with a non-des edit before des oracle is required; the first mutating DES operation must be des oracle --value 1 --input -, never craft. This is a first-command classification, not a completion claim: the real constructor must return a closed terminal, not a usage or malformed-host-result refusal.",
     "requires_support_repair": true
    }
   },
@@ -157,7 +161,7 @@
    "role": "nw-software-crafter",
    "fixture": {
     "scope": "project",
-    "provenance": "REAL constructors; oracle authored by the setup-only fake provider seam; des oracle MEASURES RED on a public assertion (import inside test body).",
+    "provenance": "REAL constructors; deterministic host_setup authors declared oracle/support bytes; des oracle --input - MEASURES actual RED from the public assertion when the order CLI is absent. Supplied host facts do not establish RED.",
     "steps": [
      {
       "op": "discuss",
@@ -203,14 +207,16 @@
       "args": [
        "oracle",
        "--value",
-       "1"
+       "1",
+       "--input",
+       "-"
       ],
-      "provider_answers": "oracle-answers-red.json",
+      "host_setup": "oracle-host-setup-red.json",
       "expect": {
        "exit": "zero",
        "contains": "ORACLE-RED"
       },
-      "purpose": "setup-only fake provider authors the RED oracle"
+      "purpose": "host setup authors the oracle/support; the real native command must measure RED"
      }
     ]
    },
@@ -222,7 +228,7 @@
      "^des distill\\b",
      "^des oracle\\b"
     ],
-    "provider_bounded": true
+    "note": "The native host authors the correction and supplies its structured result to des craft --value 1 --input -. This case classifies the first command and its closed native terminal, not full delivery; usage and malformed-host-result refusals fail."
    }
   },
   {
@@ -305,13 +311,16 @@
       "args": [
        "oracle",
        "--value",
-       "1"
+       "1",
+       "--input",
+       "-"
       ],
+      "input": "oracle-host-withheld.json",
       "expect": {
        "exit": "nonzero",
        "what": "SelectedRevisionRealignmentNeeded"
       },
-      "purpose": "terminal the host is told about; no provider turn"
+      "purpose": "terminal the host is told about; stale selection is refused before withheld host authoring facts"
      }
     ]
    },

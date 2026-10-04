@@ -9,7 +9,7 @@ from pathlib import Path
 from des.application.delivery_steps import DeliverySteps
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.role_guidance import prepare_next
-from des.cli.step_next import moves_after_refusal, projection
+from des.cli.step_next import moves_after_refusal
 from des.cli.step_terminal import (
     StepRefusal,
     refuse,
@@ -21,11 +21,16 @@ from des.cli.step_terminal import (
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="des verify")
     add_repo_root_argument(parser, "--repo-root", type=Path, required=True)
+    parser.add_argument(
+        "--fresh",
+        action="store_true",
+        help="execute every declared native check again; invalidate current approval first",
+    )
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     root = resolved_root(args.repo_root)
     if isinstance(root, StepRefusal):
         return refuse(root, "des verify --repo-root <root> -- after the HOW above")
-    outcome = DeliverySteps().verify(root)
+    outcome = DeliverySteps().verify(root, fresh=args.fresh)
     facts = list(outcome.facts)
 
     def _fact(label: str) -> str | None:
@@ -34,8 +39,6 @@ def main(argv: list[str] | None = None) -> int:
             None,
         )
 
-    owner = _fact("DEFECT-OWNER")
-    positions = [item for item in (_fact("DEFECT-POSITIONS") or "").split(",") if item]
     if not outcome.succeeded:
         return refuse(
             StepRefusal(
@@ -44,12 +47,9 @@ def main(argv: list[str] | None = None) -> int:
                 outcome.failure.how,
                 outcome.disposition,
             ),
-            _owner_moves(root, owner, positions)
-            if owner is not None
-            else _moves(root, outcome.failure.what),
+            _moves(root, outcome.failure.what),
             facts=facts,
             diagnostic=outcome.diagnostic,
-            turns_bought=outcome.turns_bought,
             role=outcome.role,
         )
     candidate = _fact("CANDIDATE")
@@ -58,37 +58,7 @@ def main(argv: list[str] | None = None) -> int:
         facts,
         prepare_next(root, "reviewer", candidate),
         diagnostic=outcome.diagnostic,
-        turns_bought=outcome.turns_bought,
         role=outcome.role,
-    )
-
-
-#: Which step answers a finding, by the closed word the judge used. `product`
-#: names neither: what is owed then is a decision about the Request, and the
-#: projection below is the honest move.
-_ANSWERING_STEP = {"oracle": "oracle", "design": "design"}
-
-
-def _owner_moves(root: Path, owner: str, positions: list[str]) -> tuple[str, ...]:
-    """The forms that could answer a finding a judge charged to a named role.
-
-    ADR-DES-003 §6: a finding «the oracle does not cover surface X» returns as
-    `DEFECT-OWNER: oracle` and `NEXT` names the author's step. Every line is an
-    EXACT invocation form over a real position -- the judge's own value when it
-    named one, otherwise every position of this Request, all lawful and none
-    invented. More than one line means more than one lawful move, which is the
-    fork G7 signals by cardinality; this software ranks none of them.
-    """
-    step = _ANSWERING_STEP.get(owner)
-    if step is None:
-        return (projection(root),)
-    return (
-        *(
-            f"des {step} --repo-root {root} --value {position} --finding - -- "
-            "the finding on stdin, answered by the role that owns it"
-            for position in positions
-        ),
-        projection(root),
     )
 
 

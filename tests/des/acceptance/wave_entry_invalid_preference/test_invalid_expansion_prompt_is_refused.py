@@ -13,6 +13,7 @@ from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
+SOURCE_PYTHON = Path("/home/parajao/Projects/nWave-dev/.venv/bin/python")
 INVALID_HOME = Path(__file__).parent / "nwave_home_invalid"
 ACCEPTED_EXPANSION_PROMPTS = (
     "ask",
@@ -27,11 +28,15 @@ def _run_wave_entry_with_invalid_preference() -> subprocess.CompletedProcess[str
     """Drive the shipped CLI against the fixture-owned global configuration."""
     environment = os.environ.copy()
     environment["NWAVE_AGENTS_HOME"] = str(INVALID_HOME.resolve())
+    environment["PYTHONPATH"] = os.pathsep.join(
+        (str(REPOSITORY_ROOT / "src"), str(REPOSITORY_ROOT))
+    )
     return subprocess.run(
         [
-            "uv",
-            "run",
-            "des",
+            str(SOURCE_PYTHON),
+            "-P",
+            "-m",
+            "des.cli",
             "wave-entry",
             "--repo-root",
             str(REPOSITORY_ROOT),

@@ -64,7 +64,7 @@ def test_src_des_runtime_has_no_module_form_invocations() -> None:
     `des-init-log`, `des-log-phase`, `des-verify-integrity`,
     `des-health-check` (declared in pyproject.toml under `[project.scripts]`).
 
-    Shape choice (Lyra 2026-05-18 after PBT-pilot falsification): set-difference
+    Shape choice (External 2026-05-18 after PBT-pilot falsification): set-difference
     collapse, not PBT. Per `nw-test-optimization` SKILL section 2-3 (parametrize-
     inflation → set-difference). Hypothesis would add 457ms import + per-example
     overhead x 155, making it slower than parametrize. Mandate-12 still satisfied:

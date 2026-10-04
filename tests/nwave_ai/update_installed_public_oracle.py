@@ -3,8 +3,8 @@
 Run directly: ``uv run python tests/nwave_ai/update_installed_public_oracle.py``.
 The candidate is built and installed into a temporary virtual environment.  The
 initial ``nwave-ai`` and ``des`` commands are therefore the installed entry
-points, never imports from this checkout.  The check row performs its actual
-read-only PyPI request.  Apply rows use explicitly labelled, local external
+points, never imports from this checkout.  Release discovery exercises the
+installed client against a controlled offline HTTP response. Apply rows use local external
 process fixtures for the package-manager and post-replacement executables;
 they prove CLI wiring and stage order, never a remote vendor upgrade.
 """
@@ -23,6 +23,8 @@ import venv
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+
+from packaging.version import Version
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -77,17 +79,56 @@ def _read_json_lines(path: Path) -> list[dict[str, Any]]:
     ]
 
 
+def _controlled_release_boundary(work: Path) -> Path:
+    """Provide only a local HTTP response for the installed discovery client."""
+    events = work / "controlled-release-events.jsonl"
+    (work / "sitecustomize.py").write_text(
+        "import io, json, os, pathlib, urllib.request\n"
+        "class Response(io.BytesIO):\n"
+        "    def __enter__(self): return self\n"
+        "    def __exit__(self, *args): self.close()\n"
+        "def controlled_release(url, *, timeout):\n"
+        "    if url != 'https://pypi.org/pypi/nwave-ai/json' or timeout != 5.0:\n"
+        "        raise RuntimeError('unexpected release request')\n"
+        "    with pathlib.Path(os.environ['G2_RELEASE_EVENTS']).open('a') as out:\n"
+        "        out.write(json.dumps({'url':url, 'timeout':timeout}) + '\\n')\n"
+        '    return Response(b\'{"releases":{"0.0.2":[{"yanked":false}]}}\')\n'
+        "urllib.request.urlopen = controlled_release\n",
+        encoding="utf-8",
+    )
+    return events
+
+
 def _build_wheel(work: Path, env: dict[str, str]) -> tuple[Path, dict[str, str]]:
     """Build the release-shaped, controlled lower-version baseline in isolation."""
     producer = work / "producer"
     ignored = shutil.ignore_patterns(
-        ".git", ".venv", "dist", ".hypothesis", "__pycache__"
+        ".git",
+        ".venv",
+        ".env",
+        ".env.*",
+        ".nwave",
+        ".pytest-*",
+        ".pytest_cache",
+        ".hypothesis",
+        ".ruff_cache",
+        ".mypy_cache",
+        "__pycache__",
+        "*.pyc",
+        ".coverage*",
+        "htmlcov",
+        "build",
+        "dist",
+        "wheelhouse",
+        "*.egg-info",
     )
     shutil.copytree(REPO, producer, ignore=ignored)
     subject = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=REPO, text=True
     ).strip()
-    baseline = "0.0.0.dev0"
+    # Update apply supports stable public channels. A dev baseline would
+    # correctly refuse before any replacement stage and invalidate this oracle.
+    baseline = "0.0.1"
     commands = [
         [
             sys.executable,
@@ -108,6 +149,7 @@ def _build_wheel(work: Path, env: dict[str, str]) -> tuple[Path, dict[str, str]]
             "-m",
             "build",
             "--wheel",
+            "--no-isolation",
             "--outdir",
             str(producer / "wheelhouse"),
         ],
@@ -124,25 +166,49 @@ def _build_wheel(work: Path, env: dict[str, str]) -> tuple[Path, dict[str, str]]
     return wheels[0], {
         "subject_sha": subject,
         "producer_baseline_version": baseline,
-        "factory": "patch_pyproject -> build_dist -> stage_public_wheel_des -> python -m build --wheel",
+        "factory": "patch_pyproject -> build_dist -> stage_public_wheel_des -> python -m build --wheel --no-isolation",
     }
 
 
 def _install_candidate(
-    wheel: Path, work: Path, env: dict[str, str]
+    wheel: Path, version: str, work: Path, env: dict[str, str]
 ) -> tuple[Path, Path, Path]:
     environment = work / "installed-candidate"
     venv.EnvBuilder(with_pip=True, system_site_packages=True).create(environment)
     bindir = environment / ("Scripts" if os.name == "nt" else "bin")
     python = bindir / ("python.exe" if os.name == "nt" else "python")
     installed = _run(
-        [str(python), "-m", "pip", "install", "--no-deps", str(wheel)],
+        [
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            "--no-index",
+            "--find-links",
+            str(wheel.parent),
+            "--find-links",
+            str(wheel.parent / "offline-wheelhouse"),
+            f"nwave-ai=={version}",
+        ],
         env=env,
         cwd=work,
     )
     if installed.returncode:
         raise RuntimeError(
             f"candidate wheel install failed: {installed.stderr or installed.stdout}"
+        )
+    origin = _run(
+        [
+            str(python),
+            "-c",
+            "import importlib.metadata as m; print('absent' if m.distribution('nwave-ai').read_text('direct_url.json') is None else 'direct-origin')",
+        ],
+        env=env,
+        cwd=work,
+    )
+    if origin.returncode or origin.stdout.strip() != "absent":
+        raise RuntimeError(
+            "named-package wheel install did not establish a public-index-shaped origin"
         )
     console = bindir / ("nwave-ai.exe" if os.name == "nt" else "nwave-ai")
     des = bindir / ("des.exe" if os.name == "nt" else "des")
@@ -156,7 +222,9 @@ def _versions(check: ProcessObservation) -> tuple[str, str] | None:
     return (values[0], values[1]) if len(values) == 2 else None
 
 
-def _write_controlled_tools(tools: Path, events: Path, console: Path) -> None:
+def _write_controlled_tools(
+    tools: Path, events: Path, console: Path, des: Path
+) -> None:
     """Create external boundary fixtures, never injected into product code.
 
     The controlled ``uv`` represents only package replacement. On a success it
@@ -175,7 +243,9 @@ if sys.argv[1:] == ["--version"]:
     suffix = "-wrong" if scenario == "proof-mismatch" else ""
     print("nwave-ai " + os.environ["G2_VERSION"] + suffix)
     sys.exit(0)
-if sys.argv[1:] == ["install", "--yes"]:
+if sys.argv[1:] == ["install", "--dry-run", "--yes", "--no-project-guidance", "--platform", "codex"]:
+    sys.exit(45 if scenario == "preflight-fails" else 0)
+if sys.argv[1:] == ["install", "--yes", "--no-project-guidance", "--platform", "codex"]:
     sys.exit(42 if scenario == "sync-fails" else 0)
 sys.exit(43)
 """
@@ -194,7 +264,6 @@ console.chmod(0o755)
 """,
         encoding="utf-8",
     )
-    des = tools / "des"
     des.write_text(
         f"""#!{sys.executable}
 import json, os, pathlib, sys
@@ -245,6 +314,21 @@ def _apply_row(
 def _assert_apply_rows(rows: list[dict[str, Any]], latest: str, root: Path) -> bool:
     expected_replace = ["tool", "install", "--reinstall", f"nwave-ai=={latest}"]
     expected_des = ["update", "--apply", "--root", str(root)]
+    preflight = [
+        "install",
+        "--dry-run",
+        "--yes",
+        "--no-project-guidance",
+        "--platform",
+        "codex",
+    ]
+    synchronization = [
+        "install",
+        "--yes",
+        "--no-project-guidance",
+        "--platform",
+        "codex",
+    ]
     by_name = {row["scenario"]: row for row in rows}
     success = by_name["success"]
     events = success["external_events"]
@@ -252,18 +336,35 @@ def _assert_apply_rows(rows: list[dict[str, Any]], latest: str, root: Path) -> b
         "controlled-package-manager",
         "controlled-owned-console",
         "controlled-owned-console",
+        "controlled-owned-console",
         "controlled-des",
     ]:
         return False
     if events[0]["argv"] != expected_replace or events[1]["argv"] != ["--version"]:
         return False
-    if events[2]["argv"] != ["install", "--yes"] or events[3]["argv"] != expected_des:
+    if (
+        events[2]["argv"] != preflight
+        or events[3]["argv"] != synchronization
+        or events[4]["argv"] != expected_des
+    ):
+        return False
+    if not all(
+        f"{stage}: completed" in success["invocation"]["stdout"]
+        for stage in (
+            "replace-package",
+            "verify-executable",
+            "preflight-framework",
+            "synchronize-framework",
+            "migrate-artifacts",
+        )
+    ):
         return False
     expected_stops = {
         "replace-fails": ("replace-package", 1),
         "proof-mismatch": ("verify-executable", 2),
-        "sync-fails": ("synchronize-framework", 3),
-        "migration-fails": ("migrate-artifacts", 4),
+        "preflight-fails": ("preflight-framework", 3),
+        "sync-fails": ("synchronize-framework", 4),
+        "migration-fails": ("migrate-artifacts", 5),
     }
     for name, (stage, count) in expected_stops.items():
         row = by_name[name]
@@ -273,6 +374,8 @@ def _assert_apply_rows(rows: list[dict[str, Any]], latest: str, root: Path) -> b
         ):
             return False
         if len(row["external_events"]) != count:
+            return False
+        if f"{stage}: completed" in row["invocation"]["stdout"]:
             return False
     return True
 
@@ -304,7 +407,9 @@ def main() -> int:
                 "NO_COLOR": "1",
             }
             wheel, lineage = _build_wheel(work, env)
-            python, console, des = _install_candidate(wheel, work, env)
+            python, console, des = _install_candidate(
+                wheel, lineage["producer_baseline_version"], work, env
+            )
             bootstrap = _run(
                 [str(console), "install", "--yes", "--platform", "codex"],
                 env=env,
@@ -325,6 +430,23 @@ def main() -> int:
                 raise RuntimeError(
                     "isolated public install did not create its installed DES runtime manifest"
                 )
+            global_config = home / ".nwave" / "config.json"
+            installed_choice = json.loads(global_config.read_text(encoding="utf-8"))
+            provenance = installed_choice.get("install", {})
+            expected_paths = {
+                "agents_home": str(home),
+                "claude_config_dir": str(home / ".claude"),
+                "codex_config_dir": str(home / ".codex"),
+            }
+            observation["bootstrap"]["persisted_install"] = provenance
+            if (
+                provenance.get("target_platforms") != ["codex"]
+                or provenance.get("dev_mode") is not False
+                or provenance.get("host_paths") != expected_paths
+            ):
+                raise RuntimeError(
+                    "public install did not persist the selected Codex target, public mode, and exact host destinations"
+                )
             runtime_env = env | {"PYTHONPATH": str(runtime)}
             observation["installed"] = {
                 **lineage,
@@ -338,11 +460,19 @@ def main() -> int:
                 "home": _tree_hashes(home),
                 "root": _tree_hashes(check_root),
             }
-            check = _run([str(console), "update", "--check"], env=env, cwd=check_root)
+            release_events = _controlled_release_boundary(work)
+            discovery_env = env | {
+                "PYTHONPATH": str(work),
+                "G2_RELEASE_EVENTS": str(release_events),
+            }
+            check = _run(
+                [str(console), "update", "--check"], env=discovery_env, cwd=check_root
+            )
             check_after = {"home": _tree_hashes(home), "root": _tree_hashes(check_root)}
             parsed = _versions(check)
             observation["check"] = {
-                "external_release_discovery": "actual read-only PyPI request",
+                "external_release_discovery": "CONTROLLED offline HTTP response at the public PyPI client boundary",
+                "release_events": _read_json_lines(release_events),
                 "process": _json_process(check),
                 "before": check_before,
                 "after": check_after,
@@ -391,12 +521,14 @@ def main() -> int:
                 check.returncode != 0
                 or not parsed
                 or not observation["check"]["unchanged"]
+                or observation["check"]["release_events"]
+                != [{"url": "https://pypi.org/pypi/nwave-ai/json", "timeout": 5.0}]
             ):
                 raise RuntimeError(
                     "actual installed --check did not yield a read-only version observation"
                 )
             current, latest = parsed
-            if latest <= current:
+            if Version(latest) <= Version(current):
                 raise RuntimeError(
                     f"actual PyPI check is not update-available ({current} -> {latest}); no apply sequence was claimed"
                 )
@@ -406,10 +538,10 @@ def main() -> int:
                 )
 
             tools, events = work / "controlled-tools", work / "controlled-events.jsonl"
-            _write_controlled_tools(tools, events, console)
+            _write_controlled_tools(tools, events, console, des)
             pristine = work / "pristine-nwave-ai"
             shutil.copy2(console, pristine)
-            apply_env = env | {
+            apply_env = discovery_env | {
                 "PATH": str(tools) + os.pathsep + env.get("PATH", ""),
                 "G2_EVENTS": str(events),
                 "G2_OWNED_CONSOLE": str(console),
@@ -427,12 +559,13 @@ def main() -> int:
                     "success",
                     "replace-fails",
                     "proof-mismatch",
+                    "preflight-fails",
                     "sync-fails",
                     "migration-fails",
                 )
             ]
             observation["apply"] = {
-                "actual_release_discovery": "each row reuses the installed CLI and its real PyPI read",
+                "actual_release_discovery": "each row reuses the installed CLI against controlled offline HTTP",
                 "rows": rows,
             }
             passed = _assert_apply_rows(rows, latest, check_root)

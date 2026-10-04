@@ -42,11 +42,11 @@
 
 ## nw-ab-validate-spec
 
-- [nw-ab-validate-spec](nw-ab-validate-spec.md) — PROCEDURE — validate an EXISTING agent spec against the 19-item checklist. Trigger: checking a spec for compliance (also the shared composition target create/migrate/merge invoke). One job: run the checklist, report pass/fail.
+- [nw-ab-validate-spec](nw-ab-validate-spec.md) — PROCEDURE — validate an EXISTING agent spec against the nw-ab-validation-checklist. Trigger: checking a spec for compliance (also the shared composition target create/migrate/merge invoke). One job: run the checklist, report pass/fail.
 
 ## nw-ab-validation-checklist
 
-- [nw-ab-validation-checklist](nw-ab-validation-checklist.md) — KNOWLEDGE (data) — the 19-item agent-spec validation checklist. The item definitions the validate-spec procedure RUNS against. No sequence of its own.
+- [nw-ab-validation-checklist](nw-ab-validation-checklist.md) — KNOWLEDGE (data) — the agent-spec validation checklist. The item definitions the validate-spec procedure RUNS against. No sequence of its own.
 
 ## nw-abr-critique-dimensions
 
@@ -94,7 +94,7 @@
 
 ## nw-bdd-methodology
 
-- [nw-bdd-methodology](nw-bdd-methodology.md) — BDD patterns for acceptance test design - Given-When-Then structure, scenario writing rules, pytest-bdd implementation, anti-patterns, and living documentation
+- [nw-bdd-methodology](nw-bdd-methodology.md) — BDD patterns for acceptance test design - Given-When-Then as a language-neutral specification style, scenario writing rules, realization in the project's incumbent native scenario syntax (Python pytest-bdd binding labelled), anti-patterns, and living documentation
 
 ## nw-bdd-requirements
 
@@ -278,7 +278,7 @@
 
 ## nw-distill-red-scaffolding
 
-- [nw-distill-red-scaffolding](nw-distill-red-scaffolding.md) — DISTILL RED-ready scaffolding procedure (Mandate 7) — create minimal stub files so ATs are RED (assertion failure, impl missing) not BROKEN (import/infra error), with per-language scaffold recipes, then run the pre-DELIVER fail-for-the-right-reason gate that classifies each failing scenario before handoff.
+- [nw-distill-red-scaffolding](nw-distill-red-scaffolding.md) — Prepare declared native oracle/supports and establish failure for the promised business reason without production stubs, invented reports or runner substitution.
 
 ## nw-diverge
 
@@ -552,13 +552,9 @@
 
 - [nw-review-output-format](nw-review-output-format.md) — YAML output format and approval criteria for platform design reviews. Load when generating review feedback.
 
-## nw-review-workflow
-
-- [nw-review-workflow](nw-review-workflow.md) — Detailed review process, v2 validation checklist, and scoring methodology for agent definition reviews
-
 ## nw-rigor
 
-- [nw-rigor](nw-rigor.md) — Configure explicit Codex or Claude model selections for nWave DES defaults or published roles. Use when choosing provider/model defaults or project overrides; it never derives a model from a competence label.
+- [nw-rigor](nw-rigor.md) — Configure explicit Codex or Claude model facts for nWave defaults or published roles, consumed by the native host where supported. Never derives a model from a competence label.
 
 ## nw-role-invocation
 
@@ -654,7 +650,7 @@
 
 ## nw-tdd-methodology-paradigm
 
-- [nw-tdd-methodology-paradigm](nw-tdd-methodology-paradigm.md) — The default test-writing paradigm for unit + acceptance tests - property-based + state-delta mandate, the applicability matrix, the debt-payoff efficacy curve, and the delta-first trigger/bypass rules for state-mutating code
+- [nw-tdd-methodology-paradigm](nw-tdd-methodology-paradigm.md) — Native contract-driven unit and acceptance testing: generative broad laws, finite examples, public-state preservation and real-boundary evidence.
 
 ## nw-tdd-methodology-pbt-deep
 
@@ -682,7 +678,7 @@
 
 ## nw-test-design-mandates-layered-mechanics
 
-- [nw-test-design-mandates-layered-mechanics](nw-test-design-mandates-layered-mechanics.md) — Layered test-mechanics mandates for acceptance tests — Universe-bound assertion at layers 1-3 (assert_state_delta), Mandate-9-v2 three-way treatment by mock-status, layer-dependent PBT input mode, two-tier acceptance (Tier A Gojko + optional Tier B state-machine PBT), example-based integration sad paths, the Layered Test Discipline table, and the Polyglot Adapter Matrix. Consult while choosing assertion style, PBT mode, tier, and sad-path treatment for a given layer and driven-adapter realness. Canonical definitions; SSOT for these mandates.
+- [nw-test-design-mandates-layered-mechanics](nw-test-design-mandates-layered-mechanics.md) — Layered acceptance-test mechanics: public state preservation, native generative laws, real-boundary journeys and explicit failure observations.
 
 ## nw-test-design-mandates-scenario-design
 
@@ -690,7 +686,7 @@
 
 ## nw-test-optimization
 
-- [nw-test-optimization](nw-test-optimization.md) — Methodology for minimizing test count while maximizing behavioral coverage - lean core composing behavior-counting, anti-patterns, consolidation, budget-gate, paradigm-match, coverage-validation, scope-selection modules
+- [nw-test-optimization](nw-test-optimization.md) — Methodology for minimizing test count while maximizing behavioral coverage - lean core composing behavior-counting, anti-patterns, consolidation, paradigm-match, coverage-validation, scope-selection modules
 
 ## nw-test-optimization-consolidation
 

@@ -11,6 +11,7 @@ Hexagonal Architecture:
 
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -95,6 +96,20 @@ def _declares_attribution(config: dict[str, Any]) -> bool:
     return isinstance(attribution, dict) and isinstance(
         attribution.get("enabled"), bool
     )
+
+
+@dataclass(frozen=True)
+class VerificationReusePolicy:
+    """One-decode view of the project ``verification.reuse`` block.
+
+    ``outputs`` and ``workspace`` are decoded from the SAME raw bytes by
+    ``DESConfig.verification_reuse_policy`` -- never mixed across two
+    reads; ``None`` marks an undeclared field. Constructed only by that
+    kernel; never cached.
+    """
+
+    outputs: tuple[str, ...] | None
+    workspace: dict[str, Any] | None
 
 
 class DESConfig:
@@ -228,6 +243,78 @@ class DESConfig:
         require_feature_id(feature_id)
         return base / "features" / feature_id / "config.json"
 
+    def feature_document_tiers(
+        self, feature_id: Epic | Feature | Slice | str
+    ) -> tuple[object, object]:
+        """``(global_documents, project_documents)`` as feature destinations merge them.
+
+        The ONE tier kernel shared by the reader
+        (:meth:`feature_document_destinations`) and the writer
+        (``ConfigWriter.set_feature_document``): a per-feature override is
+        validated against the SAME effective cascade that later resolves it,
+        never against the built-in defaults, so the writer can never refuse
+        what the reader would accept. Epic templates enter through the same
+        transformation on both sides.
+        """
+        if isinstance(feature_id, (Feature, Slice)):
+            feature_id = feature_id.feature_id
+        epic = feature_id if isinstance(feature_id, Epic) else None
+        global_tier, repo_tier = self._unified_upcast_tiers()
+        if epic is None:
+            return global_tier.get("documents"), repo_tier.get("documents")
+
+        def epic_tier(tier):
+            documents = tier.get("documents", {})
+            if not isinstance(documents, dict):
+                raise FeatureDocumentsInvalid(
+                    "EpicConfigMalformed",
+                    "documents must be an object",
+                    "repair the configuration",
+                )
+            block = documents.get("epic", {})
+            if not isinstance(block, dict):
+                raise FeatureDocumentsInvalid(
+                    "EpicConfigMalformed",
+                    "documents.epic must be an object",
+                    "repair the configuration",
+                )
+            templates = {
+                wave: {"destination": path.replace("docs/feature/", "docs/epic/")}
+                for wave, path in DEFAULT_TEMPLATES.items()
+            }
+            for wave, entry in block.items():
+                if (
+                    wave not in templates
+                    or not isinstance(entry, dict)
+                    or set(entry) != {"destination"}
+                ):
+                    raise FeatureDocumentsInvalid(
+                        "EpicConfigMalformed",
+                        "invalid epic wave configuration",
+                        "supply a wave destination template",
+                    )
+                template = entry["destination"]
+                if not isinstance(template, str) or "{epic}" not in template:
+                    raise FeatureDocumentsInvalid(
+                        "InvalidEpicTemplate",
+                        "epic template must contain {epic}",
+                        "include {epic} in the destination",
+                    )
+                templates[wave] = {
+                    "destination": template.replace("{epic}", "{feature}")
+                }
+            return {"documents": {**documents, "feature": templates}}
+
+        # Defaults enter once; project overrides preserve global epic values.
+        global_tier = epic_tier(global_tier)
+        merged_epic = dict(global_tier["documents"]["feature"])
+        project_epic = repo_tier.get("documents", {}).get("epic", {})
+        project_tier = epic_tier(repo_tier)
+        for wave in project_epic:
+            merged_epic[wave] = project_tier["documents"]["feature"][wave]
+        repo_tier = {"documents": {**project_tier["documents"], "feature": merged_epic}}
+        return global_tier.get("documents"), repo_tier.get("documents")
+
     @staticmethod
     def feature_document_destinations(
         root: Path, feature_id: Epic | Feature | Slice | str
@@ -242,6 +329,12 @@ class DESConfig:
             feature_id = feature_id.feature_id
         epic = feature_id if isinstance(feature_id, Epic) else None
         config = DESConfig(cwd=root)
+        # The tier kernel receives the ORIGINAL scope (Epic included): the
+        # epic template transformation must apply exactly as it did when it
+        # lived inline -- calling it after the id was unwrapped to a string
+        # silently skipped the transformation and routed epic documents
+        # into the wrong namespace.
+        global_documents, project_documents = config.feature_document_tiers(feature_id)
         path = DESConfig.feature_config_path(root, feature_id)
         if epic is not None:
             feature_id = epic.epic_id
@@ -271,65 +364,10 @@ class DESConfig:
                     "documents must be an object",
                     "repair the feature config",
                 )
-        global_tier, repo_tier = config._unified_upcast_tiers()
-        if epic is not None:
-
-            def epic_tier(tier):
-                documents = tier.get("documents", {})
-                if not isinstance(documents, dict):
-                    raise FeatureDocumentsInvalid(
-                        "EpicConfigMalformed",
-                        "documents must be an object",
-                        "repair the configuration",
-                    )
-                block = documents.get("epic", {})
-                if not isinstance(block, dict):
-                    raise FeatureDocumentsInvalid(
-                        "EpicConfigMalformed",
-                        "documents.epic must be an object",
-                        "repair the configuration",
-                    )
-                templates = {
-                    wave: {"destination": path.replace("docs/feature/", "docs/epic/")}
-                    for wave, path in DEFAULT_TEMPLATES.items()
-                }
-                for wave, entry in block.items():
-                    if (
-                        wave not in templates
-                        or not isinstance(entry, dict)
-                        or set(entry) != {"destination"}
-                    ):
-                        raise FeatureDocumentsInvalid(
-                            "EpicConfigMalformed",
-                            "invalid epic wave configuration",
-                            "supply a wave destination template",
-                        )
-                    template = entry["destination"]
-                    if not isinstance(template, str) or "{epic}" not in template:
-                        raise FeatureDocumentsInvalid(
-                            "InvalidEpicTemplate",
-                            "epic template must contain {epic}",
-                            "include {epic} in the destination",
-                        )
-                    templates[wave] = {
-                        "destination": template.replace("{epic}", "{feature}")
-                    }
-                return {"documents": {**documents, "feature": templates}}
-
-            # Defaults enter once; project overrides preserve global epic values.
-            global_tier = epic_tier(global_tier)
-            merged_epic = dict(global_tier["documents"]["feature"])
-            project_epic = repo_tier.get("documents", {}).get("epic", {})
-            project_tier = epic_tier(repo_tier)
-            for wave in project_epic:
-                merged_epic[wave] = project_tier["documents"]["feature"][wave]
-            repo_tier = {
-                "documents": {**project_tier["documents"], "feature": merged_epic}
-            }
         resolved = merge_feature_destinations(
             feature_id,
-            global_documents=global_tier.get("documents"),
-            project_documents=repo_tier.get("documents"),
+            global_documents=global_documents,
+            project_documents=project_documents,
             feature_documents=feature_documents,
         )
         top = root.resolve()
@@ -642,6 +680,139 @@ class DESConfig:
             repo_root=self._project_root,
             framework_root=framework_root,
         )
+
+    def _verification_reuse(self) -> dict[str, Any] | None:
+        """The project ``verification.reuse`` block, or ``None`` when absent.
+
+        One read/shape kernel for every reuse key: the same file, the same
+        error algebra, the same repo-tier-only stance -- global preferences
+        cannot grant ownership over this repository's directories.
+        """
+        try:
+            project = json.loads(self._config_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError) as error:
+            raise ValueError(
+                f"cannot read project verification policy at {self._config_path}: {error}"
+            ) from error
+        if not isinstance(project, dict):
+            raise ValueError(f"{self._config_path} must contain a JSON object")
+        if "verification" not in project:
+            return None
+        verification = project["verification"]
+        if not isinstance(verification, dict):
+            raise ValueError("verification must be an object")
+        if "reuse" not in verification:
+            return None
+        reuse = verification["reuse"]
+        if not isinstance(reuse, dict) or not set(reuse) <= {"outputs", "workspace"}:
+            raise ValueError(
+                "verification.reuse must contain only outputs and workspace"
+            )
+        return reuse
+
+    def verification_reuse_policy(self) -> "VerificationReusePolicy | None":
+        """Decode the project ``verification.reuse`` block exactly once.
+
+        One read, one JSON parse, one validation pass: outputs and
+        workspace are a single kernel view and can never mix bytes from
+        two reads (F6). Returns ``None`` when no reuse policy is declared.
+        Never cached -- every call re-reads the live file, so live read
+        contexts keep their existing semantics. The per-field properties
+        delegate here, so their error behaviour is byte-identical.
+        """
+        reuse = self._verification_reuse()
+        if reuse is None:
+            return None
+        outputs: tuple[str, ...] | None = None
+        if "outputs" in reuse:
+            declared_outputs = reuse["outputs"]
+            if (
+                not isinstance(declared_outputs, list)
+                or not declared_outputs
+                or any(
+                    not isinstance(path, str) or not path for path in declared_outputs
+                )
+                or len(set(declared_outputs)) != len(declared_outputs)
+            ):
+                raise ValueError(
+                    "verification.reuse.outputs must be a nonempty list of "
+                    "distinct repository-relative generated directories"
+                )
+            outputs = tuple(declared_outputs)
+        workspace: dict[str, Any] | None = None
+        if "workspace" in reuse:
+            raw = reuse["workspace"]
+            if not isinstance(raw, dict):
+                raise ValueError("verification.reuse.workspace must be an object")
+            unknown = set(raw) - {
+                "root",
+                "cache_limit_bytes",
+                "automatic",
+                "adopt_outputs",
+            }
+            if unknown:
+                raise ValueError(
+                    "verification.reuse.workspace has unsupported keys: "
+                    f"{sorted(unknown)}"
+                )
+            workspace = {}
+            if "root" in raw:
+                value = raw["root"]
+                if not isinstance(value, str) or not value:
+                    raise ValueError(
+                        "verification.reuse.workspace.root must be a nonempty string"
+                    )
+                workspace["root"] = value
+            if "cache_limit_bytes" in raw:
+                value = raw["cache_limit_bytes"]
+                if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                    raise ValueError(
+                        "verification.reuse.workspace.cache_limit_bytes must "
+                        "be a positive integer"
+                    )
+                workspace["cache_limit_bytes"] = value
+            if "automatic" in raw:
+                value = raw["automatic"]
+                if not isinstance(value, bool):
+                    raise ValueError(
+                        "verification.reuse.workspace.automatic must be a boolean"
+                    )
+                workspace["automatic"] = value
+            if "adopt_outputs" in raw:
+                value = raw["adopt_outputs"]
+                if (
+                    not isinstance(value, list)
+                    or not value
+                    or any(not isinstance(entry, str) or not entry for entry in value)
+                    or len(set(value)) != len(value)
+                ):
+                    raise ValueError(
+                        "verification.reuse.workspace.adopt_outputs must be a "
+                        "nonempty list of distinct repository-relative "
+                        "directories"
+                    )
+                workspace["adopt_outputs"] = list(value)
+        return VerificationReusePolicy(outputs=outputs, workspace=workspace)
+
+    @property
+    def verification_reuse_outputs(self) -> tuple[str, ...] | None:
+        """Project-owned output roots; global preferences cannot grant ownership."""
+        policy = self.verification_reuse_policy()
+        return None if policy is None else policy.outputs
+
+    @property
+    def verification_reuse_workspace(self) -> dict[str, Any] | None:
+        """Project-owned workspace placement; global preferences cannot grant ownership.
+
+        Delegates to :meth:`verification_reuse_policy` -- the one-decode
+        kernel -- so outputs and workspace are never read from different
+        raw bytes. Key meanings live with the path algebra in
+        ``workspace_paths.resolve_workspace_paths``.
+        """
+        policy = self.verification_reuse_policy()
+        return None if policy is None else policy.workspace
 
     def effective_config(self) -> dict[str, Any]:
         """Merge the global and per-repo unified ``config.json`` tiers.

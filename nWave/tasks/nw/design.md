@@ -1,6 +1,6 @@
 ---
 description: Designs system architecture with C4 diagrams and technology selection. Use when defining component boundaries, choosing tech stacks, or creating architecture documents.
-argument-hint: "[component-name] - Optional: --residuality --paradigm=[auto|oop|fp]"
+argument-hint: '[component-name] - Optional: --residuality --paradigm=[auto|oop|fp]'
 ---
 
 
@@ -28,9 +28,11 @@ DEVOPS handoff.
    a fact authority already decides.
 4. **Dispatch the bounded consultation** — Follow
    `~/.claude/skills/nw-design/SKILL.md` and `nw-role-invocation`: invoke the
-   exact installed role natively or `des design --repo-root ROOT --value N`,
-   never a generic architect persona. Include the marker below and the
-   exact boundary, cited authority, affected layer, and any known constraints.
+   exact installed role natively, never a generic architect persona. The host
+   then supplies its closed semantic JSON to
+   `des design --repo-root ROOT --value N --input -`; DES does not invoke the
+   role. Include the marker below and the exact boundary, cited authority,
+   affected layer, and any known constraints.
    The selected architect loads its trigger-specific skills and chooses
    optional formal, DDD, system, diagram, or residuality work only when their
    trigger fires. Gate: no universal architecture style or tool ritual.

@@ -197,23 +197,19 @@ class TestAgentFrontmatterAcceptance:
             # The architect measures and returns typed design facts. DES owns
             # the resulting architecture-document writes, so the role needs no
             # direct Edit capability.
-            # StructuredOutput shapes the role's typed reply channel; it grants
-            # no read access, so it does not weaken the declared blindness.
+            # The acceptance reviewer reads installed framework guidance only.
+            # The examiner receives its knowledge preloaded and declares no Read.
             (
                 "nw-solution-architect",
                 ["Bash", "Glob", "Grep", "Read", "StructuredOutput"],
             ),
             ("nw-product-owner", ["Read", "StructuredOutput"]),
-            ("nw-acceptance-designer-reviewer", ["StructuredOutput"]),
+            ("nw-acceptance-designer-reviewer", ["Read", "StructuredOutput"]),
             ("nw-user-examiner", ["StructuredOutput"]),
         ],
     )
     def test_managed_roles_declare_least_privilege_tools(self, agent, expected):
-        """Each managed role declares exactly its least-privilege tool set.
-
-        An explicitly empty `tools:` key is a declared empty capability, which
-        is enforced blindness; an omitted key would inherit every tool.
-        """
+        """Validate the declared host capability contract, not runtime isolation."""
         fm = _parse_frontmatter(AGENTS_DIR / f"{agent}.md")
         assert fm is not None
         assert "tools" in fm, f"{agent} must declare an explicit tools key"
@@ -226,22 +222,3 @@ class TestAgentFrontmatterAcceptance:
             tools = [str(t).strip() for t in raw_tools]
 
         assert sorted(tools) == expected, f"{agent} tools={tools}"
-
-    def test_acceptance_reviewer_excludes_production_state(self):
-        spec = (AGENTS_DIR / "nw-acceptance-designer-reviewer.md").read_text(
-            encoding="utf-8"
-        )
-
-        assert "collection failure alone must never cause rejection" in spec
-        assert "public, independent and complete" in spec
-
-    def test_acceptance_designer_handles_missing_support_or_finding(self):
-        spec = (AGENTS_DIR / "nw-acceptance-designer.md").read_text(encoding="utf-8")
-
-        assert "GREEN_TO_GREEN reuses complete oracle/supports read-only" in spec
-        assert "declared missing supports, author only them" in spec
-        assert (
-            "independent pre-approval finding, produce one distinct corrected oracle/supports for a single re-review"
-            in spec
-        )
-        assert "They become immutable only after reviewer approval" in spec

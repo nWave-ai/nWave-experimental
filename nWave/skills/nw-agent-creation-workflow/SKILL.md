@@ -15,19 +15,27 @@ Create agents through 5 phases: ANALYZE -> DESIGN -> CREATE -> VALIDATE -> REFIN
 
 Classify every skill by how the role needs it:
 
-1. **Always-needed knowledge** belongs in frontmatter `skills:`. Supported native hosts and DES adapters eagerly preload each declared skill once. Do not add a second `Load:` directive or table row for it.
-2. **Conditional knowledge** stays outside frontmatter. State a precise trigger and an executable `Read ~/.agents/skills/{name}/SKILL.md` (or the host path) instruction. Use `Invoke Skill(name)` only when that skill permits model invocation.
-3. A table is optional documentation for conditional knowledge. It must not mirror frontmatter preloads. An orphan is an unavailable declared asset or intended conditional knowledge with no reachable trigger, not a missing duplicate directive.
-4. **Self-description in the skill itself** — the skill's `description` frontmatter states when to use it. Knowledge skills with `disable-model-invocation: true` use `Read` on their trigger, never `Invoke Skill`.
+1. **Always-needed knowledge** belongs in frontmatter `skills:`. The installer preloads each declared skill body once, so the agent body never tells the role to load, read or invoke it.
+2. **Conditional knowledge** stays outside frontmatter. Use the source-aware procedure below to maintain one precise trigger in the generated conditional index; that index also carries the `[SKILL MISSING]` protocol.
+3. No handwritten Skill Loading section, table or Load directive in agent bodies. An orphan is an unavailable declared asset or intended conditional knowledge with no reachable trigger, not a missing duplicate directive or an unavailable build-time registry in an installed project.
+4. **Self-description in the skill itself** — the skill's `description` frontmatter states when to use it. Knowledge skills with `disable-model-invocation: true` are read on their trigger, never invoked through the Skill tool.
+
+### Source-aware conditional-skill procedure
+
+The registry and doc generator are framework build inputs, not installed-project capabilities. First identify the candidate as a framework source agent or an installed/generated artifact.
+
+- **Framework source available:** establish the actual nWave source checkout and locate its existing `role-skill-loading.yaml` registry and `scripts/docgen.py`, alongside its agent and skill sources. Read the existing registry schema; declare the conditional skill once under its owning role with the precise trigger, then run `python scripts/docgen.py` from that checkout through a permitted execution capability. Inspect the resulting `GENERATED:role-skill-loading` region and referenced skill asset. This is the single conditional index; frontmatter preloads remain untouched.
+- **Installed artifact only, or source/registry/generator capability missing:** report exactly which source or execution capability is unavailable. Continue the bounded review or design from the installed generated index and available skill files, but leave registration/regeneration unverified and return the proposed skill/trigger change for the source owner. Do not create a replacement registry in the user's project, hand-edit a generated region, or claim regeneration happened.
+- **Review boundary:** judge whether the installed trigger is precise and its skill reachable. Lack of the undistributed registry alone is not evidence of a broken installed role. Source-provenance verification requires the actual source checkout; record that limit separately.
 
 **GOOD vs BAD**:
 
 | | Shape | Why |
 |---|---|---|
-| GOOD | conditional table row with a precise `Read`/permitted `Invoke Skill` trigger | the agent knows exactly when and how to load it |
-| GOOD | always-needed skill in frontmatter only | supported paths preload it once |
-| BAD | frontmatter skill also reloaded by directive or table | duplicates already-loaded knowledge |
-| BAD | table row with no Trigger column value | the agent doesn't know WHEN — defaults to preloading everything (wastes context) or never loading it |
+| GOOD | source-aware registration followed by inspection of the generated conditional index | the trigger is authored in its real source and delivered once |
+| GOOD | always-needed skill in frontmatter only | the installer preloads it once |
+| BAD | frontmatter skill also reloaded by a body directive or table | duplicates already-loaded knowledge |
+| BAD | handwritten Skill Loading section or table in the body | a second, drifting index beside the generated one |
 
 ## Phase 1: ANALYZE
 
@@ -57,7 +65,7 @@ Classify every skill by how the role needs it:
 **Inputs**: Requirements summary from Phase 1.
 
 **Steps**:
-1. Select design pattern (load `design-patterns` skill)
+1. Select a design pattern by applying the already-supplied `nw-design-patterns` knowledge
 2. Define role and goal (1-2 sentences each)
 3. Identify core principles that DIVERGE from Claude defaults:
    - What must this agent do differently than Claude naturally would?
@@ -65,12 +73,10 @@ Classify every skill by how the role needs it:
    - Non-obvious constraints | Project-specific conventions
 4. Design workflow (3-7 phases)
 5. Plan Skills extraction: domain knowledge -> separate Skill | Testing/validation -> separate Skill | Keep workflow and principles in core agent
-6. Design conditional skill addressing when the role has conditional knowledge:
-   - Put only always-needed skills in frontmatter
-   - For each conditional skill, add a precise executable Read/Skill trigger
-   - Create a table only when it makes conditional triggers clearer
-   - Document path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/skills/nw-{skill-name}/SKILL.md` (repo)
-   - `skills:` eagerly preloads full skill content into supported role contexts. Reserve it for always-needed skills; conditional skills stay out of frontmatter and load through their workflow trigger.
+6. Design skill addressing:
+   - Put only skills needed on every task in frontmatter; the installer preloads them once
+   - For each conditional skill, plan a precise trigger and apply the source-aware conditional-skill procedure above
+   - Plan no handwritten Skill Loading section, table or Load directive in the body
 7. Draft frontmatter:
    ```yaml
    ---
@@ -107,23 +113,10 @@ Classify every skill by how the role needs it:
 2. Create Skill files if needed: each in `nWave/skills/{agent-name}/` | YAML frontmatter with `name` and `description` | Focused content, 100-250 lines each
 3. Measure: `wc -l`. Target: under 300 lines.
 
-4. Add a Skill Loading Strategy section when conditional knowledge needs several documented triggers:
-   ```markdown
-   ## Skill Loading Strategy
+4. Apply the source-aware conditional-skill procedure above for each conditional skill. Preserve the single generated index and report missing source or execution capability instead of manufacturing build inputs.
+5. Verify: every frontmatter skill exists and is always needed; every intended conditional skill has a reachable precise trigger. Distinguish proposed changes from generated and inspected changes.
 
-   Conditional reads by phase:
-
-   | Phase | Load | Trigger |
-   |-------|------|---------|
-   | 1 Phase Name | `skill-name` | Always — core methodology |
-   | 2 Phase Name | `other-skill` | When condition is met |
-
-   Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/skills/nw-{skill-name}/SKILL.md` (repo)
-   ```
-5. Add exact `Read` or permitted `Invoke Skill` instructions where each conditional trigger occurs
-6. Verify: every frontmatter skill exists and is always needed; every intended conditional skill has a reachable precise trigger. Do not reload preloaded skills.
-
-**Gate**: Agent file created. Under 300 lines. Skills created if needed. Every conditional skill has a reachable trigger.
+**Gate**: Authorized agent/skill changes delivered; conditional registration is either generated and inspected in the actual source checkout or explicitly pending its named source capability.
 
 **Output**: Agent `.md` file + Skill files.
 
@@ -132,22 +125,10 @@ Classify every skill by how the role needs it:
 **Goal**: Verify agent meets quality standards.
 
 **Steps**:
-1. Run 14-point validation checklist:
-   - [ ] Uses official YAML frontmatter format
-   - [ ] Total definition under 400 lines (domain knowledge in Skills)
-   - [ ] Only specifies behaviors diverging from Claude defaults
-   - [ ] No aggressive signaling language
-   - [ ] 3-5 canonical examples for critical behaviors
-   - [ ] Tools restricted to minimum needed
-   - [ ] maxTurns set in frontmatter
-   - [ ] Safety via platform features, not prose
-   - [ ] Instructions phrased affirmatively
-   - [ ] Consistent terminology throughout
-   - [ ] Description clearly states delegation criteria
-2. Check anti-patterns: no monolithic sections (>50 lines without structure) | No duplicated Claude defaults | No embedded safety frameworks | No aggressive language
-3. Test with representative inputs (Layer 1 testing)
+1. Run `nw-ab-validate-spec`: every item of `nw-ab-validation-checklist` plus the anti-pattern scan.
+2. Test with representative inputs (Layer 1 testing)
 
-**Gate**: All 14 items pass. No anti-patterns.
+**Gate**: Every checklist item passes. No anti-patterns.
 
 **Output**: Validation report (pass/fail per item).
 
@@ -160,7 +141,7 @@ Classify every skill by how the role needs it:
 2. Test with edge cases
 3. Add instructions ONLY for observed failure modes: wrong decision -> add rule/example | Missed step -> clarify workflow | Over-generated -> add constraint
 4. Re-measure: `wc -l`. If approaching 400 lines, extract to Skills.
-5. Re-validate with 14-point checklist.
+5. Re-validate with `nw-ab-validate-spec`.
 
 **Gate**: All validation passes. Line count within target. Edge cases handled.
 
@@ -173,7 +154,7 @@ Classify every skill by how the role needs it:
 | ANALYZE | Single responsibility, no overlap | DESIGN |
 | DESIGN | Architecture fits size target | CREATE |
 | CREATE | File created, under 300 lines | VALIDATE |
-| VALIDATE | 14-point checklist passes | REFINE/Deploy |
+| VALIDATE | every `nw-ab-validation-checklist` item passes | REFINE/Deploy |
 | REFINE | Edge cases handled, within target | Deploy |
 
 ## Naming Conventions

@@ -38,8 +38,11 @@ def _fake_runner(tmp_path: Path, xml: str) -> str:
     xml_src = tmp_path / f"canned_{slug}.xml"
     xml_src.write_text(xml)
     copier = tmp_path / "copier.py"
-    copier.write_text("import shutil, sys\nshutil.copy(sys.argv[1], sys.argv[2])\n")
-    return f"{sys.executable} {copier} {xml_src} {{junit_out}}"
+    copier.write_text(
+        "import shutil, sys\nshutil.copy(sys.argv[1], sys.argv[2])\nsys.exit(int(sys.argv[3]))\n"
+    )
+    exit_code = int("<failure" in xml or "<error" in xml)
+    return f"{sys.executable} {copier} {xml_src} {{junit_out}} {exit_code}"
 
 
 def _repo_with_test(tmp_path: Path) -> Path:
@@ -122,3 +125,78 @@ def test_tampered_test_file_refusal_names_the_file_and_both_hashes(
 def test_missing_red_record_degrades_indeterminate(tmp_path: Path) -> None:
     repo = _repo_with_test(tmp_path)
     assert _run(repo, "--verify-green", _XML_ALL_PASS) == 2  # never-red, LOUD
+
+
+def test_native_file_without_declared_recipe_stays_indeterminate(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "dune-project").write_text("(lang dune 3.0)\n")
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='python-helper'\n")
+    (tmp_path / "test_reservation.ml").write_text("let () = ()\n")
+    assert (
+        main(
+            [
+                "--repo",
+                str(tmp_path),
+                "--test-file",
+                "test_reservation.ml",
+                "--record-red",
+            ]
+        )
+        == 2
+    )
+    assert (
+        json.loads(capsys.readouterr().out.splitlines()[0])["event"]
+        == "RedGreenIndeterminate"
+    )
+    assert not (tmp_path / ".nwave").exists()
+
+
+def test_reported_failure_with_successful_process_does_not_create_seal(
+    tmp_path: Path,
+) -> None:
+    repo = _repo_with_test(tmp_path)
+    command = _fake_runner(repo, _XML_ONE_FAIL).rsplit(" ", 1)[0] + " 0"
+    assert (
+        main(
+            [
+                "--repo",
+                str(repo),
+                "--test-file",
+                "test_x.py",
+                "--record-red",
+                "--run-cmd",
+                command,
+            ]
+        )
+        == 2
+    )
+    assert not (repo / ".nwave").exists()
+
+
+def test_named_setup_error_is_not_assertion_red(tmp_path: Path) -> None:
+    repo = _repo_with_test(tmp_path)
+    xml = '<testsuite><testcase classname="native.Reservation" name="reserve"><error message="toolchain setup failed"/></testcase></testsuite>'
+    assert _run(repo, "--record-red", xml) == 1
+    assert not (repo / ".nwave").exists()
+
+
+def test_native_recipe_without_junit_is_indeterminate_not_foreign_runner_requirement(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "test_reservation.ml").write_text("let () = ()\n")
+    assert (
+        main(
+            [
+                "--repo",
+                str(tmp_path),
+                "--test-file",
+                "test_reservation.ml",
+                "--record-red",
+                "--run-cmd",
+                f'{sys.executable} -c "print(1)"',
+            ]
+        )
+        == 2
+    )
+    assert not (tmp_path / ".nwave").exists()

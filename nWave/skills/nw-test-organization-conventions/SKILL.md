@@ -91,6 +91,12 @@ tests/
 
 ## Language-Specific Conventions
 
+The table is illustrative, not a closed discovery allowlist. Follow actual
+manifest/build/test targets under `nw-test-design-mandates`, including Dune
+`test`/`tests`/alias stanzas, `.ml` and relevant `.mli`/opam dependencies in an
+OCaml project. Incumbent native layouts/helpers win; no `.py`, Gherkin,
+`tests/common` or compulsory adapter registration is inferred from this table.
+
 | Language | File Convention | Discovery Rule | Co-located? |
 |----------|---------------|----------------|-------------|
 | Python (pytest) | `test_*.py` or `*_test.py` | Prefix/suffix match | Separate `tests/` (recommended) or inlined |

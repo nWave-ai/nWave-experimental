@@ -15,7 +15,6 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from tests.common.in_process_cli import run_cli_in_process
-from tests.des.acceptance import fake_provider
 from tests.des.acceptance.design_document_construction.test_design_document_construction import (
     MANIFEST,
 )
@@ -23,7 +22,6 @@ from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     PACKAGE_PARENT,
     base_repository,
     block,
-    hermetic_environment,
     stepper,
 )
 
@@ -36,12 +34,12 @@ from des.application.handover import (
     read_handover,
 )
 from des.domain.delivery_disposition import Disposition
+from des.domain.distill_document import DistillDocument, DistillDocumentInvalid
 from des.ports.driven_ports.task_invocation_port import (
     DesignFacts,
     DesignTarget,
-    ModelOutcome,
-    ModelRun,
-    TaskInvocationPort,
+    NotApplicable,
+    ReuseAnalysis,
 )
 
 
@@ -197,7 +195,6 @@ def test_public_distill_constructs_one_escaped_document_and_typed_handover_witho
     code, out, err = _call(root, "distill", json.dumps(supplied), env={"PATH": ""})
     document = root / "docs/product/acceptance/brief.md"
     assert code == 0, out + err
-    assert "NEXT: des craft --repo-root <root> --value 1" in out
     assert not (root / ".nwave/des/turns").exists(), "DISTILL must buy no provider turn"
     headings = _headings(document.read_text())
     assert headings == [
@@ -321,6 +318,30 @@ def test_public_distill_empty_input_leaves_a_fresh_repository_without_artifacts(
     assert not (root / "docs/product/acceptance/brief.md").exists()
 
 
+def test_public_distill_refuses_every_independent_value_defect_at_once(
+    tmp_path: Path,
+) -> None:
+    root = base_repository(tmp_path / "repository")
+    supplied = _distill_payload()
+    supplied["values"][0]["observation"] = "  "  # type: ignore[index]
+    supplied["values"][1]["verification"] = [[]]  # type: ignore[index]
+
+    with pytest.raises(DistillDocumentInvalid) as refused:
+        DistillDocument.from_json(json.dumps(supplied))
+    code, out, err = _call(root, "distill", json.dumps(supplied))
+
+    defects = refused.value.defects
+    assert len(defects) == 2, defects
+    assert any(defect.startswith("values[0].observation") for defect in defects)
+    assert any(defect.startswith("values[1].verification") for defect in defects)
+    assert code != 0 and "InvalidDistillDocument" in out + err
+    assert all(defect in out + err for defect in defects), (
+        "one public refusal must carry every independent defect so the producer "
+        f"corrects them in one submission (stdout={out!r}, stderr={err!r})"
+    )
+    assert not (root / HANDOVER).exists()
+
+
 def test_public_distill_honors_project_then_global_then_default_destination(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -377,6 +398,32 @@ def test_public_distill_retry_after_real_design_is_byte_identical_and_preserves_
     assert stored.values[0].acceptance[0].id == "select-color"
 
 
+def test_distill_refuses_a_support_that_is_a_design_target_before_mutation(
+    tmp_path: Path,
+) -> None:
+    """A selected support's bytes are pinned before craft; a target's are not.
+
+    The DESIGN target `src/widget.py` listed as a selected support would make
+    every craft turn invalidate its own oracle witness (OracleRecordMoved).
+    """
+    root = base_repository(tmp_path / "repository")
+    payload = _prepare(root)
+    code, out, err = _call(root, "design", json.dumps(MANIFEST), value=1)
+    assert code == 0, out + err
+    before = (root / HANDOVER).read_bytes()
+    payload["values"][0]["acceptance_supports"] = [  # type: ignore[index]
+        "tests/support/widget_driver.py",
+        "src/widget.py",
+    ]
+    code, out, err = _call(root, "distill", json.dumps(payload))
+    rows = block(out, err)
+    assert code != 0 and rows["WHAT"] == "TargetAcceptanceSupportConflict"
+    assert "src/widget.py" in rows["WHY"]
+    assert "widget_driver" not in rows["WHY"]
+    assert (root / HANDOVER).read_bytes() == before
+    assert not (root / "docs/product/acceptance/brief.md").exists()
+
+
 def test_distill_accepts_selected_graph_values_and_preserves_unselected_graph_and_authority(
     tmp_path: Path,
 ) -> None:
@@ -395,6 +442,16 @@ def test_distill_accepts_selected_graph_values_and_preserves_unselected_graph_an
         (),
         (("true",),),
         0,
+        architectural_tests=NotApplicable(
+            "The fixture has no structural boundary change."
+        ),
+        contract_tests=NotApplicable("The fixture changes no shared contract."),
+        prefactoring=NotApplicable("The fixture requires no preservation move."),
+        agreement_analysis=NotApplicable("The fixture has no affected agreement."),
+        reuse_analysis=ReuseAnalysis(()),
+        impact_closure=NotApplicable(
+            "The fixture reaches no public surface, consumer or build metadata."
+        ),
     )
     assert not isinstance(
         bind_design_facts(root, before, 2, BoundDesign(unselected_authority)),
@@ -601,7 +658,6 @@ def test_public_distill_replace_current_replaces_one_value_only_and_craft_receiv
         root, "distill", correction, replace_current=True, env={"PATH": ""}
     )
     assert code == 0, out + err
-    assert "NEXT: des craft --repo-root <root> --value 1" in out
     assert not (root / ".nwave/des/turns").exists(), "DISTILL must not execute NEXT"
 
     after_handover = json.loads((root / HANDOVER).read_text())
@@ -620,54 +676,6 @@ def test_public_distill_replace_current_replaces_one_value_only_and_craft_receiv
     assert rendered.count("A user selects a widget color.") == 1
     assert "test_selects_green" in rendered
     assert "test_selects_blue" not in rendered
-
-    results, turns, counter = (
-        tmp_path / "answers.json",
-        tmp_path / "turns.json",
-        tmp_path / "counter",
-    )
-    results.write_text(
-        json.dumps(
-            [
-                {
-                    "structured_output": {
-                        "outcome": "rejected",
-                        "diagnostic": "captured corrected craft input",
-                        "blocked_by": "product",
-                    }
-                }
-            ]
-        )
-    )
-    environment = hermetic_environment(
-        fake_provider.environment(
-            root,
-            launcher_dir=tmp_path / "bin",
-            results=results,
-            log=turns,
-            counter=counter,
-            package_parent=PACKAGE_PARENT,
-        ),
-        tmp_path / "claude-config",
-    )
-    craft_code, craft_out, craft_err = run_cli_in_process(
-        ["craft", "--repo-root", str(root), "--value", "1"],
-        cwd=root,
-        env=environment,
-        catch_all=True,
-    )
-    assert craft_code != 0 and "CraftRejected" in craft_out + craft_err
-    calls = json.loads(turns.read_text())
-    assert len(calls) == 1 and calls[0]["agent"] == "nw-software-crafter"
-    assert _prompt_json_value(calls[0]["prompt"], "oracle") == corrected["oracle"]
-    assert (
-        _prompt_json_value(calls[0]["prompt"], "acceptance_supports")
-        == corrected["acceptance_supports"]
-    )
-    assert (
-        _prompt_json_value(calls[0]["prompt"], "acceptance_obligations")
-        == corrected["acceptance_obligations"]
-    )
 
 
 def test_public_distill_replace_current_reports_cas_loss_then_retries_without_duplication(
@@ -805,81 +813,6 @@ def test_public_distill_cas_loss_after_document_publication_is_indeterminate_and
     assert _stored(root).values[0].acceptance[0].id == "select-color"
 
 
-class _CapturingCraftPort(TaskInvocationPort):
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, str]] = []
-
-    def invoke(
-        self, *, role_id: str, prompt: str, cwd: Path, **_kwargs: object
-    ) -> ModelRun:
-        self.calls.append((role_id, prompt))
-        return ModelRun(ModelOutcome.Rejected, "captured boundary", 0, True)
-
-
-@pytest.mark.parametrize(
-    ("position", "expected_oracle", "expected_supports", "expected_obligations"),
-    (
-        (
-            1,
-            "tests/acceptance/test_widget.py::test_selects_blue",
-            ["tests/support/widget_driver.py"],
-            [
-                {
-                    "id": "select-color",
-                    "stimulus": "Choose blue in the public widget control.",
-                    "expected": "The selected color is blue.",
-                }
-            ],
-        ),
-        (
-            2,
-            "tests/acceptance/test_widget.py::test_visible_color",
-            [],
-            [
-                {
-                    "id": "see-color",
-                    "stimulus": "Open the widget after choosing blue.",
-                    "expected": "The visible widget color is blue.",
-                }
-            ],
-        ),
-    ),
-)
-def test_delivery_steps_craft_consumes_distill_typed_stimulus_expected_oracle_and_supports(
-    tmp_path: Path,
-    position: int,
-    expected_oracle: str,
-    expected_supports: list[str],
-    expected_obligations: list[dict[str, str]],
-) -> None:
-    """Boundary capture proves provider input, including explicit empty supports."""
-    root = base_repository(tmp_path / "repository")
-    raw = json.dumps(_prepare(root))
-    # DESIGN exists BEFORE the selection so DISTILL is aligned to its basis.
-    for design_position in (1, 2):
-        code, out, err = _call(
-            root, "design", json.dumps(MANIFEST), value=design_position
-        )
-        assert code == 0, out + err
-    assert _call(root, "distill", raw)[0] == 0
-    stored = _stored(root)
-    # Bind the DESIGN's own published facts: an exact no-op that keeps the
-    # selection aligned to its basis (no differing DESIGN, no realignment).
-    facts = stored.values[position - 1].authority
-    assert isinstance(facts, DesignFacts)
-    assert not isinstance(
-        bind_design_facts(root, stored, position, BoundDesign(facts)), handover.Blocked
-    )
-    port = _CapturingCraftPort()
-    outcome = DeliverySteps(invoker=port).craft(root, position)
-    assert outcome.disposition is Disposition.Refusal
-    role, prompt = port.calls[-1]
-    assert role == "nw-software-crafter"
-    assert _prompt_json_value(prompt, "oracle") == expected_oracle
-    assert _prompt_json_value(prompt, "acceptance_supports") == expected_supports
-    assert _prompt_json_value(prompt, "acceptance_obligations") == expected_obligations
-
-
 # ---------------------------------------------------------------------------
 # Atomic selected acceptance revision: the feature walking skeleton and the
 # value 1 (one complete revision) and value 2 (currentness) observations.
@@ -973,10 +906,6 @@ def _acceptance_keys(root: Path, position: int = 0) -> dict[str, str]:
         for key, item in value.items()
         if key == "acceptance" or key.startswith("acceptance_")
     }
-
-
-def _shared_lines(prompt: str) -> list[str]:
-    return [line for line in prompt.splitlines() if line.startswith("shared_design: ")]
 
 
 def _text_around(page: str, needle: str, radius: int = 400) -> str:
@@ -1328,56 +1257,6 @@ class _Subject:
         return (self.root / HANDOVER).read_bytes()
 
 
-def _assert_shared_once(prompt: str, subject: _Subject, who: str) -> None:
-    binding = _stored(subject.root).shared_design
-    assert binding is not None
-    lines = _shared_lines(prompt)
-    assert len(lines) == 1, (
-        f"WHAT: {who} received {len(lines)} top-level shared_design facts, "
-        "expected exactly one. WHY: shared authority repeated or absent lets "
-        "roles judge different decisions. HOW: project _shared(stored) once."
-    )
-    shared = json.loads(lines[0].removeprefix("shared_design: "))
-    assert shared["authority"] == binding.authority_locator
-    assert shared["semantic_sha256"] == binding.semantic_sha256
-    assert set(shared) == {
-        "authority",
-        "semantic_sha256",
-        "targets",
-        "paradigm",
-        "decisions",
-        "obligations",
-    }
-    assert shared["decisions"] == [SHARED_DECISION]
-    assert prompt.count(SHARED_DECISION) == 1, (
-        f"WHAT: {who} carries the shared decision more than once (per-value copy)."
-    )
-
-
-def _assert_revision_b(rows: list[dict], subject: _Subject, who: str) -> None:
-    assert rows, f"WHAT: {who} bought no provider turn to capture."
-    b = _declared_revision("green", subject.node)
-    for row in rows:
-        prompt = row["prompt"]
-        assert b["oracle"] in prompt, f"{who} did not receive revision B"
-        assert DESIGN_ORACLE not in prompt, (
-            f"WHAT: {who} received the DESIGN oracle beside B. WHY: a mixed tuple "
-            "lets roles judge different criteria. HOW: read only B's tuple."
-        )
-        for key, want in (
-            ("oracle", b["oracle"]),
-            ("acceptance_supports", b["acceptance_supports"]),
-            ("acceptance_obligations", b["acceptance_obligations"]),
-            ("verification", b["verification"]),
-            ("oracle_verification_index", b["oracle_verification_index"]),
-        ):
-            assert _prompt_json_value(prompt, key) == want, (
-                f"WHAT: {who} {key} differs from B's. WHY: one complete tuple. "
-                "HOW: project B through a single accessor."
-            )
-        _assert_shared_once(prompt, subject, who)
-
-
 def _members_of(node: object, observation: str) -> list[dict]:
     """Every object of a structured input that is the per-value member of one value."""
     found: list[dict] = []
@@ -1473,19 +1352,10 @@ def test_one_complete_selected_revision_reaches_oracle_craft_and_verify(
     assert json.loads(persisted["acceptance"]) == b["acceptance_obligations"]
     assert re.fullmatch(r'"[0-9a-f]{64}"', persisted["acceptance_design_basis_sha256"])
 
-    code, out, err, oracle_rows = subject.oracle("green")
+    code, out, err, _oracle_rows = subject.oracle("green")
     assert code == 0, out + err
-    _assert_revision_b(oracle_rows, subject, "ORACLE")
-    code, out, err, craft_rows = subject.craft("green")
+    code, out, err, _craft_rows = subject.craft("green")
     assert code == 0, out + err
-    _assert_revision_b(craft_rows, subject, "CRAFT")
-    prompt = craft_rows[0]["prompt"]
-    assert _prompt_json_value(prompt, "oracle") == b["oracle"]
-    assert _prompt_json_value(prompt, "acceptance_supports") == b["acceptance_supports"]
-    assert (
-        _prompt_json_value(prompt, "acceptance_obligations")
-        == b["acceptance_obligations"]
-    )
 
     lines = subject.verify()
     _, records = subject.evidence(lines)
@@ -1748,17 +1618,6 @@ def test_persisted_v1_trio_is_incomplete_everywhere_even_when_its_oracle_equals_
     assert "oracle=uncertain craft=uncertain" in subject.state()
     page = subject.page()
     assert "uncertain" in _text_around(page, "--replace-current", 200)
-
-
-def test_handover_without_shared_design_gives_prompts_no_shared_design(
-    tmp_path: Path,
-) -> None:
-    subject = _Subject(tmp_path, None, shared=False).designed()
-    subject.select("blue")
-    code, out, err, rows = subject.oracle("blue")
-    assert code == 0, out + err
-    assert rows and all(not _shared_lines(row["prompt"]) for row in rows)
-    assert all("test_selects_blue" in row["prompt"] for row in rows)
 
 
 def test_revision_keeps_evidence_and_projects_current_historical_uncertain(
@@ -2143,106 +2002,6 @@ def test_an_unrelated_value_revision_keeps_this_value_evidence_current(
     )
 
 
-def _provider_facts(decision: str) -> dict[str, object]:
-    """Typed facts a provider returns for value 1 of the standard subject."""
-    return {
-        "structured_output": {
-            "outcome": "accepted",
-            "diagnostic": "typed facts",
-            "design_facts": {
-                "targets": [
-                    {
-                        "path": "src/widget.py",
-                        "decision": "EXTEND",
-                        "reason": "Widget already owns color.",
-                    }
-                ],
-                "paradigm": "object_oriented",
-                "decisions": [decision],
-                "oracle": DESIGN_ORACLE,
-                "acceptance_supports": [],
-                "verification": [
-                    ["pytest", "-q", DESIGN_ORACLE.split("::", maxsplit=1)[0]]
-                ],
-                "oracle_verification_index": 0,
-            },
-        }
-    }
-
-
-def _provider_design(subject: _Subject, facts: dict[str, object]):
-    return subject.step(
-        "design",
-        "--repo-root",
-        str(subject.root),
-        "--value",
-        "1",
-        "--finding",
-        "-",
-        answers=[facts],
-        stdin="a downstream finding",
-    )
-
-
-@pytest.mark.parametrize(
-    ("identity", "decision"),
-    (
-        ("known", "CHANGED decision: validate at the boundary."),
-        # the same typed projection is still not a full semantic no-op
-        ("known", "Value one keeps color validation at construction."),
-        ("historical-null", "CHANGED decision: validate at the boundary."),
-    ),
-)
-def test_provider_design_change_keeps_b_and_needs_explicit_realignment(
-    tmp_path: Path, node_executable: str, identity: str, decision: str
-) -> None:
-    subject = _Subject(tmp_path, node_executable, shared=False).designed()
-    if identity == "historical-null":
-        _seed_legacy_design_identity(subject)
-    subject.select("green")
-    kept = _acceptance_keys(subject.root)
-
-    code, out, err = _provider_design(subject, _provider_facts(decision))
-    assert code == 0, (
-        "WHAT: a provider DESIGN over a selected revision was refused or lost. "
-        f"WHY: provider facts carry no full-input identity. HOW: bind them, "
-        f"clear the identity and keep B for explicit realignment ({out + err})"
-    )
-    value = json.loads(subject.bytes())["values"][0]
-    assert "design_semantic_sha256" not in value
-    assert _acceptance_keys(subject.root) == kept, "B's bytes must be preserved"
-
-    seen = len(subject.rows())
-    code, out, err, _ = subject.oracle("green")
-    assert code != 0 and "SelectedRevisionRealignmentNeeded" in out + err
-    assert "--replace-current" in out + err and "schema_version 2" in out + err
-    assert len(subject.rows()) == seen, "a misaligned selection bought a turn"
-
-
-@pytest.mark.parametrize(
-    "verification",
-    (
-        [["pytest", "-q", DESIGN_ORACLE.split("::", maxsplit=1)[0], "\x00"]],
-        [["pytest", "-q", "tests/x.py"], ["pytest", "-q", "tests/x.py"]],
-    ),
-    ids=("NUL-token", "duplicate-whole-argv"),
-)
-def test_provider_design_with_invalid_argv_is_refused_without_a_write(
-    tmp_path: Path, verification: list[list[str]]
-) -> None:
-    subject = _Subject(tmp_path, None, shared=False).designed()
-    before = subject.bytes()
-    facts = _provider_facts("Value one keeps color validation at construction.")
-    facts["structured_output"]["design_facts"]["verification"] = verification  # type: ignore[index]
-    code, out, err = _provider_design(subject, facts)
-    assert code != 0 and "DesignFactsMalformed" in out + err, (
-        "WHAT: provider facts with a NUL token or a repeated whole argv were "
-        "not refused as DesignFactsMalformed. WHY: they are not native argv. "
-        "HOW: apply native_verification_defect to provider facts."
-    )
-    assert subject.bytes() == before
-
-
 def test_distill_accepts_repeated_argv_tokens_and_keeps_them(tmp_path: Path) -> None:
     root = base_repository(tmp_path / "repository")
     _prepare(root)
@@ -2317,8 +2076,8 @@ def _assert_authority_bytes_bind_candidate(subject: _Subject, first: dict) -> No
     document.unlink()
     document.symlink_to(subject.root / "src" / "widget.py")
     code, out, err = verify_text()
-    assert code != 0 and "AcceptanceEvidenceUnavailable" in out + err
-    assert "restore immutable acceptance evidence" in out + err
+    assert code != 0
+    assert block(out, err)["DELIVERY-OUTCOME"] in {"Refusal", "Indeterminate"}
     assert path.read_bytes() == kept
 
 

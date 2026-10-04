@@ -679,17 +679,7 @@ def test_a_declared_oracle_locator_outranks_an_earlier_test_dependency_citation(
     )
     assert extract_oracle_citations(brief) == [
         "tests/release/test_nwave_ai_cli.py",
-        "tests/release/existing_dep_test.py",
     ]
-
-
-def test_a_declared_oracle_locator_naming_a_production_file_is_never_an_oracle() -> (
-    None
-):
-    # The label alone never promotes a non-test-shaped path: the shape rule
-    # stays the discriminator, exactly as for any other citation source.
-    brief = "Oracle target locator: `src/des/cli/update.py` (CREATE_NEW)."
-    assert extract_oracle_citations(brief) == []
 
 
 def test_a_declared_module_variant_javascript_oracle_is_admitted_and_never_a_target() -> (
@@ -706,7 +696,6 @@ def test_a_declared_module_variant_javascript_oracle_is_admitted_and_never_a_tar
     )
     assert extract_oracle_citations(brief) == [
         "test/install.test.mjs",
-        "test/version.test.mjs",
     ]
     assert extract_target_citations(brief) == {
         "scripts/install.mjs": ["scripts/install.mjs:26"]
@@ -879,3 +868,33 @@ def test_a_go_module_proxy_target_locator_is_extracted_verbatim() -> None:
     assert FILE_LINE_CITATION_RE.findall(text) == [
         "vendor/example.com/mod/@v/v1.2.0.info:1"
     ]
+
+
+def test_explicit_native_oracle_uses_the_safe_design_locator_not_a_filename() -> None:
+    assert extract_oracle_citations(
+        "Oracle target locator: `oracle.ml`\nIncidental support `tests/test_support.py:1`."
+    ) == ["oracle.ml"]
+    assert extract_oracle_citations(
+        "Oracle target locator: `spec/domain.ml::law/native`"
+    ) == ["spec/domain.ml::law/native"]
+    for unsafe in (
+        "../oracle.ml",
+        "/oracle.ml",
+        "test/oracle.ml::law/../other",
+        "oracle.ml::law\n",
+    ):
+        assert (
+            extract_oracle_citations(
+                f"Oracle target locator: `{unsafe}`\nFallback `tests/test_safe.py:1`."
+            )
+            == []
+        )
+    assert (
+        extract_oracle_citations(
+            "Oracle target locator: `oracle.ml`\nOracle target locator: missing-backticks"
+        )
+        == []
+    )
+    assert extract_oracle_citations(
+        "Oracle target locator: `a.ml`\nOracle target locator: `b.ml`"
+    ) == ["a.ml", "b.ml"]

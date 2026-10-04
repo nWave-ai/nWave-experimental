@@ -10,7 +10,7 @@ skills:
 ---
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- (no universal lens applies to this role)
+- (no conditional skills for this role)
 <!-- GENERATED:role-skill-loading END -->
 # RCA Review
 

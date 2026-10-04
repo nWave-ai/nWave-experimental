@@ -13,11 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
-    asked,
-    block,
-    nexts,
-)
+from tests.des.acceptance.steps_for_the_orchestrator.conftest import block
 
 
 HANDOVER_REPAIR = (
@@ -56,14 +52,10 @@ def test_state_refuses_an_authority_that_is_not_a_design_section_locator(
         f'section locator (path#heading): "{authority}"'
     ), stdout + stderr
     assert shown.get("HOW") == HANDOVER_REPAIR, stdout + stderr
-    assert shown.get("TURNS-BOUGHT") == "0", stdout + stderr
-    assert nexts(stdout) == [
-        f"des state --repo-root {root.resolve()} -- after the HOW above"
-    ], stdout + stderr
+
     for forbidden in ("design=bound", "des oracle", "Traceback"):
         assert forbidden not in stdout + stderr, stdout + stderr
     assert handover.read_bytes() == raw
-    assert asked(turns) == []
 
 
 def test_state_still_binds_a_valid_design_section_locator(
@@ -103,4 +95,3 @@ def test_state_still_binds_a_valid_design_section_locator(
     assert "after the HOW above" not in stdout + stderr, stdout + stderr
     assert "Traceback" not in stdout + stderr, stdout + stderr
     assert handover.read_bytes() == raw
-    assert asked(turns) == []

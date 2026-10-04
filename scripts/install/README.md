@@ -48,12 +48,37 @@ python scripts/install/install_nwave.py
 # Dry run (show what would be installed)
 python scripts/install/install_nwave.py --dry-run
 
+# Target one platform explicitly (auto-detect is the default)
+python scripts/install/install_nwave.py --platform claude-code
+python scripts/install/install_nwave.py --platform codex
+python scripts/install/install_nwave.py --platform omp
+
 # Create backup only
 python scripts/install/install_nwave.py --backup-only
 
 # Restore from latest backup
 python scripts/install/install_nwave.py --restore
 ```
+
+### Target Platforms
+
+`--platform` accepts `auto` (default), `claude-code`, `opencode`, `codex`,
+`copilot`, `omp`, or `all`.
+
+OMP (oh-my-pi) installs nWave task agents and skills into OMP's native
+discovery tree — `<config-root>/agent/agents/*.md` and
+`<config-root>/agent/skills/<name>/SKILL.md`, where the config root is
+`$HOME/.omp` (renamed by OMP's `PI_CONFIG_DIR`). Roles are projected to the
+OMP agent schema: Claude model aliases are omitted so roles inherit the
+user's configured model, tools map to OMP's canonical lowercase names, the
+`StructuredOutput` reply channel becomes an `output` schema from the
+canonical model envelope, and role preload skills become `autoloadSkills`
+naming only public installed skills (each skill delivered once). Scoped
+tool grants have no OMP form and are omitted with an explicit report, never
+widened. OMP installs no hooks — OMP extension events differ from Claude
+Code hooks, so DES guard enforcement is not projected (reported, not
+faked). A named profile (`OMP_PROFILE`/`PI_PROFILE`) is refused with an
+explicit message: only the default profile is served.
 
 ### Uninstallation
 
@@ -154,6 +179,10 @@ python scripts/install/install_nwave.py --restore
 │   ├── nwave-update-<timestamp>/
 │   └── restore_scripts/
 └── nwave-manifest.txt  # Installation manifest
+
+~/.omp/agent/           # OMP target (config root renamed by PI_CONFIG_DIR)
+├── agents/             # nWave task agents (native *.md + .nwave-agents-manifest.json)
+└── skills/             # nWave skills (native <name>/SKILL.md + .nwave-manifest.json)
 ```
 
 ## Logs

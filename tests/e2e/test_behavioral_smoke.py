@@ -45,7 +45,7 @@ def behavioral_smoke_container():
     Mirrors Dockerfile.env-behavioral-smoke build sequence:
     1. Install pre-commit 3.6.0
     2. Create project with pre-commit installed (sets local core.hooksPath)
-    3. Configure attribution in ~/.nwave/global-config.json before install
+    3. Enable attribution and activate the disposable project in unified config
     4. Install nwave-ai from local source and run nwave-ai install
     5. Make a real git commit to verify attribution hook fires
     """
@@ -92,7 +92,7 @@ def behavioral_smoke_container():
             "pre-commit install && "
             "echo '# Test project' > README.md && "
             "git add -A && "
-            "git commit -m 'init' --no-verify"
+            "git commit -m 'test: initialize attribution fixture'"
         )
         code, out = exec_in_container(container, ["bash", "-c", project_setup])
         assert code == 0, f"Project setup failed (exit {code}).\nOutput:\n{out}"
@@ -102,8 +102,12 @@ def behavioral_smoke_container():
         write_config = """python3 -c "
 import json, pathlib
 pathlib.Path('/root/.nwave').mkdir(exist_ok=True)
-pathlib.Path('/root/.nwave/global-config.json').write_text(
+pathlib.Path('/root/.nwave/config.json').write_text(
     json.dumps({'attribution': {'enabled': True, 'trailer': 'Co-Authored-By: nWave <nwave@nwave.ai>'}})
+)
+pathlib.Path('/root/project/.nwave').mkdir(exist_ok=True)
+pathlib.Path('/root/project/.nwave/config.json').write_text(
+    json.dumps({'enabled': True})
 )
 print('config written')
 " """
@@ -126,14 +130,14 @@ print('config written')
             "python -m venv /opt/nwave-venv && "
             "source /opt/nwave-venv/bin/activate && "
             "pip install --quiet "
-            "rich typer pydantic 'pydantic-settings' httpx platformdirs pyyaml packaging && "
+            "rich typer pydantic 'pydantic-settings' httpx platformdirs pyyaml packaging jsonschema && "
             f"pip install --quiet --no-deps {_CONTAINER_SRC} && "
             f"export PYTHONPATH={_CONTAINER_SRC} && "
             "cd /root/project && "
-            "echo y | python -m nwave_ai.cli install || true"
+            "python -m nwave_ai.cli install --platform claude-code --yes"
         )
         code, out = exec_in_container(container, ["bash", "-c", install_script])
-        # Non-zero tolerated — behavioral assertions below verify the actual outcomes
+        assert code == 0, f"nWave installation failed (exit {code}).\n{out}"
 
         yield container
 
@@ -196,36 +200,53 @@ class TestBehavioralSmoke:
     def test_commit_message_contains_nwave_attribution(
         self, behavioral_smoke_container
     ) -> None:
-        """The commit message must contain an nWave attribution trailer.
+        """The installed host hook must attribute a real commit with pre-commit active."""
+        script = r"""
+import json
+from pathlib import Path
+import re
+import subprocess
 
-        This is the definitive test for the attribution hook bug (2026-03).
-        If the hook fires correctly, git log -1 --format=%B will include
-        'Co-Authored-By: nWave' or similar.  If the hook is silenced by
-        pre-commit's core.hooksPath override, no trailer appears.
-        """
-        # First ensure a commit exists to inspect
-        commit_script = (
-            "cd /root/project && "
-            "git commit --allow-empty -m 'test: attribution check' 2>&1 || true"
+repo = "/root/project"
+settings = json.loads(Path("/root/.claude/settings.json").read_text())
+commands = [
+    hook["command"]
+    for entry in settings["hooks"]["PreToolUse"]
+    if re.search(entry.get("matcher", ""), "Bash")
+    for hook in entry.get("hooks", [])
+    if "claude_code_hook_adapter" in hook.get("command", "")
+]
+assert len(commands) == 1, commands
+original = "git commit --allow-empty -m 'test: attribution check'"
+payload = {
+    "tool_name": "Bash",
+    "agent_id": "e2e-precommit-coexistence",
+    "cwd": repo,
+    "tool_input": {"command": original},
+}
+hook = subprocess.run(
+    commands[0], shell=True, input=json.dumps(payload), text=True,
+    capture_output=True, cwd=repo, timeout=60,
+)
+assert hook.returncode == 0, (hook.stdout, hook.stderr)
+response = json.loads(hook.stdout)
+rewritten = response["hookSpecificOutput"]["updatedInput"]["command"]
+assert rewritten != original, response
+commit = subprocess.run(
+    ["bash", "-c", rewritten], cwd=repo, text=True,
+    capture_output=True, timeout=60,
+)
+assert commit.returncode == 0, (commit.stdout, commit.stderr)
+message = subprocess.check_output(
+    ["git", "log", "-1", "--format=%B"], cwd=repo, text=True,
+)
+assert "Co-Authored-By: nWave <nwave@nwave.ai>" in message, message
+print(message)
+"""
+        code, out = exec_in_container(
+            behavioral_smoke_container, ["/opt/nwave-venv/bin/python", "-c", script]
         )
-        exec_in_container(behavioral_smoke_container, ["bash", "-c", commit_script])
-
-        _code, commit_msg = exec_in_container(
-            behavioral_smoke_container,
-            ["bash", "-c", "cd /root/project && git log -1 --format=%B 2>/dev/null"],
-        )
-        has_attribution = (
-            "nwave" in commit_msg.lower() or "co-authored-by" in commit_msg.lower()
-        )
-        # NOTE: If attribution is not yet wired (pre-condition not met in this env),
-        # we document rather than fail hard — but flag for investigation.
-        if not has_attribution:
-            pytest.xfail(
-                "Attribution trailer not found in commit message.\n"
-                "This confirms the attribution hook bug: hook is installed but not "
-                "executed because pre-commit's core.hooksPath shadows nWave's hook.\n"
-                f"Commit message:\n{commit_msg}"
-            )
+        assert code == 0, f"Installed attribution hook failed.\n{out}"
 
     def test_commit_with_real_file_succeeds(self, behavioral_smoke_container) -> None:
         """A commit adding a real file must succeed (pre-commit + nWave coexistence).
@@ -277,16 +298,5 @@ class TestBehavioralSmoke:
             kw in out.lower()
             for kw in ("trailing whitespace", "passed", "failed", "running hooks")
         )
-        if not hook_ran and code == 0:
-            # Commit succeeded but no hook output — may indicate silent skip
-            pytest.xfail(
-                "pre-commit hooks produced no output in commit log.\n"
-                "This may indicate core.hooksPath override is silencing pre-commit.\n"
-                f"Commit output:\n{out}"
-            )
-        elif not hook_ran and code != 0:
-            pytest.fail(
-                "Commit failed AND pre-commit hooks produced no output.\n"
-                f"Commit output:\n{out}"
-            )
-        # If hook_ran is True, test passes
+        assert code == 0, f"Commit failed (exit {code}).\n{out}"
+        assert hook_ran, f"pre-commit hook did not execute.\n{out}"

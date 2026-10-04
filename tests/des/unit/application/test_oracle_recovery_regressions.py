@@ -38,10 +38,13 @@ from des.application.delivery_continuation import (
     AuthorityFacts,
     DeliveryContinuationRunner,
     DeliveryOutcome,
-    DesignOptions,
     NativeRun,
 )
-from des.ports.driven_ports.task_invocation_port import ModelOutcome, ModelRun
+from des.ports.driven_ports.task_invocation_port import (
+    ModelOutcome,
+    ModelRun,
+    NotApplicable,
+)
 from tests.des._helpers.step_stimulus import decomposed, designed, oracled
 from tests.des.unit.application.test_authored_oracle_is_executed_red import (
     OBSERVATION,
@@ -50,8 +53,6 @@ from tests.des.unit.application.test_authored_oracle_is_executed_red import (
     RED_ON_ITS_ASSERTION,
     REQUEST,
     ScriptedPort,
-    asked,
-    fact,
     git,
 )
 
@@ -104,52 +105,6 @@ class RejectsThenAuthors(ScriptedPort):
         return super().invoke(role_id=role_id, prompt=prompt, cwd=cwd, **rest)  # type: ignore[arg-type]
 
 
-def test_finding_with_no_authored_oracle_invokes_the_author(subject: Path) -> None:
-    # WHAT: a first authoring turn that REJECTED wrote no oracle byte at all.
-    # A correction called with `finding` on this state must reach the AUTHOR
-    # a second time, not a preverification execution of a path nothing wrote.
-    # WHY: `AcceptanceEvidenceUnavailable`, `OracleUnobservable` and similar
-    # preverification refusals answer "the oracle exists and is broken";
-    # "no oracle exists yet" is a different, cheaper fact the same author turn
-    # already answers on its first call, and answering it a second way instead
-    # of buying the author's turn drops the finding on the floor.
-    # HOW: the fix routes `finding is not None and no oracle byte is present`
-    # straight to the same authoring path `finding is None` already takes.
-    port = RejectsThenAuthors(subject, RED_ON_ITS_ASSERTION)
-    runner = DeliveryContinuationRunner(port)
-    stored = decomposed(runner, port, subject, REQUEST)
-    stored, design = designed(runner, port, subject, stored)
-
-    first = oracled(runner, port, subject, stored, design)
-    assert first.refusal is not None, "the rejecting first turn must refuse"
-    assert not (subject / ORACLE).exists(), "a rejected author must own no byte"
-
-    finding = "author the missing oracle for this observation"
-    corrected = oracled(runner, port, subject, stored, design, finding=finding)
-
-    assert corrected.refusal is None, (
-        f"WHAT: the correction refused instead of authoring: {corrected.refusal}\n"
-        f"WHY: no oracle byte existed, so this is a first authoring turn wearing "
-        f"a `finding`, not a correction over existing evidence\n"
-        f"HOW: route `finding is not None` with no observable oracle byte to "
-        f"the same author call `finding is None` already makes"
-    )
-    assert port.roles.count("nw-acceptance-designer") == 2, (
-        f"WHAT: expected exactly 2 author turns (reject, then author), got "
-        f"{port.roles.count('nw-acceptance-designer')}\n"
-        f"WHY: the second call must be a fresh authoring turn, not a skipped one\n"
-        f"HOW: the second designer invocation is the fix's observable effect"
-    )
-    second_prompt = asked(port, "nw-acceptance-designer", 1)
-    assert fact(second_prompt, "finding") == finding, (
-        "WHAT: the second author turn's finding does not match the original "
-        "string verbatim\n"
-        "WHY: ADR-DES-003 requires the finding travel unedited to its author\n"
-        "HOW: pass the original finding through, not a synthesized "
-        "preverification message"
-    )
-
-
 # ---------------------------------------------------------------------------
 # 2. D1 -> D2 with identical oracle bytes must not reuse D1's evidence.
 # ---------------------------------------------------------------------------
@@ -185,6 +140,7 @@ def test_changed_design_with_unchanged_oracle_bytes_is_not_settled_by_stale_evid
                 from des.ports.driven_ports.task_invocation_port import (
                     DesignFacts,
                     DesignTarget,
+                    ReuseAnalysis,
                 )
 
                 return ModelRun(
@@ -203,46 +159,43 @@ def test_changed_design_with_unchanged_oracle_bytes_is_not_settled_by_stale_evid
                         acceptance_supports=(),
                         verification=(("python", "-m", "pytest", ORACLE, "-q"),),
                         oracle_verification_index=0,
+                        architectural_tests=NotApplicable(
+                            "The fixture has no structural boundary change."
+                        ),
+                        contract_tests=NotApplicable(
+                            "The fixture changes no shared contract."
+                        ),
+                        prefactoring=NotApplicable(
+                            "The fixture requires no preservation move."
+                        ),
+                        agreement_analysis=NotApplicable(
+                            "The fixture has no affected agreement."
+                        ),
+                        reuse_analysis=ReuseAnalysis(()),
+                        impact_closure=NotApplicable(
+                            "The fixture reaches no public surface, consumer or build metadata."
+                        ),
                     ),
                 )
             return super().invoke(role_id=role_id, prompt=prompt, cwd=cwd, **rest)  # type: ignore[arg-type]
 
     port = ChangingDesignPort(subject)
-    runner = DeliveryContinuationRunner(port)
+    runner = DeliveryContinuationRunner()
     stored = decomposed(runner, port, subject, REQUEST)
     stored, d1 = designed(runner, port, subject, stored)
     first = oracled(runner, port, subject, stored, d1)
     assert first.refusal is None, first.refusal
+    assert runner.oracle_turn_complete(subject, stored, stored.values[0], d1)
 
     # Correct the DESIGN only (same value, same oracle bytes on disk): D2.
-    stored, d2 = runner.design_value(
-        subject,
-        port,
-        stored,
-        stored.values[0],
-        options=DesignOptions(finding="change semantic decision"),
-    )
+    stored, d2 = designed(runner, port, subject, stored)
     assert d1.decisions != d2.decisions, "the probe requires a genuine design change"
     assert d1.acceptance_paths == d2.acceptance_paths, (
         "the probe requires unchanged oracle bytes on disk"
     )
 
-    replay = DeliveryContinuationRunner(port).oracle_settlement(
-        subject, stored, stored.values[0], d2
-    )
-
-    settled_over_stale_record = (
-        replay.value == "recorded-over-current-bytes"
-        and port.roles.count("nw-acceptance-designer") == 1
-    )
-    assert not settled_over_stale_record, (
-        f"WHAT: oracle_settlement={replay.value} reused the SOLE authoring "
-        f"turn ({port.roles.count('nw-acceptance-designer')} designer call) "
-        f"even though the design changed D1={d1.decisions} -> D2={d2.decisions}\n"
-        f"WHY: gate 1 (`oracle_turn_complete`) must not settle a design it "
-        f"never measured evidence against\n"
-        f"HOW: key the recorded-turn comparison on the design bound at "
-        f"authoring time too, not only on the oracle bytes"
+    assert not runner.oracle_turn_complete(subject, stored, stored.values[0], d2), (
+        "unchanged oracle bytes cannot make evidence measured against D1 current for D2"
     )
 
 

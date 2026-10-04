@@ -1,6 +1,6 @@
 ---
 name: nw-rigor
-description: Configure explicit Codex or Claude model selections for nWave DES defaults or published roles. Use when choosing provider/model defaults or project overrides; it never derives a model from a competence label.
+description: Configure explicit Codex or Claude model facts for nWave defaults or published roles, consumed by the native host where supported. Never derives a model from a competence label.
 user-invocable: true
 argument-hint: '[desired competence, provider, model, scope, optional role]'
 ---
@@ -9,9 +9,9 @@ argument-hint: '[desired competence, provider, model, scope, optional role]'
 
 F-DES-MODEL-CONFIG public configuration guidance.
 
-Use this guide to configure the DES runtime with the public `nwave-ai model`
-command. It records an explicit provider and model; it does not select a model
-from a competence label, check provider availability, or fall back silently.
+Use the public `nwave-ai model` command to record explicit provider/model facts
+for native-host role invocation where supported. DES does not execute models.
+The command neither maps competence to a model, checks availability, nor falls back.
 
 ## Read known selections first
 

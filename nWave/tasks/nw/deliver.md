@@ -7,8 +7,11 @@ argument-hint: '[request]'
 Interactive: invoke the first supported step and read its terminal. `NEXT` is
 advisory; the LLM chooses the next supported operation.
 
+Invoke the native installed Product Owner first; `$DISCUSS_MANIFEST` is its
+complete DISCUSS v2 result, not raw Request prose.
+
 ```bash
-printf '%s' "$REQUEST" | des po --repo-root ROOT --feature FEATURE_ID
+printf '%s' "$DISCUSS_MANIFEST" | des po --repo-root ROOT --feature FEATURE_ID --input -
 ```
 
 For an uncertain boundary, use the existing delegations to exercise an early

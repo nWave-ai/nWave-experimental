@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
 from tests.common.in_process_cli import run_cli_in_process
 from tests.des.acceptance.design_document_construction.test_design_document_construction import (
     MANIFEST,
@@ -16,6 +17,7 @@ from des.application import handover
 from des.application.delivery_steps import DeliverySteps
 from des.application.handover import HandoverValue, read_handover
 from des.domain.delivery_disposition import Disposition
+from des.domain.discuss_document import DiscussDocument, DiscussDocumentInvalid
 
 
 def payload() -> dict[str, object]:
@@ -59,7 +61,7 @@ def test_public_discuss_constructs_ordered_document_and_handover_without_provide
     code, out, err = call(root, raw)
     document = root / "docs/product/brief.md"
     handover = root / ".nwave/des/handover.json"
-    assert code == 0 and "NEXT: des design --repo-root <root> --value 1" in out + err
+    assert code == 0, out + err
     assert all(
         section in document.read_text()
         for section in (
@@ -108,6 +110,60 @@ def test_public_discuss_configuration_and_malformed_input_refuse_before_writing(
     assert (root / "docs/project.md").is_file() and not (
         root / "docs/global.md"
     ).exists()
+
+
+def test_public_discuss_refuses_every_independent_defect_of_one_input_at_once(
+    tmp_path: Path,
+) -> None:
+    root = base_repository(tmp_path / "repository")
+    malformed = payload()
+    malformed["request"] = "  "
+    malformed["values"][1]["dependencies"] = ["An observation no value states."]
+
+    with pytest.raises(DiscussDocumentInvalid) as refused:
+        DiscussDocument.from_json(json.dumps(malformed))
+    code, out, err = call(root, json.dumps(malformed))
+
+    defects = refused.value.defects
+    assert len(defects) == 2, defects
+    assert any(defect.startswith("request ") for defect in defects), defects
+    assert any(defect.startswith("values[1].dependencies") for defect in defects)
+    assert code != 0 and "InvalidDiscussDocument" in out + err
+    assert all(defect in out + err for defect in defects), (
+        "one public refusal must carry every independent defect so the producer "
+        f"corrects them in one submission (stdout={out!r}, stderr={err!r})"
+    )
+    assert not (root / ".nwave/des/handover.json").exists()
+
+
+def test_discuss_dependency_on_a_refused_observation_is_not_refused_too() -> None:
+    malformed = payload()
+    malformed["values"][0]["observation"] = ["A user can select a widget color."]
+
+    with pytest.raises(DiscussDocumentInvalid) as refused:
+        DiscussDocument.from_json(json.dumps(malformed))
+
+    (only,) = refused.value.defects
+    assert only.startswith("values[0].observation"), only
+
+
+def test_a_bad_observation_does_not_hide_an_independent_forward_dependency() -> None:
+    malformed = payload()
+    later = "A later public outcome"
+    malformed["values"][0]["observation"] = 42
+    malformed["values"][1]["dependencies"] = [later]
+    malformed["values"].append({"observation": later, "dependencies": []})
+
+    with pytest.raises(DiscussDocumentInvalid) as refused:
+        DiscussDocument.from_json(json.dumps(malformed))
+
+    assert len(refused.value.defects) == 2
+    assert any(
+        defect.startswith("values[0].observation") for defect in refused.value.defects
+    )
+    assert any(
+        defect.startswith("values[1].dependencies") for defect in refused.value.defects
+    )
 
 
 def test_public_design_binds_discuss_graph_and_replay_retains_facts(
@@ -300,7 +356,6 @@ def test_public_discuss_replace_current_corrects_the_brief_and_retains_bound_fac
 
     code, out, err = call_replacing(root, raw)
     assert code == 0, out + err
-    assert "NEXT: des design --repo-root <root> --value 1" in out + err
     rendered = document.read_text()
     assert "Move color selection to the Palette boundary." in rendered
     assert "Keep color selection in the Widget boundary." not in rendered

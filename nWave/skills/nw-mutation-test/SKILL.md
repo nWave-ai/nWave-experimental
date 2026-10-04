@@ -37,17 +37,31 @@ starting a mutation tool.
 5. Compare the user's status with the snapshot and discard only the disposable
    target.
 
+Each invocation binds the actual production delta/commit snapshot, ordinary-GREEN
+baseline, oracle/support/source identities and native build/discovery graph.
+Allocate distinct process, workspace, mutable config, build/temp/cache and result
+paths with provenance; parallel probes cannot share fixed files or cache identity.
+Tests must participate in that native graph, not a disconnected Python harness.
+The repository's nightly Python adapter supports its declared Python/mutmut 3.8
+contract only; it is not a cross-stack runner. Empty/unsupported target sets,
+driver no-ops, zero generated mutants or interrupted attempts are never PASS100.
+
 No supported runner is an honest `indeterminate`, not a fabricated PASS.
 
 ## Result
 
-Default threshold: 80% killed mutants.
+The requested/project threshold (default 80%) applies only to a valid attributed
+attempt with a measured nonzero denominator. Report actual generated, killed,
+survived and incomplete/unclassified counts with their population and conservation.
+Do not turn timeout, build/setup failure or untested mutants into killed outcomes,
+or omit them to inflate the denominator. Preserve invalid attempt evidence and
+partial actual counts without a passing rate.
 
-- `pass`: kill rate >= threshold.
-- `fail`: kill rate < threshold; name surviving mutants by production file,
-  line or symbol and the smallest missing observable.
-- `indeterminate`: runner unavailable, baseline tests fail, execution is
-  interrupted or evidence cannot be attributed to the validated delta.
+- `pass`: valid complete attempt, kill rate >= threshold.
+- `fail`: valid complete attempt below threshold; name real survivors by production
+  file, line/symbol and smallest missing observable.
+- `indeterminate`: unavailable runner, failed baseline, no-op/zero mutants,
+  interruption, incomplete outcome or evidence not attributable to this delta.
 - `not-applicable`: validated delta contains no mutable production target.
 
 Keep the interactive report concise: verdict, numerator/denominator, per-file

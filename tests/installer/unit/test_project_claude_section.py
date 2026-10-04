@@ -286,47 +286,6 @@ def test_delivery_route_fragment_is_spliced_once_and_host_neutral(host: str) -> 
 
 
 @pytest.mark.parametrize("host", HOST_IDS)
-def test_delivery_route_fragment_keeps_semantic_routing_with_the_llm(host: str) -> None:
-    """The projection names LLM routing and DES's limited construction role.
-
-    It also retains the quality and whole-feature closure observations without
-    restoring a resident-runner mandate.
-    """
-    content = load_section_content(host=host)
-    lowered = content.lower()
-
-    for guarantee in (
-        "llm",
-        "s/m/l",
-        "rout",
-        "independent review",
-        "examine",
-        "whole feature",
-        "evolution",
-        "finalize",
-        "des constructs",
-        "next is advisory",
-    ):
-        assert guarantee in lowered, f"{host} guidance never states: {guarantee}"
-    assert "applicable" in lowered or "where" in lowered, (
-        "EXAMINE must read as conditional, not unconditional"
-    )
-    for retired in ("resident runner", "mandatory floor", "every request goes"):
-        assert retired not in lowered, f"{host} guidance restores: {retired}"
-
-
-@pytest.mark.parametrize("host", HOST_IDS)
-def test_delivery_route_fragment_allows_llm_sizing_and_routing(host: str) -> None:
-    """Sizing and routing are LLM semantic decisions, not runner protocol."""
-    content = load_section_content(host=host)
-
-    for retired in ("nw-mode-select", "NW-MODE-SELECTED", "resident runner"):
-        assert retired not in content, f"{host} guidance still carries {retired}"
-    assert "S/M/L" in content
-    assert "LLM evaluates the Request" in content
-
-
-@pytest.mark.parametrize("host", HOST_IDS)
 def test_question_format_fragment_exact_bytes_once_and_semantics(host: str) -> None:
     """User-facing question shape (F-USER-QUESTION-FORMAT-STE100): context ->
     recommendation -> options-with-consequences -> one question, ASD-STE100

@@ -19,9 +19,9 @@ user-invocable: false
 | Negatively phrased rules | Less effective than affirmative | Phrase affirmatively |
 | Compound instructions | Confuses agent reasoning | Split into separate focused steps |
 | Inconsistent terminology | Amplifies confusion in longer contexts | One term per concept throughout |
-| Orphan skills in frontmatter | Skills declared but no `Load:` directives — never loaded in sub-agent mode | Add mandatory skill loading section + `Load:` per phase |
-| Missing skills path | Sub-agents can't find skills without explicit path | Document `~/.claude/skills/nw-{skill-name}/SKILL.md` in agent |
-| Soft skill loading language | "Should load", "if applicable", "consider loading" — agents skip under turn pressure | Use imperative: "You MUST load", "Load NOW before proceeding" |
+| Mirrored skill loading | Frontmatter skill also loaded by a body directive or table row — the installer already preloaded it once, so the body duplicates resident knowledge | Delete the body directive/row; frontmatter alone keeps it resident |
+| Handwritten conditional index | Skill Loading section or table written beside the generated region — two indexes drift | Apply the source-aware Skill addressing procedure in `nw-agent-creation-workflow`; retain one generated index and report missing source capability |
+| Conditional skill in frontmatter | A skill needed only under a condition is eagerly preloaded on every task | Move it to a precise conditional trigger through the source-aware procedure; do not manufacture a registry in an installed project |
 | Over-compressed examples | `### Example N:` headers removed during compression — eval tools can't find them | Keep example section headers verbatim |
 | Compressed AskUserQuestion options | Runtime menu items compressed to pipes — lose decision tree structure | Preserve numbered options with descriptions verbatim |
 | Broad multi-job asset | One agent/skill does N jobs; runtime re-decides "what good means" each run | Split into N one-job-one-trigger INTERNAL skills — do not add rules, do not parameterize |

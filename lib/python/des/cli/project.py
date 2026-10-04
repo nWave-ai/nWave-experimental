@@ -74,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
                 "HandoverAbsent",
                 "no decomposition is recorded in this repository, so there is no "
                 "delivery state to show anyone",
-                "decompose one Request first -- pipe it into `des po` on stdin",
+                "construct host product facts first with `des po --input -` and an explicit scope",
             ),
             moves_after_refusal(root, own, "HandoverAbsent"),
         )

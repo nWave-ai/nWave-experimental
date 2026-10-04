@@ -20,11 +20,11 @@ Files present in the report with ZERO recorded executable lines (e.g. an
 empty ``__init__.py``) are vacuously reached -- they contain nothing whose
 execution could be observed.
 
-Input is Cobertura XML because it is the runner-agnostic lingua franca:
-coverage.py/pytest-cov, cargo-tarpaulin, istanbul/vitest all emit it, so the
-gate stays language-agnostic per the target-machine constraint (Python +
-stdlib only; no runner is invoked here -- the report from the verification
-run that already happened is the evidence).
+This optional adapter consumes genuine Cobertura XML, when the project's
+verification already produces it. It does not support every native report
+format and never requires installing Python coverage tooling or translating
+an unavailable observation into fabricated XML. Missing/incompatible evidence
+is indeterminate here; the host selects the project's actual observation.
 
 Verdicts (degrade-LOUD, never silent-pass; every failure states WHAT failed,
 WHY, and HOW to fix -- the standing what/why/how rule):
@@ -109,9 +109,9 @@ def _parse_report(
             what=f"coverage report {coverage_xml} is missing/unreadable",
             why=str(exc),
             how=(
-                "run the feature's verification with Cobertura XML output "
-                "(e.g. `pytest --cov=<src> --cov-report=xml`) and point "
-                "--coverage-xml at the produced file."
+                "use this optional adapter only if the project's actual "
+                "verification emits Cobertura; pass that genuine report via "
+                "--coverage-xml, or retain native evidence outside this adapter."
             ),
         )
     except ElementTree.ParseError as exc:
@@ -147,8 +147,8 @@ def _parse_report(
                 "treating it as a pass would be the silent-pass disease."
             ),
             how=(
-                "check the coverage run actually executed tests and that the "
-                "--cov source spec covers the production tree."
+                "check the declared native coverage recipe observed the "
+                "production tree and emitted compatible Cobertura evidence."
             ),
         )
     return reach
@@ -165,8 +165,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--coverage-xml",
-        required=True,
-        help="Cobertura XML report from the feature's verification run.",
+        help="Genuine Cobertura report, if the project's native recipe produces it.",
     )
     parser.add_argument(
         "--src-dir",
@@ -182,6 +181,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Source file extension to enumerate (default: .py).",
     )
     args = parser.parse_args(argv)
+    if not args.coverage_xml:
+        return _indeterminate(
+            what="no compatible coverage observation declared",
+            why="this optional adapter reads Cobertura only; absence is not zero execution.",
+            how="use the project's real coverage evidence; do not add a foreign runner merely to satisfy this adapter.",
+        )
     repo = Path(args.repo).resolve()
     src_root = (repo / args.src_dir).resolve()
     ext = args.ext if args.ext.startswith(".") else f".{args.ext}"

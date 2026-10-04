@@ -33,7 +33,7 @@ an unresolved defect remains explicit and local work can continue.
 Do not call Jev for arithmetic, hashes, dates, parsing, schema checks, command
 execution or symbol resolution. Use their deterministic tools.
 
-Minimize transmitted state. Exclude credentials, personal data, source code unless the task explicitly needs it, oracle/target locators, private findings, and hidden review material. Record the model version, input token count, questions, response, and the later observed outcome.
+Minimize transmitted state. Exclude credentials, secrets, personal data, private findings, source-blind material, confidential account/host/resource identifiers and secret-bearing logs. Source/test/consumer fragments may be sent only within explicit authorized review scope; do not send repository dumps, historical grader/baseline material or producer evidence to an independent assessment. If redaction removes needed relationships, classify insufficient and work locally. Record returned model, input/output tokens, duration and cost when actually available; unknown cost is not zero.
 
 The LLM owns orchestration. DES constructs documents and suggests steps. Jev supplies bounded judgments; code owns identities, arithmetic, schema checks, policy, and actions.
 
@@ -57,9 +57,17 @@ Request fields are exactly `state`, `model`, and non-empty `questions`. Use the
 configured supported model; retained calls currently use `jev-1.13.0`. Include
 `insufficient` where legitimate. Service responses are judgments, not proof.
 
+Keep owner and revision receipts in the local record. If permitted ownership context is needed in the transmitted evidence, place it inside `state`; `owner`, `role`, and `revision` are not extra root request keys. A validation failure returns unchanged to the requesting owner, who corrects its own request. The caller never strips keys or rewrites an independent question to make it pass.
+
 For a choice, `type` is lowercase `"choice"`. The keys of `criteria` are the
 answer labels, and each value describes when that answer applies. They are not
 scoring dimensions. This complete request illustrates the wire format:
+
+For `"score"`, `criteria` is a nonempty ordered array of rubric levels, not
+an object of dimensions. Ask one Score per relevant item/dimension with anchored
+levels. For `"noul"`, criteria may be omitted/null or an object of `true`/`false`
+descriptions. Choice criteria is a label object. Preserve role-authored request
+and raw response; the existing client validates the actual wire contract.
 
 ```json
 {
@@ -99,6 +107,44 @@ evidence boundary, complete input, rubric, model/policy and evidence revision.
 Retain these identities in existing request/result records; no cache service is
 required. Never convert broader-context results into source-blind evidence.
 
+### Complete, role-owned quality assessment
+
+Enumerate the candidate's relevant items deterministically using local evidence:
+test/family and logical implementation unit for code/oracle review; design
+decision, boundary and producer/consumer agreement for architecture; applicable
+pipeline, infrastructure, environment, rollout/recovery and KPI→telemetry plan
+for platform. Link each item to its obligation and sufficient consumer context.
+Assess every relevant item on each applicable dimension below; batch independent
+questions over compact state. Not every line or YAML entry is a separate unit.
+Applicability, out-of-scope and insufficient evidence are separate Choice/Noul
+decisions, not the lowest quality score. Preserve explicit local limitations
+for unavailable calls rather than fabricate a verdict or silently skip items.
+
+| Item | Distinct assessment dimensions |
+|---|---|
+| Test / family | Obligation fidelity; observation/falsifier strength; incidental coupling; business readability; property adequacy |
+| Implementation unit | Cohesion/invariant ownership; semantic reuse/duplication; dependency direction; type precision; effect separation |
+| Architecture decision / agreement / boundary | Requested outcome/constraint fidelity; reuse/CREATE_NEW rationale; ownership/SSOT; simplest adequate alternative; state/failure/guarantee ceiling; substrate/test/prefactoring adequacy |
+| Platform plan | Requirement-to-plan fidelity; infrastructure reuse; rollout/rollback conditions; failure/recovery and persistent data; KPI/SLO→signal→alert/runbook traceability; security/permission/config risk; truthful readiness evidence |
+
+Reconcile applicability with current authority before scoring. No deployment
+promise means no invented IaC/rollout requirement; `DESIGNED_NOT_BUILT` is not
+`OBSERVED`. Native tools and real probes, not scores, establish callers,
+temporal properties, recovery, compatibility and preservation.
+
+Keep Score's score/confidence/legend/probabilities as service output. It provides
+no free-form rationale. The owner verifies locators, observations and concrete
+counterexamples locally and labels those reasons `reviewer_reason` (or explicit
+architect self-check reason), never `jev_reason`. A label may classify a supplied
+hypothesis; it is not autonomous diagnosis. Scores order attention, never
+compensate blockers by averaging, prove correctness/completeness, authorize
+deployment, replace human choices or add a universal DESIGN review phase.
+
+Architect self-check is producer-owned, not independent review. A reviewer
+forms its own minimized questions under its own ceiling. Run known-defect and
+positive-control pilots before claiming calibrated thresholds or efficiency;
+retain false flags, missed defects, item coverage and whole-path cost/time.
+
 ### Roles without a callable client
 
 Use the role's existing permitted tool when it can invoke the client. If the
@@ -129,7 +175,7 @@ independent verdicts. Every supported subquestion must nevertheless use Jev.
 | Rank a defined quality dimension | Score | Artifact plus concrete rubric | ordering and cut-off |
 | Evaluate independent concerns | Parallel questions | Same narrow state | which answers apply |
 
-Ask one direct semantic question. Put the exact condition in `instructions`; put contrasts and boundary cases in `criteria`. Include `none`, `insufficient`, or `not-applicable` when it is a legitimate answer. Do calculations, counts, hashes, date ordering, schema validation, and path resolution in code before or after the request.
+Ask one direct semantic question. Put the exact condition in `instructions`; put contrasts and boundary cases in `criteria`. For batched cases, each question explicitly names the exact case/claim in `state`; do not rely on matching question IDs or an unqualified "the recommendation" to bind different subjects. Include `none`, `insufficient`, or `not-applicable` when it is a legitimate answer. Do calculations, counts, hashes, date ordering, schema validation, and path resolution in code before or after the request.
 
 ## Delivery Use Cases
 

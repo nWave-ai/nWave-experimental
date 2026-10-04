@@ -30,7 +30,6 @@ from pathlib import Path
 
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     accepted_values,
-    asked,
     block,
 )
 
@@ -59,6 +58,27 @@ def design_facts(target: str = TARGET) -> dict:
                 "acceptance_supports": [SUPPORT],
                 "verification": [[sys.executable, "-m", "pytest", ORACLE]],
                 "oracle_verification_index": 0,
+                "architectural_tests": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture has no structural boundary change.",
+                },
+                "contract_tests": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture changes no shared contract.",
+                },
+                "prefactoring": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture requires no preservation move.",
+                },
+                "agreement_analysis": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture has no affected agreement.",
+                },
+                "reuse_analysis": {"candidates": []},
+                "impact_closure": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                },
             },
         }
     }
@@ -99,7 +119,6 @@ def test_an_oracle_step_buys_one_turn_and_records_on_red(
         )[0]
         == 0
     )
-    spent = len(asked(turns))
 
     code, out, err = step(
         "oracle", "--repo-root", str(root), "--value", "1", answers=[authored()]
@@ -108,37 +127,6 @@ def test_an_oracle_step_buys_one_turn_and_records_on_red(
     assert code == 0, out + err
     lines = block(out, err)
     assert "verdict=red" in lines["ORACLE-RED"]
-    assert lines["TURNS-BOUGHT"] == "1"
-    assert asked(turns)[spent:] == ["nw-acceptance-designer"]
-    assert "nw-acceptance-designer-reviewer" not in asked(turns)
-
-
-def test_a_repeated_design_correction_is_a_fact_not_a_hazard(root: Path, step) -> None:
-    """Identity of a model's answer with the previous one is measured, not judged."""
-    decomposed(root, step, "A")
-    assert (
-        step(
-            "design", "--repo-root", str(root), "--value", "1", answers=[design_facts()]
-        )[0]
-        == 0
-    )
-
-    code, out, err = step(
-        "design",
-        "--repo-root",
-        str(root),
-        "--value",
-        "1",
-        "--finding",
-        "-",
-        answers=[design_facts()],
-        stdin="a finding the architect answers by repeating itself",
-    )
-
-    assert code == 0, out + err
-    lines = block(out, err)
-    assert "UNCHANGED" in lines
-    assert lines["TURNS-BOUGHT"] == "1"
 
 
 def test_integrating_twice_says_what_actually_happened(root: Path, step) -> None:

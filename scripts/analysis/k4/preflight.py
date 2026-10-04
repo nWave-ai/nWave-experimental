@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build direct Claude and direct installed-DES K4 arms.
 
-Preflight proves the per-workspace DES launcher and its provider resolver under
-the rendered arm environment before a finite Request reaches either arm.
+Preflight checks the per-workspace DES CLI and native host launcher discovery
+under the rendered arm environment before a finite Request reaches either arm.
 
     python3 -m scripts.analysis.k4.preflight --root <campaign-root> [--wheel <path>]
 
@@ -573,16 +573,11 @@ TREATMENT_INSTALL_STEP = ("nwave-ai", "install", "--platform", "claude-code")
 TREATMENT_ENABLE_STEP = ("nwave-ai", "project", "enable", "--yes")
 
 
-#: DES buys a role turn by LAUNCHING the model, and it finds the launcher with
-#: `shutil.which("claude")`. Measured 2026-09-13 inside a real delivery: that
-#: returns nothing, so `des po` refuses with ModelNotIssued and the method cannot
-#: run at all -- a second, independent reason no campaign in this project's
-#: history could exercise it.
-#:
-#: The launcher IS resolvable under the arm's declared env from outside; the
-#: delivery's own PATH is narrower. `.claude-k4/bin` is on it, because the
-#: delivery resolves `des` from there, so the arm links the launcher into that
-#: same directory rather than trying to widen a PATH it does not own.
+#: The native Claude host executes the arm's delivery agent and specialist roles.
+#: DES constructs documents and measures explicitly requested facts; it launches
+#: no model. Keep the host launcher in the arm's confined `.claude-k4/bin`,
+#: alongside `des`, so native role execution does not depend on ambient PATH or
+#: an executable outside the delivery workspace.
 def treatment_launcher_link_step() -> tuple[str, ...]:
     """Link the resolved launcher into the config dir the delivery reads.
 
@@ -607,8 +602,8 @@ def treatment_launcher_link_step() -> tuple[str, ...]:
     if not found:
         sys.stderr.write(
             "WHAT: no `claude` launcher is resolvable on this machine's PATH.\n"
-            "WHY:  DES buys every role turn by launching the model, so an arm\n"
-            "      without a launcher cannot run the method at all.\n"
+            "WHY:  the arm's native host and delivery agent require Claude;\n"
+            "      DES constructs facts and documents but launches no model.\n"
             "HOW:  install the Claude CLI, or build the spec where it resolves.\n"
         )
         raise SystemExit(1)
@@ -1603,10 +1598,10 @@ def probe_project_activation(workspace: Path, venv: Path) -> list[str]:
 def probe_launcher_is_inside_the_workspace(workspace: Path) -> list[str]:
     """Problems found proving the launcher is COPIED in, empty when it is.
 
-    The existing engagement probe runs `resolve_launcher()` in a plain,
-    unsandboxed harness subprocess, where a symlink resolves whatever its target
-    -- so it PASSED under the configuration that could not launch a role turn at
-    all. This checks the invariant the fix actually relies on instead.
+    Native host PATH discovery runs in a plain, unsandboxed harness subprocess,
+    where a symlink resolves whatever its target. That alone cannot prove the
+    launcher is executable inside the delivery sandbox. This checks that separate
+    filesystem invariant rather than treating PATH discovery as model execution.
 
     Measured 2026-09-14 inside a real delivery: with the launcher linked rather
     than copied, `command -v claude` resolved nothing even though the workspace
@@ -1857,8 +1852,7 @@ def probe_engagement(
             [
                 str(venv / "bin" / "python"),
                 "-c",
-                "from des.adapters.driven.task_invocation.claude_code_task_adapter "
-                "import resolve_launcher; raise SystemExit(0 if resolve_launcher() else 1)",
+                "import shutil; raise SystemExit(0 if shutil.which('claude') else 1)",
             ],
             cwd=workspace,
             env=env,
@@ -1868,10 +1862,10 @@ def probe_engagement(
             timeout=30,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return "absent", [f"installed resolve_launcher could not run: {exc}"]
+        return "absent", [f"native host launcher discovery could not run: {exc}"]
     if launcher.returncode != 0:
         return "absent", [
-            "installed resolve_launcher found no usable Claude executable under the "
+            "native host PATH contains no usable Claude executable under the "
             f"rendered arm env: {(launcher.stderr or launcher.stdout)[-300:]}"
         ]
     return "present", []

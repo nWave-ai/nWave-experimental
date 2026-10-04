@@ -1,95 +1,46 @@
 ---
 name: nw-tdd-methodology-paradigm
-description: The default test-writing paradigm for unit + acceptance tests - property-based + state-delta mandate, the applicability matrix, the debt-payoff efficacy curve, and the delta-first trigger/bypass rules for state-mutating code
+description: "Native contract-driven unit and acceptance testing: generative broad laws, finite examples, public-state preservation and real-boundary evidence."
 user-invocable: false
 disable-model-invocation: true
 ---
 
 # Test-Writing Paradigm — Property-Based + State-Delta
 
-**Trigger**: writing a unit or acceptance test — deciding the test-writing paradigm (PBT-by-default, state-delta over single-assert) and whether delta-first applies to a state-mutating test.
+**Trigger**: writing a unit or acceptance test — deciding native generation versus finite examples and public-state preservation observations.
 
-## Paradigm Mandate — Property-Based + State-Delta (STANDING, 2026-05-05)
+## Native, contract-driven test paradigm
 
-**Default test-writing paradigm for UNIT + ACCEPTANCE tests — not optional, not "when applicable".**
+The language/build discovery authority is `nw-test-design-mandates`' language
+convention frame. Its layered-mechanics module owns observation treatment;
+`nw-property-based-testing` owns non-vacuous generation and shrinking.
+Apply those rules rather than imposing a second methodology.
 
-### Test-level applicability matrix
+| Contract | Test treatment |
+|---|---|
+| Broad input, state or sequence law | Native generative property with independent oracle, constructive branch coverage and reproducible shrinking/replay |
+| Closed finite domain or singular observation | Native parameterized examples or exhaustive finite check |
+| Mutation of public state | Observe promised changes and adjacent preservation, using sufficient native assertions/helpers |
+| Real storage, protocol, crash or race | Targeted real-boundary integration; synchronized checkpoints where ordering matters |
+| Feature journey | Identifiable end-to-end business walkthrough through production composition, retaining distinct failure observations |
 
-| Level | Default paradigm | Rationale |
-|---|---|---|
-| **Unit** | Property-based + state-delta — single-example is FALLBACK only | Property tests cover equivalence classes; the state-delta universe forbids hidden mutations on adjacent slots |
-| **Integration** | UNCHANGED — single-example test verifies WIRING | The contract is "wires connect correctly", not "all input shapes succeed". One representative call suffices |
-| **E2E** | UNCHANGED — single-example end-to-end happy path | The contract is "complete flow connects", not "all flows are equivalent". One golden walkthrough suffices |
+PBT does not require Hypothesis, a fixed number of generated examples, Gherkin,
+an nWave matcher, or a copied helper library. Reuse incumbent native facilities.
+Examples are not banned or a fallback needing a bypass comment. Conversely,
+finite examples cannot silently discharge a promised broad law.
 
-### Mandate (unit + acceptance levels)
+Name the business stimulus, expected outcome and falsifier. Assert public
+outcomes, state, types and required fields; exact formatting or ordering is
+pinned only when the authority deliberately promises it. Equivalent JSON and
+permitted extra fields remain valid. Do not assert incidental private layout
+or mock call counts instead of the consumer's outcome.
 
-Every unit and acceptance test you write MUST be:
-
-1. **Property-based by default** — use Hypothesis `@given` strategies to explore equivalence classes, NOT single-fixture examples. A property test asserting an invariant over N generated inputs replaces N example tests with stronger semantic coverage.
-
-2. **State-delta over single-property assertion** — capture the FULL observable state surface (universe), declare the expected delta with predicates (`prepended_with`, `set_to`, `unchanged`, `containing`, `idempotent_after`, `legacy_healed`, `normalized_to`, `appended_with`), and call `assert_state_delta(before, after, universe, expected, strict=True)`. `strict=True` forbids hidden mutations on adjacent slots — this is what catches bugs that pinned-fixture asserts miss.
-
-```python
-from hypothesis import given, settings, strategies as st
-from nwave_ai.state_delta import assert_state_delta, set_to, unchanged
-
-@given(domain_input=domain_specific_strategy())
-@settings(max_examples=100, deadline=None)
-def test_pbt_invariant(domain_input):
-    before = capture_full_state()
-    perform_action(domain_input)
-    after = capture_full_state()
-    assert_state_delta(
-        before, after,
-        universe={"slot.a", "slot.b", "slot.c", "slot.d"},
-        expected={"slot.a": set_to(expected_from(domain_input)), "slot.b": unchanged()},
-        strict=True,
-    )
-```
-
-3. **Acceptance tests express PROPERTIES of the system** — Gherkin scenarios should be framed as `Property: <invariant statement>` with quantified preconditions ("a set of N tasks with arbitrary timestamps") and invariant outcomes ("monotonically descending by timestamp"), instead of single-example `Scenario:` blocks. Step definitions internally use `@given` strategies + state-delta assertions.
-
-**OLD pattern (banned by default)**:
-```gherkin
-Scenario: Operator sees three tasks ordered by recency
-  Given tasks A, B, C with timestamps T1 < T2 < T3
-  When the operator runs `prism board`
-  Then the board shows: B (T2), C (T3), A (T1) — wait, ordered descending: C, B, A
-```
-
-**NEW pattern (required default)**:
-```gherkin
-Property: Board column order reflects recency
-  Given a set of N tasks with arbitrary timestamps
-  When the operator runs `prism board`
-  Then the column order is monotonically descending by timestamp
-  And no task appears twice in the column
-  And every input task appears exactly once in the output
-```
-
-**Fallback** — when property-framing genuinely cannot express the contract (e.g., flow-specific UI tests with puntual outcomes, golden-file diffs, error messages with exact strings):
-- Document WHY property-framing failed in a one-line `# bypass:` comment
-- Compensate by adding stronger PBT at unit/integration level
-
-**Forbidden bypass paths** (insufficient justification):
-- "Single-property is enough" — NO. Always declare the universe, even if only one slot is checked. `unchanged()` predicate covers the rest.
-- "Mock-based interaction test" — NO. Mocks are still observable state; their call-recording surface is part of the universe (`mock.call_count`, `mock.last_call_args`).
-
-**Exempt categories** (still apply paradigm where it adds value, but not mandatory):
-- Pure-function tests with single output and no side effects
-- Schema/AST validators with single output
-- Smoke imports
-
-### Goals
-
-| Goal | Old paradigm | New paradigm |
-|---|---|---|
-| Number of tests | N example-tests per contract | 1 PBT covers N+ examples |
-| Token consumption | High (N test bodies, N test names) | Low (one body, one strategy) |
-| Coverage | Pinned by chosen examples | Discovered via Hypothesis shrinking |
-| Bug-finding | Limited to imagined cases | Includes edge cases author didn't think of |
-| Documentation value | Examples may diverge from spec | Property = invariant = living spec |
-| Speed | Slower (more tests to run) | Faster (fewer tests, same coverage) |
+Declared state-delta observations protect changed and preserved public state;
+they need not reproduce Python function signatures or capture all internal
+implementation state. Native records and assertions may express the same law.
+A PBT model cannot replace real persistence, synchronized fault/race evidence
+or the feature journey. Property quantity and predicted speed are not quality
+evidence; measure distribution/transitions, counterexamples and replay instead.
 
 ### Empirical efficacy framework — debt-payoff curve (NOT instantaneous hit rate)
 
@@ -141,6 +92,10 @@ This is why paradigm-as-default for NEW unit tests (the mandate above) matters m
 - Adding 3-5× ceremony for zero additional detection gain vs. a direct `assert`.
 
 ### Pattern
+
+The following is a repository-specific Python illustration. It is not a required
+API, directory or predicate set for another project; sufficient native assertions
+and incumbent helpers satisfy the observation contract above.
 
 ```python
 from nwave_ai.state_delta import (

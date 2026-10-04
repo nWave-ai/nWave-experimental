@@ -15,8 +15,7 @@ The 4 legacy shims are actively DELETED on install (LEGACY_DES_SHIMS).
 The authoritative contract is:
     1. The single ``des`` dispatcher is deployed to ~/.claude/bin/ with mode 0o755
     2. shutil.which("des", path=<env.PATH from settings>) is non-None
-    3. ``des <subcommand> --help`` exits 0 for each consolidated capability
-       (log-phase, init-log, verify-integrity, health-check)
+    3. ``des <subcommand> --help`` exits 0 for the supported runtime capabilities
     4. nwave-ai doctor exits 0 with all runtime-critical checks green
     5. doctor JSON output conforms to the expected schema (name/passed/message/remediation)
     6. Installed skills contain no PYTHONPATH= pattern (issue #36 real runtime check)
@@ -84,16 +83,9 @@ _CONTAINER_SRC = "/src"
 # Source SSOT: scripts/install/plugins/des_plugin.py:DES_SHIMS == ["des"].
 _EXPECTED_SHIMS = ["des"]
 
-# The 4 capabilities that USED to be standalone ``des-*`` shims and are now
-# subcommands of the single ``des`` dispatcher.  Names mirror the operator-
-# visible kebab-case rows in src/des/cli/__main__.py:_REGISTRY (the dispatcher
-# SSOT) — these are the exact stems the 4 former shims consolidated into.
-_CONSOLIDATED_SUBCOMMANDS = [
-    "log-phase",
-    "init-log",
-    "verify-integrity",
-    "health-check",
-]
+# The live installation-health and delivery-state capabilities must be callable;
+# the log-phase/init-log/verify-integrity protocol was retired.
+_RUNTIME_SUBCOMMANDS = ["health-check", "state", "verify", "integrate"]
 
 # The legacy standalone shims removed on install (R17 residuality).
 # Source SSOT: scripts/install/plugins/des_plugin.py:LEGACY_DES_SHIMS.
@@ -149,8 +141,7 @@ def _exec_ok(container, command: str | list[str]) -> str:
 
 @pytest.fixture(scope="module")
 def fresh_install_container():
-    """Start a python:3.12-slim container, install nwave-ai from local source,
-    run nwave-ai install, and yield the running container.
+    """Install the Claude Code target explicitly in a host-free container.
 
     Scoped to module so all tests share one container lifecycle.
     """
@@ -185,7 +176,7 @@ def fresh_install_container():
             # nwave_ai/ is not in the wheel — expose it via PYTHONPATH
             f"export PYTHONPATH={_CONTAINER_SRC} && "
             # Run install; echo y handles any attribution prompt
-            "echo y | python -m nwave_ai.cli install"
+            "echo y | python -m nwave_ai.cli install --platform claude-code"
         )
         code, out = _exec(container, ["bash", "-c", bootstrap_script])
         assert code == 0, (
@@ -269,20 +260,20 @@ class TestFreshInstallShimsDeployed:
 @pytest.mark.e2e
 @requires_docker
 class TestFreshInstallShimCallable:
-    """Runtime-level: ``des log-phase --help`` exits 0 inside container."""
+    """Runtime-level: ``des health-check --help`` exits 0 inside container."""
 
-    def test_des_log_phase_help_exits_zero(self, fresh_install_container) -> None:
-        """``des log-phase --help`` must exit 0 — proves the dispatcher + the
-        consolidated capability are importable at runtime.
+    def test_des_health_check_help_exits_zero(self, fresh_install_container) -> None:
+        """``des health-check --help`` must exit 0 — proves the dispatcher and
+        a real installed capability are importable at runtime.
 
         This is the assertion that test_issue_36 (stat-only) could NOT catch:
         a machine where ~/.claude/lib/python/des/ is absent passes the stat check
         but fails here with ImportError.
         """
         shim_path = "/root/.claude/bin/des"
-        _exec_ok(fresh_install_container, [shim_path, "log-phase", "--help"])
+        _exec_ok(fresh_install_container, [shim_path, "health-check", "--help"])
 
-    def test_des_log_phase_resolvable_via_settings_env_path(
+    def test_des_resolvable_via_settings_env_path(
         self, fresh_install_container
     ) -> None:
         """The PATH exported in ~/.claude/settings.json must resolve ``des``.
@@ -331,21 +322,16 @@ class TestFreshInstallShimCallable:
 @pytest.mark.e2e
 @requires_docker
 class TestFreshInstallAllShimsCallable:
-    """Runtime-level: all 4 consolidated capabilities exit 0 via ``des <sub> --help``."""
+    """Runtime-level: supported capabilities exit 0 via ``des <sub> --help``."""
 
-    @pytest.mark.parametrize("subcommand", _CONSOLIDATED_SUBCOMMANDS)
+    @pytest.mark.parametrize("subcommand", _RUNTIME_SUBCOMMANDS)
     def test_shim_help_exits_zero(
         self, fresh_install_container, subcommand: str
     ) -> None:
-        """Each consolidated capability must exit 0 when invoked as
-        ``des <subcommand> --help``.
+        """Each supported capability must exit 0 via ``des <subcommand> --help``.
 
-        Iterates the SUBCOMMAND names (the 4 former shims, now subcommands of the
-        single dispatcher).  A capability passes the stat check (the ``des``
-        binary exists, mode 755) but fails here when the Python import chain is
-        broken — e.g. des/ absent from lib/python/, a stale PYTHONPATH reference,
-        or the subcommand missing from the dispatcher registry.  Preserves the
-        original per-capability invokability rigor against the new contract.
+        The binary can pass stat checks while its Python import chain is broken.
+        Exercise intentional public capabilities, not retired protocol modules.
         """
         shim_path = "/root/.claude/bin/des"
         _exec_ok(fresh_install_container, [shim_path, subcommand, "--help"])
@@ -355,9 +341,9 @@ class TestFreshInstallAllShimsCallable:
 @requires_docker
 class TestFreshInstallAllShimsPathResolvable:
     """Runtime-level: the ``des`` dispatcher is discoverable via settings env.PATH,
-    and every consolidated capability is invokable through that resolved binary."""
+    and every current capability is invokable through that resolved binary."""
 
-    @pytest.mark.parametrize("subcommand", _CONSOLIDATED_SUBCOMMANDS)
+    @pytest.mark.parametrize("subcommand", _RUNTIME_SUBCOMMANDS)
     def test_shim_resolvable_via_settings_env_path(
         self, fresh_install_container, subcommand: str
     ) -> None:
@@ -648,7 +634,7 @@ def idempotent_install_container():
             "rich typer pydantic 'pydantic-settings' httpx platformdirs pyyaml packaging && "
             f"pip install --quiet --no-deps {_CONTAINER_SRC} && "
             f"export PYTHONPATH={_CONTAINER_SRC} && "
-            "echo y | python -m nwave_ai.cli install"
+            "echo y | python -m nwave_ai.cli install --platform claude-code"
         )
         code, out = _exec(container, ["bash", "-c", bootstrap_script])
         assert code == 0, f"First install failed (exit {code}).\nOutput:\n{out}"
@@ -670,7 +656,7 @@ class TestFreshInstallIdempotent:
         """
         second_install = (
             f"export PYTHONPATH={_CONTAINER_SRC} && "
-            "echo y | /opt/nwave-venv/bin/python -m nwave_ai.cli install"
+            "echo y | /opt/nwave-venv/bin/python -m nwave_ai.cli install --platform claude-code"
         )
         code, out = _exec(
             idempotent_install_container,

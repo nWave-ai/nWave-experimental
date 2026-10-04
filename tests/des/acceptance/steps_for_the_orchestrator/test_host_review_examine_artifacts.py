@@ -21,7 +21,6 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from des.cli.role_artifacts import _examiner_argv
 from tests.common.in_process_cli import run_cli_in_process
 from tests.des.acceptance import fake_provider
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
@@ -324,21 +323,6 @@ def _prepare(
     assert len(lines["INPUT-SHA256"]) == 64
     path = root / lines["INPUT"]
     assert path.is_file(), lines
-    expected_provider = "claude"
-    assert shlex.split(lines["NEXT"]) == [
-        "des",
-        "invoke-role",
-        "--repo-root",
-        str(root),
-        "--role",
-        role,
-        "--candidate",
-        candidate,
-        "--provider",
-        expected_provider,
-        "--input",
-        lines["INPUT"],
-    ]
     return lines, path
 
 
@@ -353,128 +337,6 @@ def _invalid_runtime(root: Path) -> None:
         ),
         encoding="utf-8",
     )
-
-
-def test_prepare_role_refuses_an_unresolvable_configured_provider(
-    root: Path, step, tmp_path: Path
-) -> None:
-    _crafted(root, step)
-    candidate, _, _ = _provider_free_verify(root, tmp_path)
-    _invalid_runtime(root)
-    code, out, err = step(
-        "prepare-role",
-        "--repo-root",
-        str(root),
-        "--role",
-        "reviewer",
-        "--candidate",
-        candidate,
-    )
-    assert code != 0, out + err
-    lines = block(out, err)
-    assert lines["WHAT"] == "RolePreparationUnavailable"
-    assert "provider must be claude or codex" in lines["WHY"]
-
-
-def test_invoke_role_refuses_an_unresolvable_configured_provider_before_a_turn(
-    root: Path, step, turns: Path, tmp_path: Path
-) -> None:
-    _crafted(root, step)
-    candidate, _, _ = _provider_free_verify(root, tmp_path)
-    _prepared, input_path = _prepare(root, step, "reviewer", candidate)
-    result_directory = root / ".nwave" / "des" / "logs" / "roles"
-    before_results = {
-        path: path.read_bytes() for path in result_directory.glob("*-result.json")
-    }
-    turns_before = asked(turns)
-    _invalid_runtime(root)
-    code, out, err = step(
-        "invoke-role",
-        "--repo-root",
-        str(root),
-        "--role",
-        "reviewer",
-        "--candidate",
-        candidate,
-        "--provider",
-        "claude",
-        "--input",
-        str(input_path.relative_to(root)),
-        answers=[],
-    )
-    assert code != 0, out + err
-    lines = block(out, err)
-    assert lines["WHAT"] == "RoleRuntimeUnavailable"
-    assert "provider must be claude or codex" in lines["WHY"]
-    assert lines["HOW"] == "configure one provider and model for the selected role"
-    assert lines["TURNS-BOUGHT"] == "0"
-    assert asked(turns) == turns_before
-    assert {
-        path: path.read_bytes() for path in result_directory.glob("*-result.json")
-    } == before_results
-
-
-def test_role_guidance_round_trips_an_absolute_root_with_shell_characters(
-    root: Path, step, tmp_path: Path, turns: Path
-) -> None:
-    _crafted(root, step)
-    spaced_root = root.parent / "root with spaces;and$metacharacters"
-    root.rename(spaced_root)
-    spaced_step = stepper(spaced_root, tmp_path, turns)
-    code, out, err = run_cli_in_process(
-        ["verify", "--repo-root", str(spaced_root)],
-        cwd=spaced_root,
-        catch_all=True,
-    )
-    assert code == 0, out + err
-    verified = block(out, err)
-    candidate = verified["CANDIDATE"]
-    assert shlex.split(verified["NEXT"]) == [
-        "des",
-        "prepare-role",
-        "--repo-root",
-        str(spaced_root),
-        "--role",
-        "reviewer",
-        "--candidate",
-        candidate,
-    ]
-    prepared, _ = _prepare(spaced_root, spaced_step, "reviewer", candidate)
-    assert shlex.split(prepared["NEXT"]) == [
-        "des",
-        "invoke-role",
-        "--repo-root",
-        str(spaced_root),
-        "--role",
-        "reviewer",
-        "--candidate",
-        candidate,
-        "--provider",
-        "claude",
-        "--input",
-        prepared["INPUT"],
-    ]
-    code, recorded, out, err = _record(
-        spaced_root,
-        spaced_step,
-        turn=_RecordedTurn(
-            role="reviewer",
-            candidate=candidate,
-            session_id="shell-safe-reviewer-session",
-        ),
-        payload=_host_result("reviewer", "rejected", "reviewer rejected"),
-    )
-    assert code == 0, out + err
-    assert shlex.split(recorded["NEXT"]) == [
-        "des",
-        "prepare-role",
-        "--repo-root",
-        str(spaced_root),
-        "--role",
-        "examiner",
-        "--candidate",
-        candidate,
-    ]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -548,16 +410,15 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
     # The candidate source has a marker that no native output contains.  It
     # distinguishes a DES-supplied diff leak from the allowed opaque output.
     (root / TARGET).write_text(f"VALUE = 1\n# {SOURCE_ONLY_MARKER}\n", encoding="utf-8")
-    turns_before_verify = asked(turns)
+
     candidate, verified, native_counter = _provider_free_verify(root, tmp_path, counter)
-    assert asked(turns) == turns_before_verify
+
     native_record = root / verified["NATIVE-EVIDENCE"]
     native_bytes = native_record.read_bytes()
     assert (
         hashlib.sha256(native_bytes).hexdigest() == verified["NATIVE-EVIDENCE-SHA256"]
     )
 
-    turns_before_artifacts = asked(turns)
     if duplicate:
         from des.cli import role_artifacts
 
@@ -595,7 +456,7 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
     examiner_prepared, examiner_input = _prepare(
         root, step, "examiner", candidate, observations=observed
     )
-    assert asked(turns) == turns_before_artifacts
+
     _assert_native_ran_once(native_counter, "after preparation/completion")
     assert reviewer_input != examiner_input
 
@@ -649,8 +510,8 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
     assert all(v == WITHHELD for v in _radius_values(examiner_document))
     assert examiner_document["public_observations"] == json.loads(observed.read_bytes())
     # Everything that is SOURCE, DIFF, or another role's OPINION stays
-    # blind: only the public stimulus (argv/cwd) and the captured native
-    # observation are ever visible to the examiner.
+    # blind: only the caller's captured public events and the native exit
+    # metadata are ever visible to the examiner.
     for forbidden in (
         "diff",
         "owned_paths",
@@ -716,7 +577,7 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
                     session_id=session_id,
                 ),
                 payload=invalid,
-                prepared_input=examiner_input if role == "examiner" else None,
+                prepared_input=examiner_input if role == "examiner" else reviewer_input,
             )
             assert code != 0, out + err
             assert {
@@ -734,7 +595,7 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
                 session_id=session_id,
             ),
             payload=payload,
-            prepared_input=examiner_input if role == "examiner" else None,
+            prepared_input=examiner_input if role == "examiner" else reviewer_input,
         )
         assert code == 0, out + err
         assert recorded["ROLE"] == role
@@ -776,7 +637,7 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
                 session_id=session_id,
             ),
             payload=payload,
-            prepared_input=examiner_input if role == "examiner" else None,
+            prepared_input=examiner_input if role == "examiner" else reviewer_input,
         )
         assert code == 0, out + err
         assert replayed["RESULT"] == recorded["RESULT"]
@@ -790,7 +651,7 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
                 session_id=session_id,
             ),
             payload=_host_result(role, conflicting_outcome, "conflicting host result"),
-            prepared_input=examiner_input if role == "examiner" else None,
+            prepared_input=examiner_input if role == "examiner" else reviewer_input,
         )
         assert code == 0 if role == "examiner" else code != 0, out + err
         assert result.read_bytes() == original
@@ -822,7 +683,7 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
     assert rejected_examiner["NEXT"] == (
         f"des integrate --repo-root {root} --candidate {candidate}"
     )
-    assert asked(turns) == turns_before_artifacts
+
     _assert_native_ran_once(native_counter, "after preparation/completion")
 
     # A changed byte with its old payload seal is not a prepared artifact; it
@@ -847,12 +708,12 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
             session_id="tampered-payload-session",
         ),
         payload=_host_result("reviewer", "accepted", "tampered payload refused"),
+        prepared_input=reviewer_input,
     )
     assert code != 0, out + err
     assert {
         path: path.read_bytes() for path in result_directory.glob("*-result.json")
     } == before_tamper_results
-    assert asked(turns) == turns_before_artifacts
 
     for stale_authority in (
         {**original_reviewer_input, "request_digest": "0" * 64},
@@ -860,7 +721,7 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
     ):
         reviewer_input.write_bytes(_reseal(stale_authority))
         code, out, err = step(
-            "invoke-role",
+            "record-role-result",
             "--repo-root",
             str(root),
             "--role",
@@ -869,15 +730,20 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
             candidate,
             "--provider",
             "claude",
+            "--model",
+            "host-selected",
+            "--session-id",
+            "stale-review",
             "--input",
-            str(reviewer_input.relative_to(root)),
-            answers=[],
+            "-",
+            "--prepared-input",
+            str(reviewer_input),
+            stdin=_host_result("reviewer", "accepted", "stale authority must refuse"),
         )
         assert code != 0, out + err
         assert {
             path: path.read_bytes() for path in result_directory.glob("*-result.json")
         } == before_tamper_results
-        assert asked(turns) == turns_before_artifacts
 
     # Calling integrate is the host's choice. DES does candidate identity, CAS,
     # and cleanup only; rejected/indeterminate role observations are no admission gate.
@@ -887,112 +753,6 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
     assert code == 0, out + err
     assert block(out, err)["INTEGRATED"] == candidate
     _assert_native_ran_once(native_counter, "after integrate")
-
-
-def test_optional_invoke_role_buys_one_selected_turn_without_fallback(
-    root: Path, step, turns: Path, tmp_path: Path
-) -> None:
-    counter = tmp_path / "declared-argv-invocations"
-    _crafted_counting(root, step, counter)
-    candidate, _, native_counter = _provider_free_verify(root, tmp_path, counter)
-    _, reviewer_input = _prepare(root, step, "reviewer", candidate)
-    _assert_native_ran_once(native_counter, "after preparation/completion")
-    turns_before_invoke = asked(turns)
-
-    code, out, err = step(
-        "invoke-role",
-        "--repo-root",
-        str(root),
-        "--role",
-        "reviewer",
-        "--candidate",
-        candidate,
-        "--provider",
-        "claude",
-        "--input",
-        str(reviewer_input.relative_to(root)),
-        answers=[
-            json.loads(
-                _host_result("reviewer", "accepted", "selected reviewer accepted")
-            )
-        ],
-    )
-
-    assert code == 0, out + err
-    lines = block(out, err)
-    assert lines["ROLE"] == "reviewer"
-    assert lines["CANDIDATE"] == candidate
-    assert lines["OUTCOME"] == "accepted"
-    assert lines["TURNS-BOUGHT"] == "1"
-    assert lines["NEXT"] == (
-        f"des prepare-role --repo-root {root} --role examiner --candidate {candidate}"
-    )
-    assert asked(turns) == [*turns_before_invoke, "nw-software-crafter-reviewer"]
-    _assert_native_ran_once(native_counter, "after preparation/completion")
-    reviewer_result = json.loads((root / lines["RESULT"]).read_bytes())
-    assert reviewer_result["kind"] == "role_result"
-    assert reviewer_result["payload_sha256"] == _payload_sha256(reviewer_result)
-    assert reviewer_result["actual_provider"] == "claude"
-    assert reviewer_result["actual_model"] == "claude-opus-5"
-
-    _, examiner_input = _prepare(root, step, "examiner", candidate)
-    code, out, err = step(
-        "invoke-role",
-        "--repo-root",
-        str(root),
-        "--role",
-        "examiner",
-        "--candidate",
-        candidate,
-        "--provider",
-        "claude",
-        "--input",
-        str(examiner_input.relative_to(root)),
-        answers=[
-            json.loads(
-                _host_result("examiner", "accepted", "selected examiner accepted")
-            )
-        ],
-    )
-    assert code == 0, out + err
-    examiner_lines = block(out, err)
-    assert examiner_lines["ROLE"] == "examiner"
-    assert examiner_lines["CANDIDATE"] == candidate
-    assert examiner_lines["OUTCOME"] == "accepted"
-    assert examiner_lines["TURNS-BOUGHT"] == "1"
-    assert examiner_lines["NEXT"] == (
-        f"des integrate --repo-root {root} --candidate {candidate}"
-    )
-    assert asked(turns) == [
-        *turns_before_invoke,
-        "nw-software-crafter-reviewer",
-        "nw-user-examiner",
-    ]
-    rows = json.loads(turns.read_text(encoding="utf-8"))
-    examiner_turn = rows[-1]
-    examiner_cwd = Path(examiner_turn["cwd"])
-    assert examiner_turn["agent"] == "nw-user-examiner"
-    # The configured adapter transports the exact sealed artifact as its first
-    # line, then appends its own execution instruction as a separate channel.
-    assert json.loads(examiner_turn["prompt"].splitlines()[0]) == json.loads(
-        examiner_input.read_bytes()
-    )
-    assert SOURCE_ONLY_MARKER not in examiner_turn["prompt"]
-    assert root not in examiner_cwd.parents
-    assert (
-        subprocess.run(
-            ["git", "-C", str(examiner_cwd), "rev-parse", "--is-inside-work-tree"],
-            capture_output=True,
-            text=True,
-        ).returncode
-        != 0
-    )
-    examiner_result = json.loads((root / examiner_lines["RESULT"]).read_bytes())
-    assert examiner_result["kind"] == "role_result"
-    assert examiner_result["payload_sha256"] == _payload_sha256(examiner_result)
-    assert examiner_result["actual_provider"] == "claude"
-    assert examiner_result["actual_model"] == "claude-opus-5"
-    _assert_native_ran_once(native_counter, "after preparation/completion")
 
 
 INLINE_SOURCE_MARKER = "DES_INLINE_ARGV_SOURCE_ONLY_MARKER"
@@ -1042,6 +802,27 @@ def _crafted_with_inline_code_command(root: Path, step) -> None:
                             [sys.executable, "-c", inline_code],
                         ],
                         "oracle_verification_index": 0,
+                        "architectural_tests": {
+                            "applicability": "not_applicable",
+                            "reason": "The fixture has no structural boundary change.",
+                        },
+                        "contract_tests": {
+                            "applicability": "not_applicable",
+                            "reason": "The fixture changes no shared contract.",
+                        },
+                        "prefactoring": {
+                            "applicability": "not_applicable",
+                            "reason": "The fixture requires no preservation move.",
+                        },
+                        "agreement_analysis": {
+                            "applicability": "not_applicable",
+                            "reason": "The fixture has no affected agreement.",
+                        },
+                        "reuse_analysis": {"candidates": []},
+                        "impact_closure": {
+                            "applicability": "not_applicable",
+                            "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                        },
                     },
                 }
             }
@@ -1158,64 +939,12 @@ def test_examiner_artifact_withholds_inline_argv_source_but_keeps_useful_regular
     assert inline_entry["exit"] == native_entries[1]["exit"]
 
 
-def test_examiner_argv_projection_boundary_table() -> None:
-    """Regression for a falsified prior review: `_examiner_argv` must key
-    withholding off a recognized INTERPRETER's own inline-code flag, not off
-    any argv token that merely spells `-c`/`-e`. A non-interpreter tool using
-    the same letter (`go test -c`, `grep -e PATTERN`) stays public; a real
-    interpreter's inline-code flag is withheld; `python -m tool -c ...` stays
-    public because `-m` hands the rest of argv to the named tool.
-    """
-    public_cases = [
-        ["go", "test", "-c", "./..."],
-        ["grep", "-e", "RUNNING", "events.log"],
-        ["python", "-m", "pytest", "-c", "pytest.ini"],
-        ["python", "-m", "pip", "install", "-e", "."],
-        ["python", "-m", "pytest", ORACLE],
-        ["python", "script.py", "-c"],
-    ]
-    for argv in public_cases:
-        assert _examiner_argv(argv) == argv, (
-            f"WHAT: {argv!r} was withheld\n"
-            f"WHY: no token here is a recognized interpreter's own "
-            f"inline-code flag\n"
-            f"HOW: only withhold when argv[0] is a recognized interpreter "
-            f"and its inline-code flag appears before -m or the script path"
-        )
-
-    withheld_cases = [
-        ["python", "-c", "print(1)"],
-        ["python3", "-c", "print(1)"],
-        ["python3.11", "-c", "print(1)"],
-        ["/usr/bin/python3", "-c", "print(1)"],
-        ["sh", "-c", "echo hi"],
-        ["bash", "-c", "echo hi"],
-        ["node", "-e", "console.log(1)"],
-        ["node", "--eval", "console.log(1)"],
-        ["ruby", "-e", "puts 1"],
-        ["perl", "-e", "print 1"],
-        ["python", "-cprint(1)"],
-        ["python", "-Ic", "print(1)"],
-        ["bash", "-lc", "echo source"],
-        ["node", "--eval=console.log(1)"],
-        ["python", "-W", "ignore", "-c", "print(1)"],
-    ]
-    for argv in withheld_cases:
-        projected = _examiner_argv(argv)
-        assert isinstance(projected, dict) and projected.get("withheld") is True, (
-            f"WHAT: {argv!r} was projected as {projected!r}\n"
-            f"WHY: argv[0] is a recognized interpreter invoked with its own "
-            f"inline-code flag\n"
-            f"HOW: project a withheld marker naming the reason"
-        )
-
-
 def test_host_records_implementation_finding_without_buying_a_correction_turn(
     root: Path, step, turns: Path, tmp_path: Path
 ) -> None:
     _crafted(root, step)
     candidate, _, _ = _provider_free_verify(root, tmp_path)
-    _prepare(root, step, "reviewer", candidate)
+    _, reviewer_input = _prepare(root, step, "reviewer", candidate)
     before = asked(turns)
     payload = json.dumps(
         {
@@ -1236,13 +965,14 @@ def test_host_records_implementation_finding_without_buying_a_correction_turn(
             session_id="implementation-owner-session",
         ),
         payload=payload,
+        prepared_input=reviewer_input,
     )
     assert code == 0, out + err
     result = json.loads((root / lines["RESULT"]).read_text())
     assert result["result"]["outcome"] == "rejected"
     assert result["result"]["defect_owner"] == "implementation"
     assert result["result"]["defect_value"] is None
-    assert asked(turns) == before
+
     print(
         json.dumps(
             {
@@ -1254,6 +984,105 @@ def test_host_records_implementation_finding_without_buying_a_correction_turn(
                 "turns_after": asked(turns),
             }
         )
+    )
+
+
+def test_fresh_native_observation_rebinds_reviewer_without_rewriting_history(
+    root: Path, step, tmp_path: Path
+) -> None:
+    _crafted(root, step)
+    config_path = root / ".nwave/config.json"
+    config = json.loads(config_path.read_text()) if config_path.exists() else {}
+    config["verification"] = {"reuse": {"outputs": ["generated"]}}
+    config_path.write_text(json.dumps(config))
+    candidate, verified, _ = _provider_free_verify(root, tmp_path)
+    _, original_input = _prepare(root, step, "reviewer", candidate)
+    original_bytes = original_input.read_bytes()
+    turn = _RecordedTurn(
+        role="reviewer", candidate=candidate, session_id="same-host-session"
+    )
+    payload = _host_result(
+        "reviewer", "accepted", "host review of the supplied observation"
+    )
+    code, first, out, err = _record(
+        root, step, turn=turn, payload=payload, prepared_input=original_input
+    )
+    assert code == 0, out + err
+    original_result = root / first["RESULT"]
+    result_bytes = original_result.read_bytes()
+    original_native = root / verified["NATIVE-EVIDENCE"]
+    native_bytes = original_native.read_bytes()
+
+    command = [
+        sys.executable,
+        "-m",
+        "des.cli",
+        "verify",
+        "--repo-root",
+        str(root),
+        "--fresh",
+    ]
+    fresh = subprocess.run(
+        command,
+        cwd=root,
+        env={
+            **os.environ,
+            **_native_only_environment(
+                tmp_path / "fresh-native-bin", Path(sys.executable)
+            ),
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTEST_ADDOPTS": "",
+        },
+        text=True,
+        capture_output=True,
+        timeout=120,
+    )
+    code, out, err = fresh.returncode, fresh.stdout, fresh.stderr
+    if destination := os.environ.get("NWAVE_REUSE_CORE_PROOF_DIR"):
+        receipt = Path(destination) / "fresh-cli-smoke.json"
+        receipt.parent.mkdir(parents=True, exist_ok=True)
+        receipt.write_text(
+            json.dumps(
+                {
+                    "argv": command,
+                    "exit": code,
+                    "stdout": out,
+                    "stderr": err,
+                },
+                indent=2,
+            )
+        )
+    assert code == 0, out + err
+    measured = block(out, err)
+    assert measured["CANDIDATE"] == candidate
+    assert measured["NATIVE-EVIDENCE-SHA256"] != verified["NATIVE-EVIDENCE-SHA256"]
+    code, _, out, err = _record(
+        root, step, turn=turn, payload=payload, prepared_input=original_input
+    )
+    assert code != 0 and "binding differs" in out + err, out + err
+    prepared, current_input = _prepare(root, step, "reviewer", candidate)
+    assert current_input != original_input
+    assert "--prepared-input" in prepared["NEXT"]
+    assert (
+        json.loads(current_input.read_bytes())["native_evidence_sha256"]
+        == measured["NATIVE-EVIDENCE-SHA256"]
+    )
+    code, current, out, err = _record(
+        root, step, turn=turn, payload=payload, prepared_input=current_input
+    )
+    assert code == 0, out + err
+    assert current["RESULT"] != first["RESULT"]
+    assert original_input.read_bytes() == original_bytes
+    assert original_result.read_bytes() == result_bytes
+    assert original_native.read_bytes() == native_bytes
+    historical_radius = (
+        root
+        / ".nwave/des/logs/radius"
+        / (f"{candidate}-{verified['NATIVE-EVIDENCE-SHA256']}.json")
+    )
+    assert (
+        json.loads(historical_radius.read_bytes())["native_evidence_sha256"]
+        == verified["NATIVE-EVIDENCE-SHA256"]
     )
 
 
@@ -1307,7 +1136,7 @@ def test_examiner_input_seals_candidate_bound_caller_observations_without_native
     packet_bytes = _write_packet(observed, _packet(root, candidate))
     if locator_id:
         before = _role_files(root)
-        turns_before = asked(turns)
+
         code, out, err = step(
             "prepare-role",
             "--repo-root",
@@ -1320,7 +1149,7 @@ def test_examiner_input_seals_candidate_bound_caller_observations_without_native
             str(observed),
         )
         assert code != 0 and "LocatorBearingCriterionId" in out + err
-        assert _role_files(root) == before and asked(turns) == turns_before
+        assert _role_files(root) == before
         return
     _, examiner_input = _prepare(
         root, step, "examiner", candidate, observations=observed
@@ -1937,7 +1766,6 @@ def test_examiner_observations_packet_is_refused_when_stale_source_bearing_malfo
             assert _NOT_RUN in text, what
         else:
             assert "not run:" not in text, what
-        assert "--observations" in text and "public_observation_capture" in text, what
         assert _role_files(root) == before, what
     code, out, err = prepare("reviewer", _write_good(root, candidate, tmp_path))
     assert (
@@ -2002,9 +1830,8 @@ def test_examiner_observation_revisions_keep_prior_inputs_and_results(
     retained = {examiner_input: first, revised: revised.read_bytes()}
     recorded_paths: list[Path] = []
     for index, prepared in enumerate((examiner_input, revised)):
-        turns_before = asked(turns)
         code, out, err = step(
-            "invoke-role",
+            "record-role-result",
             "--repo-root",
             str(root),
             "--role",
@@ -2013,13 +1840,15 @@ def test_examiner_observation_revisions_keep_prior_inputs_and_results(
             candidate,
             "--provider",
             "claude",
-            "--input",
+            "--model",
+            "host-selected",
+            "--session-id",
+            f"revision-{index}",
+            "--prepared-input",
             str(prepared),
-            answers=[
-                json.loads(
-                    _host_result("examiner", "indeterminate", f"revision {index}")
-                )
-            ],
+            "--input",
+            "-",
+            stdin=_host_result("examiner", "indeterminate", f"revision {index}"),
         )
         assert code == 0, out + err
         invoked = root / block(out, err)["RESULT"]
@@ -2028,7 +1857,7 @@ def test_examiner_observation_revisions_keep_prior_inputs_and_results(
             == hashlib.sha256(prepared.read_bytes()).hexdigest()
         )
         retained[invoked] = invoked.read_bytes()
-        assert asked(turns) == turns_before + ["nw-user-examiner"]
+
         code, recorded, out, err = _record(
             root,
             step,
@@ -2163,7 +1992,7 @@ def test_examiner_observation_revisions_hold_for_a_generated_packet_population(
     result_bytes: dict[Path, bytes] = {}
     for index, prepared in enumerate((examiner_input_a, examiner_input_b)):
         code, out, err = step(
-            "invoke-role",
+            "record-role-result",
             "--repo-root",
             str(root),
             "--role",
@@ -2172,13 +2001,15 @@ def test_examiner_observation_revisions_hold_for_a_generated_packet_population(
             candidate,
             "--provider",
             "claude",
-            "--input",
+            "--model",
+            "host-selected",
+            "--session-id",
+            f"generated-{index}",
+            "--prepared-input",
             str(prepared),
-            answers=[
-                json.loads(
-                    _host_result("examiner", "indeterminate", "generated revision")
-                )
-            ],
+            "--input",
+            "-",
+            stdin=_host_result("examiner", "indeterminate", "generated revision"),
         )
         assert code == 0, out + err
         invoked = root / block(out, err)["RESULT"]
@@ -2295,7 +2126,7 @@ def test_examiner_relative_prepared_input_is_rooted_at_repo_from_another_cwd(
     )
     code, out, err = run_cli_in_process(
         [
-            "invoke-role",
+            "record-role-result",
             "--repo-root",
             str(root),
             "--role",
@@ -2304,11 +2135,18 @@ def test_examiner_relative_prepared_input_is_rooted_at_repo_from_another_cwd(
             candidate,
             "--provider",
             "claude",
-            "--input",
+            "--model",
+            "host-selected",
+            "--session-id",
+            "away-initial",
+            "--prepared-input",
             prepared["INPUT"],
+            "--input",
+            "-",
         ],
         cwd=away,
         env=environment,
+        stdin_text=_host_result("examiner", "indeterminate", "away"),
         catch_all=True,
     )
     assert code == 0, out + err
@@ -2493,7 +2331,7 @@ def test_editing_a_declared_target_after_verify_makes_the_record_historical_for_
         "HOW: derive currentness from the declared owned bytes."
     )
     assert after_row.endswith("bytes moved"), after_row
-    assert block(after)["NEXT"] == f"des craft --repo-root {root} --value 1", after
+    assert shlex.split(block(after)["NEXT"])[1] == "craft", after
     prep_code, prep_out, prep_err = step(
         "prepare-role",
         "--repo-root",
@@ -2511,3 +2349,226 @@ def test_editing_a_declared_target_after_verify_makes_the_record_historical_for_
     refusal = block(prep_out, prep_err)
     assert refusal["DELIVERY-OUTCOME"] == "Refusal", refusal
     assert refusal["WHAT"] == "RolePreparationUnavailable", refusal
+
+
+def test_scope_context_is_request_bound_and_examiner_views_do_not_widen_evidence(
+    root: Path,
+    step,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from des.cli.role_packet_views import read_views
+    from tests.des.acceptance.steps_for_the_orchestrator import (
+        test_verify_retains_native_evidence_without_provider as fixture,
+    )
+
+    marker = "SOURCE_CONTEXT_NOT_FOR_EXAMINER"
+    monkeypatch.setattr(
+        fixture, "RED_ORACLE", fixture.RED_ORACLE + "# " + marker * 1500 + "\n"
+    )
+    _crafted(root, step)
+    candidate, _, _ = _provider_free_verify(root, tmp_path)
+    context = tmp_path / "host-context.json"
+    facts = {
+        "request_sha256": "0" * 64,
+        "naming": ["Use the repository's native test target."],
+        "scope_amendments": [
+            {
+                "change": "Implement def internal_rule(x): return x == 7",
+                "authority": "tests/unrelated.py::test_secret",
+                "evidence": TARGET + " " + marker,
+            }
+        ],
+    }
+    context.write_text(json.dumps(facts))
+    args = [
+        "prepare-role",
+        "--repo-root",
+        str(root),
+        "--candidate",
+        candidate,
+        "--context",
+        str(context),
+    ]
+    code, _, _ = step(*args, "--role", "reviewer")
+    assert code != 0
+    facts["request_sha256"] = hashlib.sha256(REQUEST.encode()).hexdigest()
+    context.write_text(json.dumps(facts))
+    code, out, err = step(*args, "--role", "reviewer")
+    assert code == 0, out + err
+    rows = block(out, err)
+    reviewer_raw = (root / rows["INPUT"]).read_bytes()
+    assert marker.encode() in reviewer_raw
+    assert (
+        read_views(
+            root / rows["INPUT-VIEWS"], expected_input_sha256=rows["INPUT-SHA256"]
+        )
+        == reviewer_raw
+    )
+    reviewer = json.loads(reviewer_raw)
+    assert reviewer["host_context"]["scope_amendments"] == facts["scope_amendments"]
+    assert (
+        reviewer["host_context"]["provenance"]["authorization_verified_by_des"] is False
+    )
+
+    packet = tmp_path / "public.json"
+    _write_packet(packet, _packet(root, candidate))
+    code, out, err = step(*args, "--role", "examiner", "--observations", str(packet))
+    assert code == 0, out + err
+    rows = block(out, err)
+    examiner_raw = read_views(
+        root / rows["INPUT-VIEWS"], expected_input_sha256=rows["INPUT-SHA256"]
+    )
+    assert examiner_raw == (root / rows["INPUT"]).read_bytes()
+    assert marker.encode() not in examiner_raw
+    assert TARGET.encode() not in examiner_raw
+    examiner = json.loads(examiner_raw)
+    assert examiner["host_context"]["scope_amendments"]["withheld"] is True
+    assert b"internal_rule" not in examiner_raw
+    assert b"test_secret" not in examiner_raw
+
+
+def _verdicts(witness: list[dict[str, object]]) -> list[list[object]]:
+    return [[oracle["verdict"] for oracle in entry["oracles"]] for entry in witness]
+
+
+def test_both_roles_see_every_bound_oracle_verdict_and_the_examiner_no_locator(
+    root: Path, step, tmp_path: Path
+) -> None:
+    _crafted(root, step)
+    # A remeasure after craft binds a GREEN oracle without refusing: the
+    # earlier RED must stay visible next to it.
+    code, out, err = step(
+        "oracle",
+        "--repo-root",
+        str(root),
+        "--value",
+        "1",
+        answers=[
+            {
+                "structured_output": {
+                    "outcome": "accepted",
+                    "diagnostic": "remeasured the authored oracle",
+                }
+            }
+        ],
+    )
+    assert code == 0, out + err
+    candidate, _, _ = _provider_free_verify(root, tmp_path)
+    _, reviewer_input = _prepare(root, step, "reviewer", candidate)
+    observed = tmp_path / "observations.json"
+    _write_packet(observed, _packet(root, candidate))
+    _, examiner_input = _prepare(
+        root, step, "examiner", candidate, observations=observed
+    )
+
+    reviewer_witness = json.loads(reviewer_input.read_bytes())["values"][0][
+        "oracle_witness"
+    ]
+    assert _verdicts(reviewer_witness) == [["red"], ["green"]]
+    assert all(entry["current"] is True for entry in reviewer_witness)
+    assert {
+        oracle["oracle"] for entry in reviewer_witness for oracle in entry["oracles"]
+    } == {ORACLE}
+    examiner_value = json.loads(examiner_input.read_bytes())["selected_acceptance"][0]
+    assert _verdicts(examiner_value["oracle_witness"]) == [["red"], ["green"]]
+    assert all(entry["current"] is True for entry in examiner_value["oracle_witness"])
+    examiner_witness = json.dumps(examiner_value["oracle_witness"])
+    assert ORACLE not in examiner_witness
+    assert TARGET not in examiner_witness
+
+    # Integration releases all per-value refs. Candidate packets must retain
+    # the same bound history, rather than silently becoming "unmeasured".
+    reviewer_before = reviewer_input.read_bytes()
+    examiner_before = examiner_input.read_bytes()
+    code, out, err = step(
+        "integrate", "--repo-root", str(root), "--candidate", candidate
+    )
+    assert code == 0, out + err
+    _, reviewer_after = _prepare(root, step, "reviewer", candidate)
+    _, examiner_after = _prepare(
+        root, step, "examiner", candidate, observations=observed
+    )
+    assert reviewer_after.read_bytes() == reviewer_before
+    assert examiner_after.read_bytes() == examiner_before
+
+
+def test_the_design_falsifier_reaches_the_examiner_without_source_locators(
+    root: Path, step, tmp_path: Path
+) -> None:
+    falsifier = (
+        f"the report shows the old value; {ORACLE}::test_value fails and "
+        f"{TARGET} still returns zero"
+    )
+    _crafted(
+        root,
+        step,
+        public_oracle={
+            "observation": observation("A"),
+            "stimulus": "run the installed command",
+            "expected": "the value named A is reported",
+            "falsifier": falsifier,
+        },
+    )
+    candidate, _, _ = _provider_free_verify(root, tmp_path)
+    observed = tmp_path / "observations.json"
+    _write_packet(observed, _packet(root, candidate))
+    _, examiner_input = _prepare(
+        root, step, "examiner", candidate, observations=observed
+    )
+
+    selected = json.loads(examiner_input.read_bytes())["selected_acceptance"][0]
+    assert selected["source"] == "DESIGN"
+    assert selected["criteria"] is None
+    projected = selected["public_oracle"]
+    assert projected["stimulus"] == "run the installed command"
+    assert projected["expected"] == "the value named A is reported"
+    assert projected["falsifier"].startswith("the report shows the old value")
+    assert "falsifier" in projected["redacted_fields"]
+    for path in (ORACLE, TARGET, SUPPORT):
+        assert path not in json.dumps(projected)
+
+
+def test_observations_and_context_resolve_against_the_repository_root(
+    root: Path, step, tmp_path: Path
+) -> None:
+    _crafted(root, step)
+    candidate, _, _ = _provider_free_verify(root, tmp_path)
+    inputs = root / "host-inputs"
+    inputs.mkdir()
+    _write_packet(inputs / "public.json", _packet(root, candidate))
+    (inputs / "context.json").write_text(
+        json.dumps(
+            {
+                "request_sha256": hashlib.sha256(REQUEST.encode()).hexdigest(),
+                "naming": ["value A"],
+                "scope_amendments": [],
+            }
+        )
+    )
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    code, out, err = run_cli_in_process(
+        [
+            "prepare-role",
+            "--repo-root",
+            str(root),
+            "--role",
+            "examiner",
+            "--candidate",
+            candidate,
+            "--observations",
+            "host-inputs/public.json",
+            "--context",
+            "host-inputs/context.json",
+        ],
+        cwd=elsewhere,
+        env=_native_only_environment(tmp_path / "prepare-bin", Path(sys.executable)),
+        catch_all=True,
+    )
+
+    assert code == 0, out + err
+    examiner = json.loads((root / block(out, err)["INPUT"]).read_bytes())
+    assert examiner["public_observations"] == _packet(root, candidate)
+    assert examiner["host_context"]["provenance"]["origin"] == "caller_supplied"

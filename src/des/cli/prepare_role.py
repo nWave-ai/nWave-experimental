@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
-from des.adapters.driven.config.des_config import DESConfig
+from des.adapters.driven.task_invocation.model_envelope import _schema_for
 from des.cli.role_artifacts import (
     LocatorBearingCriterionId,
     RecoveryInputAlreadyPrepared,
@@ -12,7 +13,7 @@ from des.cli.role_artifacts import (
     prepare,
     prepare_selected_revision_recovery,
 )
-from des.cli.role_guidance import invoke_next, recovery_invoke_next, role_id
+from des.cli.role_guidance import record_next, role_id
 from des.cli.step_terminal import (
     NOTHING_OWED,
     StepRefusal,
@@ -21,12 +22,20 @@ from des.cli.step_terminal import (
     resolved_root,
     succeed,
 )
-from des.domain.public_observations import ObservationPacketRefused
-from des.runtime.packaged_asset import installed_package_root
+from des.domain.public_observations import ObservationPacketRefused, input_description
+
+
+def _from_root(root: Path, path: Path | None) -> Path | None:
+    """Every caller-supplied input path is read relative to the repository root."""
+    return path if path is None or path.is_absolute() else root / path
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="des prepare-role")
+    p = argparse.ArgumentParser(
+        prog="des prepare-role",
+        epilog=input_description(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     p.add_argument("--repo-root", type=Path, required=True)
     p.add_argument(
         "--role",
@@ -35,7 +44,16 @@ def main(argv=None):
         help="reviewer/examiner require --candidate; acceptance-designer requires the recovery task",
     )
     p.add_argument("--candidate", help="verified candidate; reviewer/examiner only")
-    p.add_argument("--observations", type=Path, help="examiner only")
+    p.add_argument(
+        "--observations",
+        type=Path,
+        help="examiner only; a relative path resolves against --repo-root",
+    )
+    p.add_argument(
+        "--context",
+        type=Path,
+        help="caller-owned JSON: request_sha256, naming text array, scope_amendments [{change, authority, evidence}]; reviewer receives context, examiner only redacted public amendments; DES does not verify authorization; a relative path resolves against --repo-root",
+    )
     p.add_argument(
         "--task",
         choices=("selected-revision-recovery",),
@@ -59,7 +77,11 @@ def main(argv=None):
                 raise ValueError(
                     "acceptance-designer requires --task selected-revision-recovery and --value"
                 )
-            if a.candidate is not None or a.observations is not None:
+            if (
+                a.candidate is not None
+                or a.observations is not None
+                or a.context is not None
+            ):
                 raise ValueError(
                     "selected-revision-recovery does not accept --candidate or --observations"
                 )
@@ -76,10 +98,13 @@ def main(argv=None):
                 raise ValueError(
                     "--task, --value, and --finding belong only to acceptance-designer recovery"
                 )
-            path, digest = prepare(r, a.role, a.candidate, a.observations)
-        runtime = DESConfig(cwd=r).role_runtime(
-            role_id(a.role), framework_root=installed_package_root()
-        )
+            path, digest = prepare(
+                r,
+                a.role,
+                a.candidate,
+                _from_root(r, a.observations),
+                _from_root(r, a.context),
+            )
     except SelectedRevisionUnavailable as e:
         failure = e.outcome.failure
         return refuse(
@@ -113,12 +138,16 @@ def main(argv=None):
             if e.stopped
             else ""
         )
-        name = str(a.observations) if a.observations is not None else "observations"
+        name = (
+            str(_from_root(r, a.observations))
+            if a.observations is not None
+            else "observations"
+        )
         return refuse(
             StepRefusal(
                 "ObservationPacketRefused",
                 f"{len(e.defects)} defect(s) in {name}: {defects}{suffix}",
-                "regenerate the packet with tests/evals/atomic-selected-acceptance/public_observation_capture.py on candidate SHA, fix each numbered defect, stay within 65536 bytes by selecting fewer events (seq gaps are allowed), then rerun des prepare-role --role examiner --candidate SHA --observations PATH; no role input was written",
+                "capture real public events for the verified candidate using the project's native tools, construct the packet with des.domain.public_observations.encode_packet (grammar: des prepare-role --help), correct each numbered defect and stay within 65536 bytes by selecting fewer events, then rerun des prepare-role --role examiner --candidate SHA --observations PATH; no role input was written",
             ),
             NOTHING_OWED,
         )
@@ -151,11 +180,32 @@ def main(argv=None):
             StepRefusal("RolePreparationUnavailable", str(e), how),
             NOTHING_OWED,
         )
-    facts = [f"ROLE: {a.role}", f"INPUT: {path}", f"INPUT-SHA256: {digest}"]
+    packet = json.loads((r / path).read_text(encoding="utf-8"))
+    result_schema = _schema_for(
+        role_id(a.role),
+        defect_values=tuple(value["observation"] for value in packet.get("values", [])),
+        semantic_task="selected-revision-recovery" if recovery else None,
+    )
+    facts = [
+        f"ROLE: {a.role}",
+        f"ROLE-ID: {role_id(a.role)}",
+        f"INPUT: {path}",
+        f"INPUT-SHA256: {digest}",
+        f"RESULT-SCHEMA: {result_schema}",
+        "HOST-ACTION: invoke the exact installed role with the permitted INPUT bytes; then record its result",
+    ]
+    if not recovery:
+        views = r / (path + ".views") / "manifest.json"
+        facts.extend(
+            (
+                f"INPUT-VIEWS: {views.relative_to(r)}",
+                "INPUT-VIEWS-USE: read field parts in manifest order; concatenate string values without separators; authenticate with des.cli.role_packet_views.read_views(manifest, expected_input_sha256=the independently retained INPUT-SHA256); record against the original INPUT, not views",
+            )
+        )
     if recovery:
         facts.extend(("TASK: selected-revision-recovery", f"VALUE: {a.value}"))
-        next_step = recovery_invoke_next(r, runtime.provider.value, path)
+        next_step = record_next(r, a.role, path, value=a.value)
     else:
         facts.insert(1, f"CANDIDATE: {a.candidate}")
-        next_step = invoke_next(r, a.role, a.candidate, runtime.provider.value, path)
+        next_step = record_next(r, a.role, path, candidate=a.candidate)
     return succeed(facts, next_step)

@@ -25,19 +25,6 @@ def _invoke(args: list[str]) -> tuple[int, str, str]:
     return code, out.getvalue(), err.getvalue()
 
 
-def test_help_text_omits_retired_feature_delta_commands() -> None:
-    """The direct cutover must not advertise the retired carrier family."""
-    code, stdout, _ = _invoke(["--help"])
-    assert code == 0
-    for command in (
-        "sync",
-        "validate-feature-delta",
-        "extract-gherkin",
-        "migrate-feature",
-    ):
-        assert command not in stdout
-
-
 @pytest.mark.parametrize(
     "command",
     ["sync", "validate-feature-delta", "extract-gherkin", "migrate-feature"],

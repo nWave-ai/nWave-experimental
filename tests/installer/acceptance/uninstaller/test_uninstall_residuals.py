@@ -185,7 +185,7 @@ def post_uninstall_state(tmp_path_factory) -> dict:
         lib_des_pre = (claude_config_dir / "lib" / "python" / "des").exists()
 
         # These are deliberately close to retired DES lifecycle commands, but
-        # belong to Lyra and to the operator.  Drive the real uninstaller CLI
+        # belong to External and to the operator.  Drive the real uninstaller CLI
         # through this state: it must not use a broad marker/substring sweep.
         settings_path = claude_config_dir / "settings.json"
         settings = json.loads(settings_path.read_text(encoding="utf-8"))
@@ -193,7 +193,7 @@ def post_uninstall_state(tmp_path_factory) -> dict:
         hooks["SessionStart"] = [
             {
                 "hooks": [
-                    {"type": "command", "command": "python3 -m lyra.session_start"}
+                    {"type": "command", "command": "python3 -m external.session_start"}
                 ]
             },
             # The installer's OWN SessionStart command. Overwriting this array
@@ -332,7 +332,7 @@ class TestUninstallResiduals:
         found = [p for p in forbidden_patterns if p in active_hook_text]
         assert not found, f"Uninstall left DES hook patterns in settings.json: {found}"
 
-    def test_real_uninstall_preserves_lyra_and_near_miss_lifecycle_hooks(
+    def test_real_uninstall_preserves_external_and_near_miss_lifecycle_hooks(
         self, post_uninstall_state
     ):
         """The CLI cleanup keeps entries it did not write exactly."""
@@ -340,7 +340,7 @@ class TestUninstallResiduals:
         commands = [entry["hooks"][0]["command"] for entry in session_entries]
 
         assert commands == [
-            "python3 -m lyra.session_start",
+            "python3 -m external.session_start",
             "# des-hook:orchestrator-affordance-refresh-standalone\n"
             "python3 /opt/operator/session_start.py --keep",
         ]

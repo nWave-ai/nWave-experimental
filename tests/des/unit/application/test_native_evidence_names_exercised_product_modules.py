@@ -16,6 +16,7 @@ byte.  The same measurement separates them, and neither answer is a verdict
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -221,6 +222,7 @@ def test_a_native_record_keeps_measured_duration_and_nonsecret_execution_context
     root = _subject(tmp_path, DRIVES_PRODUCT)
     monkeypatch.setenv("PYTHONPATH", "test-declared-pythonpath")
     monkeypatch.setenv("NATIVE_EVIDENCE_SECRET", "must-not-be-recorded")
+    monkeypatch.setenv("OPAM_SWITCH_PREFIX", "/selected/nonsecret/toolchain")
 
     evidence = DeliveryContinuationRunner()._native(
         root,
@@ -232,9 +234,13 @@ def test_a_native_record_keeps_measured_duration_and_nonsecret_execution_context
     assert isinstance(record["duration_seconds"], float), record
     assert record["duration_seconds"] >= 0, record
     assert record["cwd"] == str(root), record
-    assert set(record["declared_environment"]) <= {"PYTHONPATH", "PYTEST_ADDOPTS"}
     assert "PYTHONPATH" in record["declared_environment"], record
     assert "NATIVE_EVIDENCE_SECRET" not in record["declared_environment"], record
+    assert (
+        record["declared_environment"]["OPAM_SWITCH_PREFIX"]
+        == "/selected/nonsecret/toolchain"
+    )
+    assert "must-not-be-recorded" not in json.dumps(record)
 
 
 def test_a_native_record_without_execution_context_preserves_unknown() -> None:

@@ -17,6 +17,7 @@ from des.adapters.drivers.hooks.pre_tool_use_handler import (
 )
 from des.adapters.drivers.hooks.pre_write_handler import handle_pre_write
 from des.adapters.drivers.hooks.session_start_notice_handler import (
+    emit_admission_warning,
     handle_session_start,
 )
 from des.adapters.drivers.hooks.subagent_stop_handler import handle_subagent_stop
@@ -114,6 +115,28 @@ def main() -> None:
     safety_stdin = normalize_exec_command_envelope(command, buffered_stdin)
     apply_bash_safety_guards(command, safety_stdin)
 
+    # Global activity registry: every host session is recorded BEFORE the
+    # activation gate, because the installation an update replaces is shared
+    # by inactive projects too. SessionEnd needs nothing else and exits here.
+    host = "codex" if "--host-provenance=codex" in sys.argv[2:] else "claude-code"
+    if command == "session-end":
+        from des.adapters.drivers.hooks.session_lifecycle_handler import (
+            handle_session_end,
+        )
+
+        sys.exit(handle_session_end(buffered_stdin, host))
+    registration = None
+    if command == "session-start":
+        from des.adapters.drivers.hooks.session_lifecycle_handler import (
+            register_session_start,
+        )
+
+        registration = register_session_start(buffered_stdin, host)
+        if not registration.admitted:
+            # Safety warnings must survive inactive projects and unavailable
+            # route notices. Exit 0 is advisory, never proof the host is gated.
+            sys.exit(emit_admission_warning(registration))
+
     reinjected = apply_gate(command, buffered_stdin)
     sys.stdin = io.StringIO(reinjected if reinjected is not None else buffered_stdin)
 
@@ -132,7 +155,7 @@ def main() -> None:
     elif command == "subagent-stop":
         exit_code = handle_subagent_stop()
     elif command == "session-start":
-        exit_code = handle_session_start()
+        exit_code = handle_session_start(registration)
     else:
         print(json.dumps({"status": "error", "reason": f"Unknown command: {command}"}))
         exit_code = 1

@@ -1,48 +1,60 @@
 # nWave — Experimental Channel
 
-> Experimental software: evaluate it on non-critical work and report concrete friction or defects.
+This source preview helps you turn a request into a result you can inspect. Use it for work where you can tolerate changes to the workflow. For a whole feature, nWave can retain decisions, a public acceptance check, review, and delivery evidence. You can also run one DES step or work directly when less needs to survive the session.
 
-**Build:** `0b7a60fd2` from `atdd_pure_staging` (`0b7a60fd2ad4a3b9e5bbe0444eadc87f6266a357`)
+**Build:** `44a8d7890` from `atdd_pure_staging` (`44a8d789086a8210435c837e58e9a27d5a02c93e`). This channel installs from a clone of [this repository](https://github.com/nWave-ai/nWave-experimental); it does not publish to PyPI. Check the exact release receipt before using a wheel from another channel.
 
-## Delivery
+## Start in your project
+
+You need Python 3.10+, Git, [uv](https://docs.astral.sh/uv/), and either [Claude Code](https://claude.com/product/claude-code) or [Codex CLI](https://developers.openai.com/codex/cli). On Windows, use WSL. Install your chosen coding host separately.
 
 ```bash
-printf '%s' "$REQUEST" | des po --repo-root ROOT
-des state --repo-root ROOT
-```
-
-DES helps deliver a request one step at a time. Your assistant chooses and starts each step.
-The steps define the product goal, establish design facts, and write a public oracle: an executable check of promised behavior.
-They then implement the change, review the whole change, examine observed behavior without reading implementation code, and integrate the result.
-
-Each step reports one outcome:
-- `Success`: the step completed.
-- `Refusal`: the step cannot proceed as requested.
-- `Retry`: the operation can be tried again.
-- `Indeterminate`: the result is uncertain; do not treat it as success.
-
-The `NEXT` line suggests a following step; DES does not start it. Run `des state` to see where an open request stands.
-
-## Writing for this channel
-
-Use short, active sentences in guides, examples, and user-facing messages. Explain a new abbreviation or internal term before using it. Keep command names, flags, configuration keys, and required technical details exact.
-
-## Install
-
-Prerequisites: Python 3.10+ and either `uv` or `pipx`.
-```bash
-git clone https://github.com/nWave-ai/nWave-experimental.git
+git clone https://github.com/nWave-ai/nWave-experimental.git nWave-experimental
 cd nWave-experimental
-uv run python -m nwave_ai.cli install
+uv sync
 ```
-Restart the host, then enable nWave with `nwave-ai project enable`. nWave sends no telemetry; share redacted feedback through the experimental issue tracker.
 
-## Recover the previous experimental package identity
+From the clone, install into the host you use. Choose one command:
 
-A previous experimental release used the distribution name `nwave` at version
-`4.0.0+atddpure.2d5a26a`, although it exported the `nwave_ai` module and the
-`nwave-ai` command. A corrected release uses the canonical distribution name
-`nwave-ai`. Recover only after the corrected release receipt gives its exact
-commit; set `CORRECTED_REF` to that receipt value, never to a guessed commit.
+```bash
+uv run python -m nwave_ai.cli install --platform claude-code
+# Or, for Codex CLI:
+uv run python -m nwave_ai.cli install --platform codex
+```
 
-Use the complete [installation recovery guide](docs/guides/installation-guide/#recover-a-previous-experimental-package-identity): it identifies the actual manager and absolute executables, removes the verified obsolete owner before reinstalling canonical `nwave-ai`, then runs install, DES migration, and doctor.
+Use `--dev` only when you intend a development-mode installation from the checkout. For Claude Code, run `uv run python -m nwave_ai.cli doctor` in the clone and address any failing check. For Codex, check the installer's final Codex validation; `doctor` checks Claude Code assets. Quit and reopen the selected host after installation.
+
+### Your First Command
+
+The clone's `.venv/bin/nwave-ai` is a local executable. Bind its absolute path before moving to **your project**; `uv run` does not add `nwave-ai` to your global `PATH`.
+
+```bash
+NWAVE_CLI="$(pwd -P)/.venv/bin/nwave-ai"
+cd /path/to/your/project
+"$NWAVE_CLI" project enable
+"$NWAVE_CLI" status
+```
+
+Check that status says `This project is active.` Open the restarted host in that project. In Claude Code, ask `/nw-buddy What should I do next?`. In Codex, invoke `$nw-buddy` and ask the same question. These are host skills, not shell commands. Then describe who uses the change, its input, and the result you expect. See [Your First Feature](docs/guides/tutorial-first-feature/) for an end-to-end example.
+
+## Choose a delivery route
+
+| Route | Use it when | What remains |
+|---|---|---|
+| Spine waves | A whole feature needs decisions and checks that outlive the session. | Durable authorities, applicable independent review, and delivery evidence. |
+| Individual DES steps | You need one scoped product, design, oracle, craft, verify, or integration step. | That step's closed outcome and applicable artifacts. `NEXT` is advice, not an automatic transition. |
+| Direct work | Little needs to survive the session and a late refusal is cheap. | No nWave gate, independent review, or retained authority is attested. |
+
+The assistant and you choose the route for each request. A DES step can report `Success`, `Refusal`, `Retry`, or `Indeterminate`; treat an uncertain result as uncertain. A completed step is not a completed feature. Check the delivered behavior through its user surface. See the [route guide](docs/guides/wave-routing-and-entry-points/) and [CLI reference](docs/reference/cli.md).
+
+## Settings, updates, and migration
+
+Select a provider and model explicitly with the [`nw-rigor` guidance](nWave/skills/nw-rigor/SKILL.md). A competence label does not select a model automatically. [Documentation density and optional explanation](docs/reference/global-config.md#documentation-object) are separate settings; neither removes the checks required by the route you select.
+
+Your native coding host runs the installed specialists and chooses the next action. DES constructs documents/facts, measures actual RED/GREEN, records results and performs explicitly requested native/Git operations; it never launches models. Independent review and fresh source-blind EXAMINE remain required where applicable. See the [role invocation contract](nWave/skills/nw-role-invocation/SKILL.md).
+
+For this source preview, update the clone, resync its environment, reinstall into the same host, and restart that host. Do not replace it with a public-package upgrade. Automatic release checks and installation require separate permissions and controlled startup; the [installation guide](docs/guides/installation-guide/#controlled-startup-and-update-permissions) explains the limits. Its supported launch wrappers cover four hosts, while install and diagnostic coverage differ by host.
+
+Coming from v3? Read the [migration guide](docs/guides/classic-spine-migration.md) before changing persisted work. A successful preview does not prove that an active v3 delivery can resume in v4. The [archived package recovery procedure](docs/guides/installation-guide/#recover-a-previous-experimental-package-identity-archive) applies only to its named predecessor and a verified release receipt.
+
+nWave keeps workflow artifacts locally and collects no telemetry. Your coding host handles its own provider traffic; explicitly authorized external calls can send permitted data. See the [privacy policy](PRIVACY.md). Report defects through [GitHub Issues](https://github.com/nWave-ai/nWave/issues). nWave is [MIT licensed](LICENSE).

@@ -90,12 +90,13 @@ the type level. Every rule encoded in a type needs no unit test.
    Address AND OrderLines).
 2. **OR (choice types)** — value is ONE OF alternatives (ProductCode = Widget OR
    Gizmo). Compose recursively to express any domain structure.
-3. **Domain wrappers** — never use raw primitives in the domain; wrap each
-   concept so the compiler distinguishes `CustomerId` from `OrderId`. The type
-   name is the documentation.
-4. **Smart constructors** — private raw constructor; a `create` validates and
-   returns a `Result`. Once constructed, a value is guaranteed valid — no
-   defensive checks downstream.
+3. **Domain precision** — distinguish concepts when confusion or an invalid
+   state is an observed risk. Prefer native records/unions/opaque or zero-cost
+   types; raw primitives at a documented sufficient boundary are not forbidden.
+4. **Smart constructors** — use validation at the actual invariant boundary
+   when raw construction could violate it. Reuse the existing owner; do not
+   require a wrapper, repeated checks or allocation merely to follow a template.
+   A native representation may already make the invalid state unconstructible.
 
 ### Make illegal states unrepresentable
 
@@ -136,7 +137,7 @@ types, exhaustiveness warnings reveal unhandled cases. New states (e.g.
 ### Decision tree — how to model a concept?
 
 ```
-Simple value with validation?        → Domain Wrapper + Smart Constructor
+Simple value with real validation risk? → Native precise type; smart constructor only if needed
 One of several alternatives?         → Choice Type (sum)
 Groups several values?               → Record Type (product)
 Distinct lifecycle stages?           → State Machine with Types

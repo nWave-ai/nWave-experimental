@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -34,16 +36,29 @@ class _PyPIResponse:
         return self._body
 
 
+class _IndexMetadata:
+    """An installed public-index distribution has no direct URL record."""
+
+    def read_text(self, filename: str) -> None:
+        assert filename == "direct_url.json"
+
+
 def _invoke_check(
     monkeypatch,
     tmp_path: Path,
     *,
     urlopen,
+    direct_url: str | None = None,
 ) -> tuple[int, str, str, list[Path]]:
     """Drive the public command and retain its observable working-tree delta."""
     monkeypatch.chdir(tmp_path)
     before = sorted(tmp_path.rglob("*"))
     current_version = ProductVersion.from_text("1.4.0")
+
+    class InstalledMetadata:
+        def read_text(self, filename: str) -> str | None:
+            assert filename == "direct_url.json"
+            return direct_url
 
     with (
         patch(
@@ -51,6 +66,7 @@ def _invoke_check(
             return_value=current_version,
         ) as resolve_product_version,
         patch("urllib.request.urlopen", side_effect=urlopen),
+        patch("importlib.metadata.distribution", return_value=InstalledMetadata()),
         patch(
             "nwave_ai.cli._resolve_installer",
             side_effect=AssertionError("--check must not select a package manager"),
@@ -209,20 +225,26 @@ def _owned_console(tmp_path: Path) -> Path:
     interpreter.write_text("", encoding="utf-8")
     executable.write_text("", encoding="utf-8")
     executable.chmod(0o755)
+    des = interpreter.with_name("des")
+    des.write_text("", encoding="utf-8")
+    des.chmod(0o755)
     return interpreter
 
 
 def _drive_apply(
-    monkeypatch,
     tmp_path: Path,
     *,
     process_results: list[subprocess.CompletedProcess[str]],
     release: _PyPIResponse | None = None,
+    missing_owned: str | None = None,
+    direct_url: str | None = None,
 ) -> tuple[int, str, str, list[list[str]], Path, Path]:
     """Drive the public apply command and retain every real process argv."""
     root = tmp_path / "migration-root"
     root.mkdir(exist_ok=True)
     interpreter = _owned_console(tmp_path)
+    if missing_owned is not None:
+        interpreter.with_name(missing_owned).unlink()
     observed_argv: list[list[str]] = []
     results = iter(process_results)
 
@@ -230,21 +252,63 @@ def _drive_apply(
         assert timeout == 5.0
         return release if release is not None else _newer_release()
 
-    def run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        observed_argv.append(argv)
-        return next(results)
+    class ControlledProcess:
+        def __init__(self, argv: list[str], **_kwargs: object) -> None:
+            observed_argv.append(argv)
+            result = next(results)
+            self.returncode = result.returncode
+
+            self.stdout_result = result.stdout
+            self.stderr_result = result.stderr
+
+        def communicate(self, *, timeout: float) -> tuple[str, str]:
+            assert timeout > 0
+            return self.stdout_result, self.stderr_result
+
+    class InstalledMetadata:
+        def read_text(self, filename: str) -> str | None:
+            assert filename == "direct_url.json"
+            return direct_url
 
     # The established explicit override is ownership evidence; it avoids any
     # PATH choice and keeps this public CLI test independent of host tooling.
-    monkeypatch.setenv("NWAVE_INSTALLER", "uv")
+    home = tmp_path / "home"
+    config = home / ".nwave" / "config.json"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        json.dumps(
+            {
+                "schema-version": 1,
+                "install": {
+                    "target_platforms": ["codex"],
+                    "dev_mode": False,
+                    "host_paths": {
+                        "agents_home": str(home),
+                        "claude_config_dir": str(home / ".claude"),
+                        "codex_config_dir": str(home / ".codex"),
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    environment = {
+        "NWAVE_INSTALLER": "uv",
+        "HOME": str(home),
+        "NWAVE_AGENTS_HOME": str(home),
+        "CLAUDE_CONFIG_DIR": str(home / ".claude"),
+        "CODEX_HOME": str(home / ".codex"),
+    }
     with (
+        patch.dict(os.environ, environment),
         patch("sys.executable", str(interpreter)),
         patch(
             "scripts.shared.version.resolve_product_version",
             return_value=ProductVersion.from_text("1.4.0"),
         ),
         patch("urllib.request.urlopen", side_effect=pypi),
-        patch("subprocess.run", side_effect=run),
+        patch("importlib.metadata.distribution", return_value=InstalledMetadata()),
+        patch("subprocess.Popen", side_effect=ControlledProcess),
         patch("sys.argv", ["nwave-ai", "update", "--yes", "--root", str(root)]),
         patch("sys.stdout", new_callable=io.StringIO) as stdout,
         patch("sys.stderr", new_callable=io.StringIO) as stderr,
@@ -261,12 +325,277 @@ def _drive_apply(
     )
 
 
+def test_update_preserves_a_stable_version_installed_from_vcs_source(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A stable VCS install cannot silently switch to the public package index."""
+    source = "https://example.invalid/team/nwave-ai.git"
+    origin = json.dumps(
+        {
+            "url": source,
+            "vcs_info": {
+                "vcs": "git",
+                "commit_id": "a" * 40,
+                "requested_revision": "main",
+            },
+        }
+    )
+    exit_code, stdout, stderr, observed, _root, _interpreter = _drive_apply(
+        tmp_path, process_results=[], direct_url=origin
+    )
+    report = stdout + stderr
+    assert exit_code != 0 and "release-origin" in report, (
+        "WHAT: a stable VCS/source owner was treated as a public index release. "
+        "WHY: a stable version string alone does not authorize replacing its source channel. "
+        "HOW: refuse at release-origin before package replacement."
+    )
+    assert observed == [] and "replace-package: completed" not in report, (
+        "WHAT: source-origin refusal launched a package manager or claimed replacement. "
+        "WHY: replacing the chosen source with PyPI silently changes user intent. "
+        "HOW: stop before every mutating update stage."
+    )
+    assert all(
+        marker in report.lower() for marker in ("how:", "direct_url.json", "source")
+    ), (
+        "WHAT: the source-origin refusal did not name its provenance and recovery. "
+        "WHY: the user needs to inspect the recorded source before choosing a safe update. "
+        "HOW: identify direct_url.json and direct update or reinstall from its recorded source "
+        "without exposing credentials that may be embedded in the URL."
+    )
+
+
+def test_update_apply_refuses_source_origin_even_when_index_version_is_not_newer(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """An equal public version cannot certify a selected VCS install as current."""
+    origin = json.dumps(
+        {
+            "url": "https://example.invalid/team/nwave-ai.git",
+            "vcs_info": {"vcs": "git", "commit_id": "b" * 40},
+        }
+    )
+    equal = _PyPIResponse({"releases": {"1.4.0": [{"yanked": False}]}})
+    exit_code, stdout, stderr, observed, _root, _interpreter = _drive_apply(
+        tmp_path, process_results=[], release=equal, direct_url=origin
+    )
+    report = stdout + stderr
+    assert exit_code != 0 and "release-origin" in report, (
+        "WHAT: an equal PyPI version reported a source install as up-to-date. "
+        "WHY: equal version labels do not establish equivalent source or assets. "
+        "HOW: refuse the selected VCS origin before an up-to-date result."
+    )
+    assert (
+        observed == []
+        and "nwave-ai is up-to-date" not in report.lower()
+        and not any(
+            f"{stage}: completed" in report
+            for stage in (
+                "replace-package",
+                "verify-executable",
+                "preflight-framework",
+                "synchronize-framework",
+                "migrate-artifacts",
+            )
+        )
+    ), (
+        "WHAT: the source-origin refusal claimed update success or completed work. "
+        "WHY: no public-index comparison can certify this source installation. "
+        "HOW: report only the release-origin refusal with no mutating stage."
+    )
+    assert (
+        "direct_url.json" in report and "source" in report.lower() and "HOW:" in report
+    ), (
+        "WHAT: equal-version refusal omitted source provenance or same-source recovery. "
+        "WHY: the user must retain the chosen source channel. "
+        "HOW: direct inspection of direct_url.json and update or reinstall from that source."
+    )
+
+
+def test_update_check_refuses_source_origin_before_public_index_discovery(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A read-only public-index check is still the wrong channel for VCS origin."""
+    requests: list[str] = []
+
+    def pypi(url: str, *, timeout: float) -> _PyPIResponse:
+        requests.append(url)
+        return _PyPIResponse({"releases": {"1.4.0": [{"yanked": False}]}})
+
+    origin = json.dumps(
+        {
+            "url": "https://example.invalid/team/nwave-ai.git",
+            "vcs_info": {"vcs": "git", "commit_id": "c" * 40},
+        }
+    )
+    exit_code, stdout, stderr, before = _invoke_check(
+        monkeypatch, tmp_path, urlopen=pypi, direct_url=origin
+    )
+    report = stdout + stderr
+    assert exit_code != 0 and "release-origin" in report and requests == [], (
+        "WHAT: update --check queried PyPI or succeeded for a source installation. "
+        "WHY: public-index releases cannot answer whether the chosen VCS source is current. "
+        "HOW: refuse at release-origin before release discovery."
+    )
+    assert (
+        "direct_url.json" in report and "source" in report.lower() and "HOW:" in report
+    ), (
+        "WHAT: check refusal omitted provenance or same-source recovery. "
+        "WHY: a read-only check still needs a usable answer for the selected source. "
+        "HOW: name direct_url.json and direct inspection or update from that source."
+    )
+    assert (
+        "Status: up-to-date" not in report and sorted(tmp_path.rglob("*")) == before
+    ), (
+        "WHAT: source check reported public-index success or changed the working tree. "
+        "WHY: no public-index status applies and a check must remain read-only. "
+        "HOW: emit only the refusal and make no file or process change."
+    )
+
+
+def test_windows_update_apply_refuses_before_replacement_while_check_remains_available(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Until process-tree cleanup is supported on Windows, apply is fail closed."""
+    monkeypatch.setattr(sys, "platform", "win32")
+    exit_code, stdout, stderr, observed, _root, _interpreter = _drive_apply(
+        tmp_path, process_results=[]
+    )
+    refusal = stdout + stderr
+    assert (
+        exit_code != 0
+        and "platform-process-tree" in refusal
+        and "Windows" in refusal
+        and observed == []
+    ), (
+        "WHAT: Windows apply launched package replacement or failed without a platform reason. "
+        "WHY: direct-child termination cannot prove installer descendants stop on this platform. "
+        "HOW: refuse before the package manager until Windows process-tree cleanup is supported."
+    )
+    assert (
+        "HOW:" in refusal
+        and "host" in refusal.lower()
+        and ("manual" in refusal.lower() or "explicit" in refusal.lower())
+        and "replace-package: completed" not in refusal
+    ), (
+        "WHAT: Windows refusal claimed replacement or lacked a safe operator route. "
+        "WHY: the package has not changed and automatic install cannot safely proceed. "
+        "HOW: name an explicit supported install or manual recovery without claiming rollback."
+    )
+
+    requests: list[str] = []
+
+    def pypi(url: str, *, timeout: float) -> _PyPIResponse:
+        requests.append(url)
+        return _newer_release()
+
+    check_code, check_stdout, check_stderr, before = _invoke_check(
+        monkeypatch, tmp_path, urlopen=pypi
+    )
+    assert (
+        check_code == 0 and "update-available" in check_stdout and check_stderr == ""
+    ), (
+        "WHAT: the Windows apply refusal also disabled read-only release checking. "
+        "WHY: checking does not start an installer or require process-tree cleanup. "
+        "HOW: keep update --check available on Windows."
+    )
+    assert (
+        requests == ["https://pypi.org/pypi/nwave-ai/json"]
+        and sorted(tmp_path.rglob("*")) == before
+    ), (
+        "WHAT: Windows check skipped discovery or changed the working tree. "
+        "WHY: only apply is blocked by unsafe process-tree behavior. "
+        "HOW: use bounded public release discovery and keep check read-only."
+    )
+
+
+def test_update_missing_owned_console_refuses_before_replacement_with_usable_recovery(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """An absent owned nwave-ai console is a preflight refusal, not a completed swap."""
+    exit_code, stdout, stderr, observed, _root, interpreter = _drive_apply(
+        tmp_path, process_results=[], missing_owned="nwave-ai"
+    )
+    report = stdout + stderr
+    owned = str(interpreter.with_name("nwave-ai"))
+    assert exit_code != 0 and "verify-executable" in report and owned in report, (
+        "WHAT: the absent owned console was not reported as the failed proof stage. "
+        "WHY: no package replacement has run and an ambient console cannot prove ownership. "
+        "HOW: name verify-executable and the missing owned nwave-ai sibling."
+    )
+    assert observed == [] and "replace-package: completed" not in report, (
+        "WHAT: an absent owned console launched replacement or claimed it completed. "
+        "WHY: a pre-replacement refusal cannot carry completed-stage evidence. "
+        "HOW: stop before uv and report zero completed update stages."
+    )
+    assert "HOW:" in report and (
+        "restore" in report.lower() or "reinstall" in report.lower()
+    ), (
+        "WHAT: the missing-console refusal lacked a way to recover the owned executable. "
+        "WHY: retrying update while the sibling is absent repeats the same refusal. "
+        "HOW: direct restoration or reinstallation of the selected owned nwave-ai console."
+    )
+
+
+def test_update_missing_owned_des_after_sync_names_completed_work_and_restoration(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """An absent migration executable cannot become an impossible run instruction."""
+    exit_code, stdout, stderr, observed, root, interpreter = _drive_apply(
+        tmp_path,
+        missing_owned="des",
+        process_results=[
+            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="nwave-ai 2.0.0\n", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+        ],
+    )
+    report = stdout + stderr
+    owned_des = str(interpreter.with_name("des"))
+    assert exit_code != 0 and "migrate-artifacts" in report and owned_des in report, (
+        "WHAT: the absent owned des sibling did not stop at artifact migration. "
+        "WHY: invoking ambient des would change the selected installation boundary. "
+        "HOW: name migrate-artifacts and the missing owned des path."
+    )
+    assert (
+        all(
+            f"{stage}: completed" in stdout
+            for stage in (
+                "replace-package",
+                "verify-executable",
+                "preflight-framework",
+                "synchronize-framework",
+            )
+        )
+        and "migrate-artifacts: completed" not in report
+    ), (
+        "WHAT: the refusal lost completed package and framework work or claimed migration. "
+        "WHY: recovery depends on knowing which stages actually finished. "
+        "HOW: report the four completed stages and leave migration incomplete."
+    )
+    assert len(observed) == 4 and all(
+        owned_des not in command for command in observed
+    ), (
+        "WHAT: the updater tried to execute a missing des sibling. "
+        "WHY: no migration command can succeed until the owned executable is repaired. "
+        "HOW: stop after framework synchronization without launching migration."
+    )
+    assert (
+        "HOW:" in report
+        and ("restore" in report.lower() or "reinstall" in report.lower())
+        and str(root) in report
+    ), (
+        "WHAT: the migration refusal instructed an impossible command or lost the root. "
+        "WHY: the owned des executable must exist before applying migration to this root. "
+        "HOW: restore or reinstall the owned des sibling, then use the named root."
+    )
+
+
 def test_update_apply_treats_a_non_newer_release_as_a_noop(
     monkeypatch, tmp_path: Path
 ) -> None:
     """A known owner does not replace when discovery is not newer than current."""
     exit_code, stdout, stderr, observed_argv, _root, _interpreter = _drive_apply(
-        monkeypatch,
         tmp_path,
         process_results=[],
         release=_PyPIResponse({"releases": {"1.4.0": [{"yanked": False}]}}),
@@ -289,11 +618,11 @@ def test_update_apply_replaces_proves_synchronizes_then_migrates_through_public_
 ) -> None:
     """A newer owned release completes the public replacement-to-migration journey."""
     exit_code, stdout, stderr, observed_argv, root, interpreter = _drive_apply(
-        monkeypatch,
         tmp_path,
         process_results=[
             subprocess.CompletedProcess([], 0, stdout="", stderr=""),
             subprocess.CompletedProcess([], 0, stdout="nwave-ai 2.0.0\n", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
             subprocess.CompletedProcess([], 0, stdout="", stderr=""),
             subprocess.CompletedProcess([], 0, stdout="", stderr=""),
         ],
@@ -311,6 +640,7 @@ def test_update_apply_replaces_proves_synchronizes_then_migrates_through_public_
         for stage in (
             "replace-package",
             "verify-executable",
+            "preflight-framework",
             "synchronize-framework",
             "migrate-artifacts",
         )
@@ -327,8 +657,24 @@ def test_update_apply_replaces_proves_synchronizes_then_migrates_through_public_
     assert observed_argv == [
         ["uv", "tool", "install", "--reinstall", "nwave-ai==2.0.0"],
         [str(owned_console), "--version"],
-        [str(owned_console), "install", "--yes"],
-        ["des", "update", "--apply", "--root", str(root)],
+        [
+            str(owned_console),
+            "install",
+            "--dry-run",
+            "--yes",
+            "--no-project-guidance",
+            "--platform",
+            "codex",
+        ],
+        [
+            str(owned_console),
+            "install",
+            "--yes",
+            "--no-project-guidance",
+            "--platform",
+            "codex",
+        ],
+        [str(interpreter.with_name("des")), "update", "--apply", "--root", str(root)],
     ], (
         "WHAT: update stages did not use the owner-bound commands in their required order. "
         "WHY: PATH or stale-import execution can prove and synchronize a different install, "
@@ -371,12 +717,26 @@ def test_update_apply_stops_at_the_first_failed_named_stage(
             "2.0.1",
         ),
         (
+            "preflight-framework",
+            [
+                subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+                subprocess.CompletedProcess(
+                    [], 0, stdout="nwave-ai 2.0.0\n", stderr=""
+                ),
+                subprocess.CompletedProcess(
+                    [], 6, stdout="", stderr="preflight failed"
+                ),
+            ],
+            "exit 6",
+        ),
+        (
             "synchronize-framework",
             [
                 subprocess.CompletedProcess([], 0, stdout="", stderr=""),
                 subprocess.CompletedProcess(
                     [], 0, stdout="nwave-ai 2.0.0\n", stderr=""
                 ),
+                subprocess.CompletedProcess([], 0, stdout="", stderr=""),
                 subprocess.CompletedProcess([], 4, stdout="", stderr="sync failed"),
             ],
             "exit 4",
@@ -389,6 +749,7 @@ def test_update_apply_stops_at_the_first_failed_named_stage(
                     [], 0, stdout="nwave-ai 2.0.0\n", stderr=""
                 ),
                 subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+                subprocess.CompletedProcess([], 0, stdout="", stderr=""),
                 subprocess.CompletedProcess(
                     [], 5, stdout="", stderr="migration failed"
                 ),
@@ -397,24 +758,50 @@ def test_update_apply_stops_at_the_first_failed_named_stage(
         ),
     )
 
-    for stage, results, expected_cause in cases:
+    for index, (stage, results, expected_cause) in enumerate(cases):
+        case = tmp_path / str(index)
+        case.mkdir()
         exit_code, stdout, stderr, observed_argv, root, interpreter = _drive_apply(
-            monkeypatch, tmp_path, process_results=results
+            case, process_results=results
         )
         failure_text = stdout + stderr
         owned_console = interpreter.with_name("nwave-ai")
         replacement = ["uv", "tool", "install", "--reinstall", "nwave-ai==2.0.0"]
         proof = [str(owned_console), "--version"]
-        synchronization = [str(owned_console), "install", "--yes"]
-        migration = ["des", "update", "--apply", "--root", str(root)]
+        preflight = [
+            str(owned_console),
+            "install",
+            "--dry-run",
+            "--yes",
+            "--no-project-guidance",
+            "--platform",
+            "codex",
+        ]
+        synchronization = [
+            str(owned_console),
+            "install",
+            "--yes",
+            "--no-project-guidance",
+            "--platform",
+            "codex",
+        ]
+        migration = [
+            str(interpreter.with_name("des")),
+            "update",
+            "--apply",
+            "--root",
+            str(root),
+        ]
         expected_argv_prefix = (
             [replacement]
             if stage == "replace-package"
             else [replacement, proof]
             if stage == "verify-executable"
-            else [replacement, proof, synchronization]
+            else [replacement, proof, preflight]
+            if stage == "preflight-framework"
+            else [replacement, proof, preflight, synchronization]
             if stage == "synchronize-framework"
-            else [replacement, proof, synchronization, migration]
+            else [replacement, proof, preflight, synchronization, migration]
         )
         command = expected_argv_prefix[-1]
 
@@ -441,7 +828,7 @@ def test_update_apply_stops_at_the_first_failed_named_stage(
         )
         if stage != "migrate-artifacts":
             assert [
-                "des",
+                str(interpreter.with_name("des")),
                 "update",
                 "--apply",
                 "--root",
@@ -475,6 +862,7 @@ def test_update_apply_refuses_unknown_owner_and_non_newer_release_before_process
             return_value=ProductVersion.from_text("1.4.0"),
         ),
         patch("urllib.request.urlopen", return_value=_newer_release()),
+        patch("importlib.metadata.distribution", return_value=_IndexMetadata()),
         patch("subprocess.run", side_effect=run),
         patch("sys.argv", ["nwave-ai", "update", "--yes", "--root", str(root)]),
         patch("sys.stdout", new_callable=io.StringIO) as stdout,
@@ -488,6 +876,15 @@ def test_update_apply_refuses_unknown_owner_and_non_newer_release_before_process
         "WHAT: unknown installation ownership was not refused explicitly. "
         "WHY: choosing an installer from PATH could replace a package other than the running one. "
         "HOW: refuse before replacement unless the running interpreter has a detected owner."
+    )
+    refusal = stdout.getvalue() + stderr.getvalue()
+    assert (
+        "package-owner" in refusal and "HOW:" in refusal and "verify" in refusal.lower()
+    ), (
+        "WHAT: unknown ownership lacked a named failed stage or owner-verification recovery. "
+        "WHY: an operator cannot safely infer which package manager owns the running install. "
+        "HOW: report failed_stage=package-owner and direct explicit running-owner verification "
+        "before any replacement retry."
     )
     assert observed_argv == [], (
         "WHAT: unknown ownership launched an update process. "
@@ -517,6 +914,7 @@ def test_update_apply_refuses_invalid_discovery_before_package_replacement(
             return_value=ProductVersion.from_text("1.4.0"),
         ),
         patch("urllib.request.urlopen", return_value=_PyPIResponse({"releases": []})),
+        patch("importlib.metadata.distribution", return_value=_IndexMetadata()),
         patch("subprocess.run", side_effect=run),
         patch("sys.argv", ["nwave-ai", "update", "--yes", "--root", str(root)]),
         patch("sys.stdout", new_callable=io.StringIO) as stdout,

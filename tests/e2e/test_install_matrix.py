@@ -41,13 +41,13 @@ Layer 4 of platform-testing-strategy.md
     - new nw-*/SKILL.md skills present after upgrade
 
   Section 6 — Plugin build:
-    - plugin build script succeeds
+    - isolated fixture plugin build succeeds
     - skills in nw-* format in plugin output
     - no private agents leaked
     - hooks.json exists with >= 4 events
 
   Section 7 — Build distribution:
-    - build_dist.py succeeds
+    - build_dist.py succeeds inside a disposable fixture copy
     - dist/ skills in nw-* flat format
 
 Requires a Docker daemon.  Skips gracefully when Docker is unavailable.
@@ -114,8 +114,11 @@ def install_matrix_container():
         assert code == 0, f"System setup failed (exit {code}).\nOutput:\n{out}"
 
         # Section 1: install nwave-ai via pipx from PyPI
-        pipx_install = "pipx install nwave-ai 2>&1 || true"
-        exec_in_container(container, ["bash", "-c", pipx_install])
+        pipx_install = "pipx install nwave-ai 2>&1"
+        code, out = exec_in_container(container, ["bash", "-c", pipx_install])
+        assert code == 0, (
+            f"PyPI/pipx prerequisite failed (exit {code}).\nOutput:\n{out}"
+        )
 
         # Section 2: source install via venv
         source_install = (
@@ -125,7 +128,7 @@ def install_matrix_container():
             "rich typer pydantic 'pydantic-settings' httpx platformdirs pyyaml packaging && "
             f"{_VENV}/bin/pip install --quiet --no-deps {_CONTAINER_SRC} && "
             f"export {_INSTALL_ENV} && "
-            f"echo y | {_VENV_PYTHON} -m nwave_ai.cli install"
+            f"echo y | {_VENV_PYTHON} -m nwave_ai.cli install --platform claude-code"
         )
         code, out = exec_in_container(container, ["bash", "-c", source_install])
         assert code == 0, f"Source install failed (exit {code}).\nOutput:\n{out}"
@@ -168,11 +171,10 @@ class TestInstallMatrix:
             [
                 "bash",
                 "-c",
-                "~/.local/bin/nwave-ai --version 2>/dev/null || echo 'no-version-flag'",
+                "~/.local/bin/nwave-ai --help",
             ],
         )
-        accessible = code == 0 or "no-version-flag" in out
-        assert accessible, (
+        assert code == 0 and "install" in out, (
             "nwave-ai CLI not accessible via pipx install.\n"
             f"Exit: {code}, Output: {out[:200]}"
         )
@@ -201,26 +203,26 @@ class TestInstallMatrix:
                 "bash",
                 "-c",
                 f"export {_INSTALL_ENV} && "
-                f"echo y | {_VENV_PYTHON} -m nwave_ai.cli install 2>&1",
+                f"echo y | {_VENV_PYTHON} -m nwave_ai.cli install --platform claude-code 2>&1",
             ],
         )
-        assert "installed and healthy" in out or code == 0, (
+        assert code == 0, (
             f"Source install did not report success.\n"
             f"Exit: {code}, Output (last 300 chars):\n{out[-300:]}"
         )
 
     def test_s2_no_validation_errors(self, install_matrix_container) -> None:
         """Section 2: Source install must not produce 'Validation failed' errors."""
-        _code, out = exec_in_container(
+        code, out = exec_in_container(
             install_matrix_container,
             [
                 "bash",
                 "-c",
                 f"export {_INSTALL_ENV} && "
-                f"echo y | {_VENV_PYTHON} -m nwave_ai.cli install 2>&1",
+                f"echo y | {_VENV_PYTHON} -m nwave_ai.cli install --platform claude-code 2>&1",
             ],
         )
-        assert "Validation failed" not in out, (
+        assert code == 0 and "Validation failed" not in out, (
             f"Source install produced validation errors.\nOutput:\n{out[-400:]}"
         )
 
@@ -561,10 +563,10 @@ class TestInstallMatrix:
                 "bash",
                 "-c",
                 f"export {_INSTALL_ENV} && "
-                f"echo y | {_VENV_PYTHON} -m nwave_ai.cli install 2>&1",
+                f"echo y | {_VENV_PYTHON} -m nwave_ai.cli install --platform claude-code 2>&1",
             ],
         )
-        assert "installed and healthy" in out or code == 0, (
+        assert code == 0, (
             f"Installer failed over old nw/ layout.\n"
             f"Exit: {code}, Output (last 300 chars):\n{out[-300:]}"
         )
@@ -610,29 +612,19 @@ class TestInstallMatrix:
     # Section 6 ---------------------------------------------------------------
 
     def test_s6_plugin_build_succeeds(self, install_matrix_container) -> None:
-        """Section 6: scripts/build_plugin.py must produce a plugin package."""
+        """Section 6: Build an isolated plugin fixture from the read-only checkout."""
         code, out = exec_in_container(
             install_matrix_container,
             [
                 "bash",
                 "-c",
                 f"export {_INSTALL_ENV} && "
+                f"PYTHONPATH={_CONTAINER_SRC}:{_CONTAINER_SRC}/src "
                 f"python {_CONTAINER_SRC}/scripts/build_plugin.py "
-                "--output-dir /tmp/plugin-test 2>&1 || true",
+                "--output-dir /tmp/plugin-test 2>&1",
             ],
         )
-        succeeded = "built successfully" in out or code == 0
-        if (
-            not succeeded
-            and "No such file or directory" in out
-            and "build_plugin.py" in out
-        ):
-            pytest.skip(
-                "scripts/build_plugin.py not found — plugin build script may not exist yet."
-            )
-        assert succeeded, (
-            f"Plugin build failed.\nExit: {code}, Output (last 300 chars):\n{out[-300:]}"
-        )
+        assert code == 0, f"Plugin fixture build failed (exit {code}).\nOutput:\n{out}"
 
     def test_s6_plugin_skills_in_nw_star_format(self, install_matrix_container) -> None:
         """Section 6: Plugin output skills must use nw-* directory format."""
@@ -649,10 +641,6 @@ class TestInstallMatrix:
             count = int(out.strip())
         except ValueError:
             count = 0
-        if count == 0:
-            pytest.skip(
-                "Plugin output directory not present — build_plugin.py may not exist yet."
-            )
         assert count > 50, (
             f"Only {count} nw-* skill dirs in plugin output (expected > 50)."
         )
@@ -690,10 +678,6 @@ class TestInstallMatrix:
                 "str(len(json.loads(p.read_text()).get('hooks', []))))",
             ],
         )
-        if "MISSING" in out:
-            pytest.skip(
-                "Plugin hooks.json not present — build_plugin.py may not exist yet."
-            )
         try:
             count = int(out.strip())
         except ValueError:

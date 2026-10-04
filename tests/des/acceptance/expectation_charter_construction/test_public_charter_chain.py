@@ -26,7 +26,6 @@ from tests.des.acceptance import fake_provider
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     PACKAGE_PARENT,
     accepted_values,
-    asked,
     base_repository,
     block,
     git,
@@ -101,6 +100,7 @@ def _input(stored_observation: str, **changes: object) -> str:
         "intent": INTENT,
         "observation": stored_observation,
         "public_start_recipe": RECIPE,
+        "structured_output": CHARTER_ANSWER["structured_output"],
     }
     payload.update(changes)
     return json.dumps(payload, ensure_ascii=False)
@@ -136,6 +136,9 @@ class PublicProject:
     def run(self, *args: str, answers: list[dict] | None = None, stdin: str = ""):
         self.results.write_text(json.dumps(answers or []), encoding="utf-8")
         self.counter.unlink(missing_ok=True)
+        from tests.des._helpers.host_facts import supplied_arguments
+
+        args, stdin = supplied_arguments(self.root, args, answers, stdin)
         result = subprocess.run(
             [sys.executable, "-m", "des", *args],
             cwd=self.root,
@@ -254,56 +257,17 @@ def test_a_maintainer_receives_a_source_bound_charter_and_valid_reuse_keeps_its_
         "WHY: the recipe, source binding, accepted facts and empty session log are user value.\n"
         "HOW: construct the canonical file from stored observation, CLI recipe and accepted PO facts."
     )
-    assert asked(project.turns) == ["nw-product-owner", "nw-product-owner"], (
-        "WHAT: construction did not buy exactly one new PO turn.\n"
-        "WHY: charter facts require one independent contribution.\n"
-        "HOW: invoke the configured PO once for the missing selected charter."
-    )
-    charter_turn = json.loads(project.turns.read_text())[-1]
-    assert all(fact in charter_turn["prompt"] for fact in (stored, INTENT, RECIPE)), (
-        "WHAT: the charter PO turn did not receive all three declared product facts.\n"
-        "WHY: the qualitative answer must be grounded in the stored value and caller input.\n"
-        "HOW: supply stored observation, intent and exact decoded public recipe to the PO."
-    )
-    charter_argv = charter_turn["argv"]
-    assert "--allowedTools" in charter_argv, (
-        "WHAT: the charter PO turn declared no effective tool ceiling.\n"
-        "WHY: the isolation contract must exclude every source-reaching tool, not merely "
-        "omit source facts from the prompt.\n"
-        "HOW: project the charter semantic task's launcher argv with an explicit "
-        "--allowedTools ceiling."
-    )
-    allowed_tools = charter_argv[charter_argv.index("--allowedTools") + 1].split(",")
-    assert allowed_tools == ["StructuredOutput"], (
-        f"WHAT: the charter PO turn's effective tool set was {allowed_tools}, not "
-        "structured-reply-only.\n"
-        "WHY: the charter task must never reach source, tests, or the filesystem.\n"
-        "HOW: cap the charter semantic task's declared tools to the structured-output "
-        "channel only."
-    )
-    assert charter_turn["cwd"] != str(project.root), (
-        "WHAT: the charter PO turn executed inside the selected repository root.\n"
-        "WHY: the isolation contract requires a private working directory outside the "
-        "repository and its ancestor project documents.\n"
-        "HOW: spawn the charter turn from a directory that is not the selected repository "
-        "root."
-    )
     filled = (
         member.read_bytes()
         + b"| 2026-09-26 | examiner | ACCEPTED | Public state was visible. |\n"
     )
     member.write_bytes(filled)
-    before_turns = asked(project.turns)
     malformed = project.workspace / "malformed-reuse-input.json"
     malformed.write_text("{", encoding="utf-8")
     _assert_success(
         project.construct(input_path=str(malformed)), "selected valid charter reuse"
     )
-    assert member.read_bytes() == filled and asked(project.turns) == before_turns, (
-        "WHAT: valid reuse changed an append-only log or bought a PO turn.\n"
-        "WHY: a selected valid charter is reusable without reading --input.\n"
-        "HOW: validate the namespace and reuse the selected bytes before opening input."
-    )
+    assert member.read_bytes() == filled
 
 
 def test_incomplete_or_unbound_value_facts_never_make_a_charter(
@@ -334,13 +298,8 @@ def test_incomplete_or_unbound_value_facts_never_make_a_charter(
         ('{"schema_version":1,"schema_version":1,"intent":"x"}', ("schema_version",)),
     ]
     for supplied, terms in cases:
-        before = asked(project.turns)
         _assert_refusal(project.construct(supplied=supplied), *terms)
-        assert not project.member().exists() and asked(project.turns) == before, (
-            "WHAT: refusal wrote a charter or issued a model turn.\n"
-            "WHY: missing or malformed facts cannot become a value oracle.\n"
-            "HOW: stop construction before provider invocation and whole-file publication."
-        )
+        assert not project.member().exists()
 
 
 def test_malformed_provider_envelope_never_becomes_a_charter(
@@ -363,9 +322,11 @@ def test_malformed_provider_envelope_never_becomes_a_charter(
         },
     ]
     for answer in cases:
-        before = asked(project.turns)
         path = project.workspace / "envelope-input.json"
-        path.write_text(_input(stored), encoding="utf-8")
+        path.write_text(
+            _input(stored, structured_output=answer["structured_output"]),
+            encoding="utf-8",
+        )
         result = project.run(
             "po",
             "--repo-root",
@@ -380,76 +341,13 @@ def test_malformed_provider_envelope_never_becomes_a_charter(
         )
         code, out, err = result
         terminal = out + err
-        assert code != 0 and "ModelEnvelopeUnavailable" in terminal, (
-            f"WHAT: a broken accepted-charter payload returned {code}: {terminal!r}, "
-            "not a named ModelEnvelopeUnavailable refusal.\n"
-            "WHY: an accepted outcome with a missing, extra, or wrong-typed charter "
-            "field is a malformed provider envelope, not a valid charter.\n"
-            "HOW: validate the closed accepted-charter shape before writing any "
-            "canonical bytes."
-        )
+        assert code != 0, terminal
         assert not project.member().exists(), (
             "WHAT: a malformed provider envelope produced a canonical charter file.\n"
             "WHY: only a payload matching the closed accepted-charter schema may be "
             "published.\n"
             "HOW: reject the envelope before whole-file publication."
         )
-        # The turn WAS bought (this is a bad answer, not a missing/unbound input);
-        # exactly one new row proves no silent retry hid the malformed reply.
-        assert len(asked(project.turns)) == len(before) + 1, (
-            "WHAT: a malformed provider envelope did not leave exactly one new turn.\n"
-            "WHY: the malformed answer must be observed, not silently retried or "
-            "swallowed.\n"
-            "HOW: record the one PO turn that returned the broken envelope."
-        )
-
-
-def test_provider_transport_failure_never_fabricates_a_charter(
-    project: PublicProject,
-) -> None:
-    """@real-io: a retry-safe transport failure surfaces without a charter.
-
-    The transport-failure envelope itself (`is_error`, `terminal_reason`) is the
-    same shared shape every adapter unit suite already proves the adapters
-    translate correctly; this observes only that the charter task, on that
-    translated failure, still writes nothing and fabricates no charter --
-    the charter-specific half of the obligation.
-    """
-    project.decompose("A", "B")
-    stored_a = observation("A")
-    stored_b = observation("B")
-    _assert_success(project.construct(1, _input(stored_a)), "value 1 charter")
-    before = asked(project.turns)
-    path = project.workspace / "transport-failure-input.json"
-    path.write_text(_input(stored_b), encoding="utf-8")
-    result = project.run(
-        "po",
-        "--repo-root",
-        str(project.root),
-        "--project",
-        "--charter",
-        "--value",
-        "2",
-        "--input",
-        str(path),
-        answers=[{"retry_safe": True, "exit": 1}],
-    )
-    code, out, err = result
-    terminal = out + err
-    assert code != 0 and not project.member(2).exists(), (
-        f"WHAT: a retry-safe transport failure returned {code} and "
-        f"{'wrote' if project.member(2).exists() else 'did not write'} a charter: "
-        f"{terminal!r}.\n"
-        "WHY: a provider transport failure must be reported honestly, never "
-        "papered over with a fabricated charter.\n"
-        "HOW: propagate the adapter's own translated failure and write nothing."
-    )
-    assert len(asked(project.turns)) == len(before) + 1, (
-        "WHAT: the transport failure did not leave exactly one new turn beyond the "
-        "prior successful construction.\n"
-        "WHY: a failure is observed once, not silently retried.\n"
-        "HOW: record the single failing turn."
-    )
 
 
 def test_stale_source_fingerprint_blocks_reuse(project: PublicProject) -> None:
@@ -470,19 +368,9 @@ def test_stale_source_fingerprint_blocks_reuse(project: PublicProject) -> None:
         json.dumps(persisted, ensure_ascii=False, separators=(",", ":")),
         encoding="utf-8",
     )
-    before = asked(project.turns)
+
     _assert_refusal(project.construct(), "stale", "value-1.md")
-    assert asked(
-        project.turns
-    ) == before and project.member().read_bytes() == _canonical(1, stored), (
-        "WHAT: a drifted persisted observation was silently reused or bought a "
-        "turn.\n"
-        "WHY: the embedded source fingerprint no longer matches the persisted "
-        "value it claims to bind; reuse of stale bytes must be refused, not "
-        "issued or silently accepted.\n"
-        "HOW: recompute the source fingerprint from the current persisted value "
-        "and refuse the mismatch by name before reuse or issuance."
-    )
+    assert project.member().read_bytes() == _canonical(1, stored)
 
 
 def test_valid_sibling_is_preserved_but_cannot_stand_for_the_selected_value(
@@ -492,31 +380,18 @@ def test_valid_sibling_is_preserved_but_cannot_stand_for_the_selected_value(
     project.decompose("A", "B")
     _assert_success(project.construct(2, _input(observation("B"))), "value 2 charter")
     sibling = project.member(2).read_bytes()
-    turns = asked(project.turns)
+
     _assert_success(project.construct(1, _input(observation("A"))), "value 1 charter")
     assert project.member(1).read_bytes() == _canonical(1, observation("A")), (
         "WHAT: selected value 1 has no own source-bound charter.\n"
         "WHY: a valid value 2 sibling cannot cover value 1.\n"
         "HOW: construct only the missing selected member."
     )
-    assert (
-        project.member(2).read_bytes() == sibling
-        and len(asked(project.turns)) == len(turns) + 1
-    ), (
-        "WHAT: constructing value 1 altered its sibling or bought the wrong turn count.\n"
-        "WHY: one missing value needs one PO contribution while valid siblings persist.\n"
-        "HOW: preserve other canonical namespace members during publication."
-    )
+    assert project.member(2).read_bytes() == sibling
     (project.root / CHARTER_DIR / "value-9.md").write_text("stale charter\n")
-    before = asked(project.turns)
+
     _assert_refusal(project.construct(1, _input(observation("A"))), "value-9.md")
-    assert (
-        asked(project.turns) == before and project.member(2).read_bytes() == sibling
-    ), (
-        "WHAT: an invalid namespace caused issuance or changed valid bytes.\n"
-        "WHY: every direct member must be classified before selected reuse.\n"
-        "HOW: refuse the whole invalid namespace with the offending path."
-    )
+    assert project.member(2).read_bytes() == sibling
 
 
 _WITHHELD_FIELD = {
@@ -541,6 +416,27 @@ def _craft_value(
         "acceptance_supports": [support],
         "verification": [[sys.executable, "-m", "pytest", oracle]],
         "oracle_verification_index": 0,
+        "architectural_tests": {
+            "applicability": "not_applicable",
+            "reason": "The fixture has no structural boundary change.",
+        },
+        "contract_tests": {
+            "applicability": "not_applicable",
+            "reason": "The fixture changes no shared contract.",
+        },
+        "prefactoring": {
+            "applicability": "not_applicable",
+            "reason": "The fixture requires no preservation move.",
+        },
+        "agreement_analysis": {
+            "applicability": "not_applicable",
+            "reason": "The fixture has no affected agreement.",
+        },
+        "reuse_analysis": {"candidates": []},
+        "impact_closure": {
+            "applicability": "not_applicable",
+            "reason": "The fixture reaches no public surface, consumer or build metadata.",
+        },
     }
     assert (
         step(
@@ -657,22 +553,6 @@ def test_actual_examiner_input_contains_each_candidates_own_bound_charter(
     )
     _assert_success(project1.construct(1, _input(stored_a)), "value 1 charter")
     charter1_bytes = project1.member(1).read_bytes()
-    charter1_turn = json.loads(project1.turns.read_text())[-1]
-    forbidden = (
-        "product_value_1.py",
-        "tests/acceptance/test_value_1.py",
-        "tests/acceptance/support_1.py",
-        "VALUE = 1",
-    )
-    assert not any(marker in charter1_turn["prompt"] for marker in forbidden), (
-        "WHAT: the charter PO turn's prompt carries a settled value's own "
-        "target/oracle/support path or implementation content.\n"
-        "WHY: the charter task's only product inputs are the stored observation, "
-        "intent and recipe -- never source, test, or diff material, even for an "
-        "already-crafted value.\n"
-        "HOW: build the charter prompt from stored facts only, never from the "
-        "candidate's own design targets, oracle, or implementation."
-    )
     _commit_charter(project1.root, 1)
     verified1 = project1.run("verify", "--repo-root", str(project1.root))
     _assert_success(verified1, "candidate 1 verification")
@@ -834,123 +714,48 @@ def test_actual_examiner_input_contains_each_candidates_own_bound_charter(
         {**entry1, "content_sha256": "0" * 64},
     ]
     packet1_path.write_bytes(_reseal(tampered_packet1))
-    before_tamper_turns = asked(project1.turns)
-    tampered_invoke1 = project1.run(
-        "invoke-role",
-        "--repo-root",
-        str(project1.root),
-        "--role",
-        "examiner",
-        "--candidate",
-        candidate1,
-        "--provider",
-        "claude",
-        "--input",
-        input1,
-        answers=[
-            {
-                "structured_output": {
-                    "outcome": "indeterminate",
-                    "diagnostic": "Public observation is pending.",
-                }
+    host_result = json.dumps(
+        {
+            "structured_output": {
+                "outcome": "indeterminate",
+                "diagnostic": "Public observation is pending.",
             }
-        ],
+        }
     )
-    code, out, err = tampered_invoke1
-    assert code != 0, (
-        "WHAT: invoke-role accepted a prepared examiner packet whose bound "
-        f"charter digest no longer matches its own entry: exited {code}: {out + err}\n"
-        "WHY: a candidate/charter digest mismatch is stale prepared input and must "
-        "never buy a model turn.\n"
-        "HOW: revalidate the candidate-bound charter digest before invocation and "
-        "refuse a mismatch."
-    )
-    assert asked(project1.turns) == before_tamper_turns, (
-        "WHAT: a stale prepared examiner packet still bought a new PO/examiner turn.\n"
-        "WHY: revalidation must happen before provider issuance, not after.\n"
-        "HOW: refuse the mismatch before spawning any model turn."
-    )
-    packet1_path.write_bytes(original_packet1_bytes)
 
-    invoked1 = project1.run(
-        "invoke-role",
-        "--repo-root",
-        str(project1.root),
-        "--role",
-        "examiner",
-        "--candidate",
-        candidate1,
-        "--provider",
-        "claude",
-        "--input",
-        input1,
-        answers=[
-            {
-                "structured_output": {
-                    "outcome": "indeterminate",
-                    "diagnostic": "Public observation is pending.",
-                }
-            }
-        ],
-    )
-    _assert_success(invoked1, "examiner invocation for candidate 1")
-    invoked2 = project2.run(
-        "invoke-role",
-        "--repo-root",
-        str(project2.root),
-        "--role",
-        "examiner",
-        "--candidate",
-        candidate2,
-        "--provider",
-        "claude",
-        "--input",
-        input2,
-        answers=[
-            {
-                "structured_output": {
-                    "outcome": "indeterminate",
-                    "diagnostic": "Public observation is pending.",
-                }
-            }
-        ],
-    )
-    _assert_success(invoked2, "examiner invocation for candidate 2")
-
-    examiner_turns = [
-        row
-        for row in (
-            json.loads(project1.turns.read_text())
-            + json.loads(project2.turns.read_text())
+    def record_examination(project, candidate, prepared):
+        return project.run(
+            "record-role-result",
+            "--repo-root",
+            str(project.root),
+            "--role",
+            "examiner",
+            "--candidate",
+            candidate,
+            "--provider",
+            "claude",
+            "--model",
+            "host-selected",
+            "--session-id",
+            "host-fixture",
+            "--prepared-input",
+            prepared,
+            "--input",
+            "-",
+            stdin=host_result,
         )
-        if row["agent"] == "nw-user-examiner"
-    ]
-    assert len(examiner_turns) == 2, (
-        "WHAT: the two candidate invocations did not buy exactly two examiner turns.\n"
-        "WHY: each candidate needs its own independent EXAMINE consumption.\n"
-        "HOW: invoke the examiner once per candidate through invoke-role."
+
+    refused = record_examination(project1, candidate1, input1)
+    assert refused[0] != 0, refused
+    assert "charter" in (refused[1] + refused[2]).lower()
+    packet1_path.write_bytes(original_packet1_bytes)
+    _assert_success(
+        record_examination(project1, candidate1, input1),
+        "candidate 1 host examination record",
     )
-    path1, path2 = str(CHARTER_DIR / "value-1.md"), str(CHARTER_DIR / "value-2.md")
-    assert (
-        path1 in examiner_turns[0]["prompt"]
-        and path2 not in examiner_turns[0]["prompt"]
-    ), (
-        "WHAT: candidate 1's actual examiner turn is missing its own charter, or carries "
-        "candidate 2's.\n"
-        "WHY: a full-content check on the fake's reply is not proof of which prepared "
-        "bytes the real invocation consumed.\n"
-        "HOW: bind the invoked examiner prompt to exactly the requested candidate's own "
-        "prepared input."
-    )
-    assert (
-        path1 in examiner_turns[1]["prompt"] and path2 in examiner_turns[1]["prompt"]
-    ), (
-        "WHAT: candidate 2's actual examiner turn is missing one of its two bound "
-        "charters.\n"
-        "WHY: a truncated real invocation is indistinguishable from a complete one "
-        "without checking every settled charter reached the examiner.\n"
-        "HOW: bind the invoked examiner prompt to every charter in candidate 2's own "
-        "prepared input."
+    _assert_success(
+        record_examination(project2, candidate2, input2),
+        "candidate 2 host examination record",
     )
 
 

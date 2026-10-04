@@ -1,31 +1,20 @@
-"""Application orchestration for ``des update`` (ADR-AUM-001, G2 slice 1).
+"""Discover, classify, and plan supported ``des update`` migrations.
 
-Discovery + classification only (``--dry-run``, obligation 6): for every
-artifact found under ``<root>/.nwave``, classify it without ever writing.
-Layer 1 (``ArtifactVersioningKernel.upcast_to_current``, reused unmodified
-per Decision 1) runs only for a REGISTERED integer-versioned type
-(``global-config`` in this slice); Layer 2
-(``workflow_format_migration.WorkflowMigrationMap``) is consulted only to
-check whether a declared shape ``tag`` is a registered legacy tag -- this
-slice never calls ``apply_workflow_migration`` itself, since dry-run never
-transforms anything. Completed artifacts are never touched (Decision 6): the
-artifact's own declared terminal-phase field short-circuits classification
-before either layer is consulted, so an unmappable tag on a Completed
-artifact can never raise.
-
-Artifact content is read through the injected ``FileSystemPort`` (Decision
-5, no new port) -- ``write_json`` is never called anywhere in this module,
-which is the structural proof of the zero-writes law obligation 6 requires.
-Directory discovery walks the filesystem directly: no port method exposes
-listing, and Decision 5 forbids adding one for it.
+Dry-run classifies without writing. Apply validates the complete discovered
+batch before persistence and preserves completed workflow history.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from des.domain.artifact_versioning import ArtifactVersioningKernel, read_version
+from des.domain.artifact_versioning import (
+    ArtifactFromFutureRuntime,
+    ArtifactVersioningKernel,
+    read_version,
+)
 from des.domain.workflow_format_migration import (
     WorkflowShapeUnmappable,
     apply_workflow_migration,
@@ -62,16 +51,16 @@ _GLOBAL_CONFIG_KERNEL = ArtifactVersioningKernel(
 
 
 def _is_kernel_int(raw: Any) -> bool:
-    """A well-typed, non-bool int -- the only shape the kernel reads as a version."""
-    return isinstance(raw, int) and not isinstance(raw, bool)
+    """A non-negative, non-bool int suitable for the kernel's chain index."""
+    return isinstance(raw, int) and not isinstance(raw, bool) and raw >= 0
 
 
-def _is_global_config(path: Path) -> bool:
-    return path.name == "config.json" and path.parent.name == ".nwave"
+def _is_global_config(root: Path, path: Path) -> bool:
+    return path == root / ".nwave" / "config.json"
 
 
-def _is_expectation_charter(path: Path) -> bool:
-    return path.parent.name == "expectation-charters"
+def _is_expectation_charter(root: Path, path: Path) -> bool:
+    return path.parent == root / ".nwave" / "expectation-charters"
 
 
 @dataclass(frozen=True)
@@ -106,7 +95,7 @@ class ApplyPlan:
 
 
 class AutoUpdateMigrationService:
-    """Discovers persisted artifacts under a root and classifies them (dry-run only)."""
+    """Owns discovery, validation, and persistence for registered families."""
 
     def __init__(
         self,
@@ -120,11 +109,11 @@ class AutoUpdateMigrationService:
     def dry_run(self, root: Path) -> DryRunPlan:
         """Discover + classify every artifact under ``root/.nwave``. Never writes.
 
-        Propagates ``ArtifactFromFutureRuntime`` unchanged when a registered
-        type's declared version exceeds this runtime's known current version
-        (Decision 4c) -- never swallowed into a generic Indeterminate row.
+        A registered type from a future runtime refuses with its path.
         """
-        classifications = tuple(self._classify(path) for path in self._discover(root))
+        classifications = tuple(
+            self._classify(root, path) for path in self._discover(root)
+        )
         return DryRunPlan(classifications=classifications)
 
     def apply(self, root: Path) -> tuple[Path, ...]:
@@ -141,8 +130,8 @@ class AutoUpdateMigrationService:
             self._refuse(root, "the update root has no readable .nwave directory")
         replacements: list[tuple[Path, dict[str, Any]]] = []
         for path in self._discover(root):
-            doc = self._filesystem.read_json(path)
-            if _is_expectation_charter(path):
+            doc = self._read_document(path)
+            if _is_expectation_charter(root, path):
                 if doc.get("phase") == "COMPLETED":
                     continue
                 self._validate_workflow_version(path, doc)
@@ -161,20 +150,20 @@ class AutoUpdateMigrationService:
                             migrated, current_tag, transition
                         )
                         current_tag = transition.to_tag
-                except WorkflowTransitionCatalogError:
-                    raise
+                except WorkflowTransitionCatalogError as exc:
+                    raise WorkflowTransitionCatalogError(
+                        f"artifact {path}: {exc}"
+                    ) from exc
                 except WorkflowShapeUnmappable as exc:
                     raise exc.with_details(f"path {path}") from exc
                 if migrated != doc:
                     replacements.append((path, migrated))
                 continue
-            if _is_global_config(path):
+            if _is_global_config(root, path):
                 raw_version = doc.get("schema-version", _MISSING)
                 if raw_version is not _MISSING and not _is_kernel_int(raw_version):
-                    self._refuse(path, "schema-version is not a well-typed integer")
-                migrated = _GLOBAL_CONFIG_KERNEL.upcast_to_current(
-                    doc, _GLOBAL_CONFIG_ARTIFACT_TYPE
-                )
+                    self._refuse(path, "schema-version is not a non-negative integer")
+                migrated = self._upcast_global_config(path, doc)
                 if migrated != doc:
                     replacements.append((path, migrated))
                 continue
@@ -190,8 +179,29 @@ class AutoUpdateMigrationService:
             )
         if not _is_kernel_int(raw_version):
             AutoUpdateMigrationService._refuse(
-                path, "schema-version is not a well-typed integer"
+                path, "schema-version is not a non-negative integer"
             )
+
+    def _read_document(self, path: Path) -> dict[str, Any]:
+        try:
+            doc = self._filesystem.read_json(path)
+        except (json.JSONDecodeError, UnicodeError, OSError) as exc:
+            self._refuse(path, f"JSON input cannot be read or parsed: {exc}")
+        if not isinstance(doc, dict):
+            self._refuse(
+                path,
+                f"JSON input must be an object; found {type(doc).__name__}",
+            )
+        return doc
+
+    @staticmethod
+    def _upcast_global_config(path: Path, doc: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return _GLOBAL_CONFIG_KERNEL.upcast_to_current(
+                doc, _GLOBAL_CONFIG_ARTIFACT_TYPE
+            )
+        except ArtifactFromFutureRuntime as exc:
+            raise ValueError(f"artifact {path}: {exc}") from exc
 
     @staticmethod
     def _refuse(path: Path, reason: str) -> None:
@@ -203,17 +213,17 @@ class AutoUpdateMigrationService:
             return []
         return sorted(path for path in nwave_dir.rglob("*.json") if path.is_file())
 
-    def _classify(self, path: Path) -> ArtifactClassification:
-        doc = self._filesystem.read_json(path)
+    def _classify(self, root: Path, path: Path) -> ArtifactClassification:
+        doc = self._read_document(path)
         raw_version = doc.get("schema-version", _MISSING)
         kernel_readable = raw_version is _MISSING or _is_kernel_int(raw_version)
         declared_display = "<absent>" if raw_version is _MISSING else repr(raw_version)
 
-        if _is_global_config(path):
+        if _is_global_config(root, path):
             return self._classify_global_config(
                 path, doc, kernel_readable, declared_display
             )
-        if _is_expectation_charter(path):
+        if _is_expectation_charter(root, path):
             return self._classify_expectation_charter(
                 path, doc, kernel_readable, declared_display
             )
@@ -236,6 +246,15 @@ class AutoUpdateMigrationService:
         kernel_readable: bool,
         declared_display: str,
     ) -> ArtifactClassification:
+        raw_version = doc.get("schema-version", _MISSING)
+        if (
+            isinstance(raw_version, int)
+            and not isinstance(raw_version, bool)
+            and raw_version < 0
+        ):
+            self._refuse(
+                path, "schema-version is negative; a non-negative integer is required"
+            )
         if not kernel_readable:
             return ArtifactClassification(
                 path=path,
@@ -248,8 +267,8 @@ class AutoUpdateMigrationService:
                     "integer; never silently coerced or defaulted"
                 ),
             )
-        # Propagates ArtifactFromFutureRuntime to the CLI boundary unchanged.
-        _GLOBAL_CONFIG_KERNEL.upcast_to_current(doc, _GLOBAL_CONFIG_ARTIFACT_TYPE)
+        # Keep a future-version refusal attached to the artifact path.
+        self._upcast_global_config(path, doc)
         current = _GLOBAL_CONFIG_KERNEL.current_version(_GLOBAL_CONFIG_ARTIFACT_TYPE)
         declared = read_version(doc)
         needs_upcast = declared < current
@@ -289,14 +308,16 @@ class AutoUpdateMigrationService:
                 ),
             )
         tag = doc.get("tag")
+        route_error: str | None = None
         try:
             route = (
                 self._workflow_transition_catalog.route_from(tag)
                 if self._workflow_transition_catalog is not None
                 else None
             )
-        except WorkflowTransitionCatalogError:
+        except WorkflowTransitionCatalogError as exc:
             route = None
+            route_error = str(exc)
         if route:
             planned_action = "Upcast"
             reason = (
@@ -308,7 +329,7 @@ class AutoUpdateMigrationService:
             reason = "in flight; shape tag already equals the catalog terminal"
         else:
             planned_action = "Indeterminate"
-            reason = (
+            reason = route_error or (
                 "in flight; no registered migration path for this "
                 "artifact's declared shape -- never guessed"
             )

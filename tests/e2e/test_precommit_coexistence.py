@@ -9,7 +9,7 @@ Contract: nWave install must NOT:
   - install duplicate pre-commit hook files
 
 And MUST:
-  - install its skills under ~/.claude/skills/nw-*/
+  - install usable skills under ~/.claude/skills/nw-*/ for detected Claude Code
 
 This test would have caught the attribution hook incident (2026-03): nWave
 was setting global core.hooksPath, which shadowed any local .git/hooks/
@@ -22,15 +22,17 @@ Step-Id: 01-02
 
 from __future__ import annotations
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
+import json
 from pathlib import Path
 
 import pytest
 
 from tests.e2e.conftest import exec_in_container, managed_container, require_docker
 
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
 
 _REPO_ROOT = Path(__file__).parent.parent.parent
 _IMAGE = "python:3.12-slim"
@@ -48,7 +50,7 @@ def precommit_coexistence_container():
 
     Mirrors the Dockerfile.env-with-precommit build sequence:
     1. Install pre-commit 3.6.0 (the real tool)
-    2. git init a project and run pre-commit install (sets core.hooksPath locally)
+    2. git init a project and run pre-commit install (writes .git/hooks/pre-commit)
     3. Install nwave-ai from local source and run nwave-ai install
 
     Scoped to module so all assertion tests share one container.
@@ -80,9 +82,10 @@ def precommit_coexistence_container():
         code, out = exec_in_container(container, ["bash", "-c", setup_script])
         assert code == 0, f"System setup failed (exit {code}).\nOutput:\n{out}"
 
-        # Create a git repo with pre-commit installed (sets local core.hooksPath)
+        # Declare Claude Code and a project with a real local pre-commit hook.
         project_setup = (
             "set -e && "
+            "mkdir -p /root/.claude && "
             "git init /root/project && "
             "cd /root/project && "
             "git config user.email 'dev@test.com' && "
@@ -105,15 +108,15 @@ def precommit_coexistence_container():
             "python -m venv /opt/nwave-venv && "
             "source /opt/nwave-venv/bin/activate && "
             "pip install --quiet "
-            "rich typer pydantic 'pydantic-settings' httpx platformdirs pyyaml packaging && "
+            "rich typer pydantic 'pydantic-settings' httpx platformdirs "
+            "pyyaml packaging jsonschema && "
             f"pip install --quiet --no-deps {_CONTAINER_SRC} && "
             f"export PYTHONPATH={_CONTAINER_SRC} && "
             "cd /root/project && "
             "echo y | python -m nwave_ai.cli install"
         )
         code, out = exec_in_container(container, ["bash", "-c", install_script])
-        # Install may exit non-zero in some environments; we verify outcomes individually
-        # below rather than asserting zero here (mirrors Dockerfile `|| true` pattern).
+        assert code == 0, f"nWave install failed (exit {code}).\nOutput:\n{out}"
 
         yield container
 
@@ -200,16 +203,24 @@ class TestPreCommitCoexistence:
         )
 
     def test_nwave_skills_installed(self, precommit_coexistence_container) -> None:
-        """nWave skills must be installed under ~/.claude/skills/nw-*/.
-
-        Verifies the positive outcome: despite coexisting with pre-commit,
-        nWave still deploys its framework files correctly.
-        """
-        code, _ = exec_in_container(
-            precommit_coexistence_container,
-            ["bash", "-c", "ls /root/.claude/skills/nw-* >/dev/null 2>&1"],
+        """Coexistence preserves deployment of usable Claude Code skills."""
+        check_script = (
+            "import json; from pathlib import Path; "
+            "root = Path('/root/.claude/skills'); "
+            "print(json.dumps({"
+            "skill.name: bool((skill / 'SKILL.md').read_text().strip()) "
+            "for skill in root.glob('nw-*') if skill.is_dir()"
+            "}))"
         )
-        assert code == 0, (
-            "nWave skills not found under ~/.claude/skills/nw-*/ after install.\n"
-            "Skills must be installed even when pre-commit is present."
+        code, out = exec_in_container(
+            precommit_coexistence_container,
+            ["python3", "-c", check_script],
+        )
+        assert code == 0, f"Cannot read deployed Claude Code skills:\n{out}"
+        skills = json.loads(out)
+        assert len(skills) > 50, (
+            f"Only {len(skills)} skills installed with pre-commit present (expected > 50)."
+        )
+        assert all(skills.values()), (
+            "Every deployed skill must provide a non-empty SKILL.md with pre-commit present."
         )

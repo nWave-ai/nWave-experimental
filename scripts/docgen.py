@@ -877,44 +877,71 @@ def _skill_is_invocable(skill: str, root: Path) -> bool:
     return str(flag).strip().lower() != "true"
 
 
-def _role_skill_directive(skill: str, trigger: str, root: Path) -> str:
+#: The single statement of the conditional-loading protocol, rendered once at
+#: the head of every non-empty conditional index. Frontmatter skills never
+#: appear in the index: the installer has already preloaded their bodies.
+#: Tool receipts show what was loaded; only a failed load needs a marker, and
+#: it must survive whatever output format the role prescribes.
+_CONDITIONAL_INDEX_HEADER = (
+    "Conditional skills, not preloaded. Before answering, check every row "
+    "against the current task. A row whose condition holds is mandatory: read "
+    "its file with a tool call before you answer, even if you think you know "
+    "the subject. Skip rows whose condition does not hold. If a triggered file "
+    "cannot be read, put the line `[SKILL MISSING] <skill>` in your final "
+    "reply, whatever output format your role prescribes, state which part of "
+    "the task it leaves unsupported, and do not supply that skill's content "
+    "from memory."
+)
+
+
+def _role_skill_directive(
+    skill: str, trigger: str, root: Path, *, one: bool = False
+) -> str:
     """One loading directive whose VERB matches the target's reachability."""
+    quantifier = "ONE " if one else ""
     if _skill_is_invocable(skill, root):
-        return f"- Invoke Skill({skill}) ON-TRIGGER — {trigger}"
+        return f"- Invoke {quantifier}Skill({skill}) ON-TRIGGER — {trigger}"
     path = _INSTALLED_SKILL_PATH.format(skill=skill)
-    return f"- Read `{path}` ON-TRIGGER — {trigger}"
+    return f"- Read {quantifier}`{path}` ON-TRIGGER — {trigger}"
 
 
-def _role_skill_on_demand_lines(entry: dict, root: Path) -> list[str]:
-    return [
-        _role_skill_directive(skill, trigger, root)
-        for skill, trigger in entry.get("on_demand", {}).items()
-    ]
+def _role_skill_conditions(
+    entry: dict, roles: dict, global_on_demand: dict
+) -> dict[str, list[str]]:
+    """Every conditional skill of one role with its distinct triggers, in
+    registry order: global lenses, the reviewed roles' on-demand lenses
+    (lens-only, never their authoring ``phase`` rows), then the role's own
+    phase, on-demand and paradigm rows."""
+    conditions: dict[str, list[str]] = {}
 
+    def add(skill: str, trigger: str) -> None:
+        triggers = conditions.setdefault(skill, [])
+        if trigger not in triggers:
+            triggers.append(trigger)
 
-def _role_skill_entry_lines(entry: dict, root: Path) -> list[str]:
-    return [
-        _role_skill_directive(skill, trigger, root)
-        for skill, trigger in entry.get("phase", {}).items()
-    ]
-
-
-def _role_skill_trigger_lines(entry: dict, root: Path) -> list[str]:
-    return _role_skill_entry_lines(entry, root) + _role_skill_on_demand_lines(
-        entry, root
-    )
+    for skill, trigger in global_on_demand.items():
+        add(skill, trigger)
+    for reviewed in entry.get("reviewer_of") or ():
+        for skill, trigger in roles[reviewed].get("on_demand", {}).items():
+            add(skill, trigger)
+    for section in ("phase", "on_demand"):
+        for skill, trigger in entry.get(section, {}).items():
+            add(skill, trigger)
+    for kind, target in entry.get("paradigm", {}).items():
+        add(target, f"paradigm confirmed {kind}")
+    return conditions
 
 
 def _role_skill_loading_body(agent_id: str, root: Path) -> str:
-    """Render one role's universal-lens directives -- all registry rows load
-    ON-TRIGGER (never eagerly preloaded):
-    both phase and on_demand rows fire exactly when their declared trigger
-    condition holds, never unconditionally. Build-time only, no runtime registry
-    read: docgen is the authoritative renderer/semantic parser for agent Skill
-    directives, while scripts.shared.agent_catalog separately reads ownership
-    fields for build-time distribution retention and is not a runtime registry
-    read. A reviewer with exactly one reviewed role mirrors that role's on_demand
-    lenses (lens-only, never its authoring `phase` rows).
+    """Render one role's conditional skill index from the registry.
+
+    Frontmatter ``skills:`` are preloaded once by the installer, so they never
+    appear here; every other registry row appears exactly once, with all of
+    its distinct triggers, under one statement of the loading protocol
+    (including ``[SKILL MISSING]``). Build-time only, no runtime registry read:
+    docgen is the authoritative renderer of agent Skill directives, while
+    scripts.shared.agent_catalog separately reads ownership fields for
+    build-time distribution retention.
 
     Each directive's VERB is decided per target, not per registry section: an
     invocable skill renders ``Invoke Skill(...)``, a skill carrying
@@ -933,44 +960,29 @@ def _role_skill_loading_body(agent_id: str, root: Path) -> str:
         entry = {}
     if not isinstance(entry, dict):
         raise DocgenError(f"{agent_id!r} must map to an object in {registry_path}")
-    lines: list[str] = []
     if not isinstance(global_on_demand, dict):
         raise DocgenError(f"global_on_demand must be an object in {registry_path}")
-    lines += _role_skill_on_demand_lines({"on_demand": global_on_demand}, root)
-    reviewed = entry.get("reviewer_of")
-    if reviewed:
-        if len(reviewed) == 1:
-            lines += _role_skill_on_demand_lines(roles[reviewed[0]], root)
-        else:
-            lines.append(
-                "- ON-TRIGGER — mirror the reviewed role's on-demand lenses, lens-only"
-            )
-    lines += _role_skill_trigger_lines(entry, root)
-    for kind, target in entry.get("paradigm", {}).items():
-        lines.append(_role_skill_directive(target, f"paradigm confirmed {kind}", root))
-    by_target: dict[str, list[str]] = {}
-    for lang, target in entry.get("language_pbt", {}).items():
-        by_target.setdefault(target, []).append(lang)
-    for target, langs in sorted(by_target.items()):
-        joined = "`/`".join(sorted(langs))
-        trigger = f"a `{joined}` property needs it"
-        if _skill_is_invocable(target, root):
-            lines.append(f"- Invoke ONE Skill({target}) ON-TRIGGER — {trigger}")
-        else:
-            path = _INSTALLED_SKILL_PATH.format(skill=target)
-            lines.append(f"- Read ONE `{path}` ON-TRIGGER — {trigger}")
-    # A target being invocable does not give its receiving role a Skill tool.
     spec = root / "nWave" / "agents" / f"{agent_id}.md"
     metadata = parse_front_matter(spec)
-    preloaded = metadata.get("skills", [])
+    preloaded = set(metadata.get("skills") or ())
+    conditions = _role_skill_conditions(entry, roles, global_on_demand)
     lines = [
-        line
-        for line in lines
-        if not any(
-            f"Skill({skill})" in line or f"/skills/{skill}/SKILL.md" in line
-            for skill in preloaded
-        )
+        _role_skill_directive(skill, "; ".join(triggers), root)
+        for skill, triggers in conditions.items()
+        if skill not in preloaded
     ]
+    by_target: dict[str, list[str]] = {}
+    for lang, target in entry.get("language_pbt", {}).items():
+        if target not in preloaded and target not in conditions:
+            by_target.setdefault(target, []).append(lang)
+    for target, langs in sorted(by_target.items()):
+        joined = "`/`".join(sorted(langs))
+        lines.append(
+            _role_skill_directive(
+                target, f"a `{joined}` property needs it", root, one=True
+            )
+        )
+    # A target being invocable does not give its receiving role a Skill tool.
     tools = str(metadata.get("tools", ""))
     declared = {entry.strip() for entry in tools.split(",")}
     if "Read" in declared and "Skill" not in declared:
@@ -984,7 +996,9 @@ def _role_skill_loading_body(agent_id: str, root: Path) -> str:
             )
             for line in lines
         ]
-    return "\n".join(lines) if lines else "- (no universal lens applies to this role)"
+    if not lines:
+        return "- (no conditional skills for this role)"
+    return "\n".join([_CONDITIONAL_INDEX_HEADER, *lines])
 
 
 #: The installable renderer, owned by ``des`` because the installed tier needs

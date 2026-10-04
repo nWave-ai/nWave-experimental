@@ -16,8 +16,8 @@ proper format transformations:
   7. Manifests present and versioned
   8. Parallel Claude Code skill install preserved (parity)
 
-13 assertions total.  Uses the shared ``opencode_container`` fixture
-(session scope) so expensive npm + nodejs + opencode-ai setup is
+Uses the shared ``opencode_container`` fixture (session scope), which requires
+a successful installer exit, so expensive npm + nodejs + opencode-ai setup is
 amortized with test_opencode_subagent_hooks.
 
 Requires a Docker daemon.  Skips gracefully when Docker is unavailable.
@@ -35,43 +35,21 @@ import pytest
 from tests.e2e.conftest import exec_in_container, require_docker
 
 
-# Core install markers — the installer contract inherited from the
-# Dockerfile.  These strings are emitted by the installer plugins
-# (skills_plugin, agents_plugin, des_plugin, installation_verifier) and
-# represent the four CORE components whose presence confirms a healthy
-# install.  A drift in these markers is a contract change and MUST be
-# caught by this test.
-_CORE_MARKERS = (
-    "Skills installed",
-    "Agents installed",
-    "DES module",
-    "Settings updated",
-)
-
-
 @pytest.mark.e2e
 @require_docker
 class TestOpenCodeFullInstall:
     """OpenCode-aware installer deploys skills, agents, commands with contract.
 
-    Migrated from Dockerfile.env-opencode (13 assertions).
+    Migrated from Dockerfile.env-opencode; assertions inspect deployed contracts.
     """
 
-    # --- 1. Install succeeded (core markers) -----------------------------
-
-    def test_install_produced_core_component_markers(self, opencode_container) -> None:
-        """>=3 of 4 core install markers must appear in installer stdout.
-
-        Mirrors Dockerfile heuristic: optional plugins (attribution) may
-        fail; core components must still install.
-        """
-        stdout = getattr(opencode_container, "_install_stdout", "")
-        found = sum(1 for m in _CORE_MARKERS if m in stdout)
-        assert found >= 3, (
-            f"Only {found}/{len(_CORE_MARKERS)} core markers found in install output.\n"
-            f"Markers expected: {_CORE_MARKERS}\n"
-            f"Install output tail:\n{stdout[-800:]}"
+    def test_installed_des_runtime_is_callable(self, opencode_container) -> None:
+        """The installed DES command must execute, not merely be announced."""
+        code, out = exec_in_container(
+            opencode_container,
+            ["/home/tester/.claude/bin/des", "health-check", "--help"],
         )
+        assert code == 0, f"Installed DES runtime failed (exit {code}).\n{out}"
 
     # --- 2. OpenCode skills ----------------------------------------------
 
@@ -287,27 +265,33 @@ class TestOpenCodeFullInstall:
     # --- 5. Claude Code skills parity install ----------------------------
 
     def test_claude_code_skills_also_installed(self, opencode_container) -> None:
-        """Installing with OpenCode detected must NOT skip the Claude install.
-
-        Both targets must receive the skill set so the user can switch CLIs
-        without reinstalling.
-        """
-        _code, out = exec_in_container(
-            opencode_container,
-            [
-                "bash",
-                "-c",
-                (
-                    "find /home/tester/.claude/skills -maxdepth 1 -mindepth 1 "
-                    "-type d -name 'nw-*' 2>/dev/null | wc -l"
-                ),
-            ],
+        """Both detected hosts receive the same usable skill inventory."""
+        check_script = (
+            "import json; from pathlib import Path; "
+            "roots = {'claude': Path('/home/tester/.claude/skills'), "
+            "'opencode': Path('/home/tester/.config/opencode/skills')}; "
+            "print(json.dumps({host: {"
+            "skill.name: bool((skill / 'SKILL.md').read_text().strip()) "
+            "for skill in root.glob('nw-*') if skill.is_dir()"
+            "} for host, root in roots.items()}))"
         )
-        try:
-            count = int(out.strip())
-        except ValueError:
-            count = 0
-        assert count > 50, (
-            f"Only {count} Claude Code skills installed (expected > 50).  "
+        code, out = exec_in_container(
+            opencode_container,
+            ["python3", "-c", check_script],
+        )
+        assert code == 0, f"Cannot read installed skill inventories:\n{out}"
+        inventories = json.loads(out)
+        claude_skills = inventories["claude"]
+        opencode_skills = inventories["opencode"]
+        assert len(claude_skills) > 50, (
+            f"Only {len(claude_skills)} Claude Code skills installed (expected > 50). "
             "OpenCode install must preserve Claude install parity."
+        )
+        assert claude_skills.keys() == opencode_skills.keys(), (
+            "Detected Claude Code and OpenCode targets received different skills: "
+            f"Claude-only={sorted(claude_skills.keys() - opencode_skills.keys())}, "
+            f"OpenCode-only={sorted(opencode_skills.keys() - claude_skills.keys())}"
+        )
+        assert all(claude_skills.values()) and all(opencode_skills.values()), (
+            "Every installed skill must provide a non-empty SKILL.md on both hosts."
         )

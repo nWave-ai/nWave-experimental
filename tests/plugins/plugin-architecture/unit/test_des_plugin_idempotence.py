@@ -184,13 +184,13 @@ class TestDESHookIdempotence:
 
         settings_file = install_context.claude_dir / "settings.json"
         settings = json.loads(settings_file.read_text())
-        lyra_entry = {
+        external_entry = {
             "matcher": "Bash",
             "hooks": [
                 {
                     "type": "command",
                     "command": (
-                        "# lyra-hook:protocol-observer\n"
+                        "# external-hook:protocol-observer\n"
                         "echo spine_ledger_gate "
                         "spine_ledger_pre_commit_hook "
                         "spine_ledger_subagent_stop_detector "
@@ -199,7 +199,7 @@ class TestDESHookIdempotence:
                 }
             ],
         }
-        settings["hooks"]["PreToolUse"].append(lyra_entry)
+        settings["hooks"]["PreToolUse"].append(external_entry)
         settings["hooks"]["PreToolUse"].append(
             {
                 "matcher": "Bash",
@@ -237,7 +237,7 @@ class TestDESHookIdempotence:
             for entry in reconciled["hooks"]["PreToolUse"]
             for hook in entry.get("hooks", [])
         ]
-        assert lyra_entry["hooks"][0]["command"] in commands
+        assert external_entry["hooks"][0]["command"] in commands
         assert plugin._RETIRED_HOOK_COMMANDS[0] not in commands
         assert reconciled["hooks"]["SubagentStart"] == [
             {"hooks": [{"type": "command", "command": user_start_command}]}

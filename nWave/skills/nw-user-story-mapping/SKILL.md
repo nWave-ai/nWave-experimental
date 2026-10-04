@@ -63,7 +63,7 @@ Prioritize releases by outcome impact, not feature completeness. Each release sl
 **Value** (outcome impact) x **Urgency** (time-sensitivity) / **Effort** (complexity) = **Priority Score**
 
 Where (1-5 scale):
-- **Value** (1-5) = outcome impact. 5 = moves north-star KPI significantly. 1 = marginal improvement. In Phase 2.5, estimate from discovery insights; refine in Phase 4 after outcome-kpis.md exists.
+- **Value** (1-5) = outcome impact. 5 = moves north-star KPI significantly. 1 = marginal improvement. In Phase 2.5, estimate from discovery insights; refine once outcome KPI facts are confirmed.
 - **Urgency** (1-5) = time-sensitivity. 5 = time-critical or derisks fatal assumption. 1 = evergreen, no deadline.
 - **Effort** (1-5) = complexity. 5 = many tasks, cross-cutting, unknowns. 1 = single task, well-understood.
 - **Tie-breaking**: Walking Skeleton > Riskiest Assumption > Highest Value.

@@ -4,11 +4,10 @@ An agent beginning a session in an enabled nWave project must find, in its OWN
 starting context, a short notice naming the available routes and what each one
 leaves behind, without opening any project file.
 
-READ-ONLY BY MANDATE. The historical DES-runtime SessionStart entry was retired
-because it performed maintenance, which made opening a session mutate maintainer
-state. This handler performs no maintenance, no ledger write, no update check,
-no housekeeping and no filesystem mutation whatsoever: it reads one shipped
-template and prints one JSON object.
+The route notice remains read-only. The session's entry in the global activity
+registry is written by ``session_lifecycle_handler`` before this handler runs;
+separately consented update actions may then run at startup after the local
+work-state preflight and the global idle proof.
 
 ONE WORDING, ONE SOURCE. The notice text is the already-shipped
 ``nWave/templates/delivery-route-fragment.md`` -- the same bytes the installer
@@ -21,18 +20,17 @@ HOST CONTRACT. Standard output is EXACTLY ONE JSON object of the wrapped form
 ...}}``. The bare ``{"additionalContext": ...}`` form is not honored by current
 Claude Code, and several independent ``print(json.dumps(...))`` calls in one
 invocation produce output that is not valid JSON as a whole and silently drops
-every contribution but the first -- so there is exactly one print here. No
-``systemMessage`` key: the notice is for the agent's starting context, and a
-user-visible banner at every session start is precisely the noise the earlier
-retirement removed.
+every contribution but the first -- so there is exactly one print here. Normal
+route notices have no ``systemMessage``. Failed admission is a separate safety
+reply: it emits both agent context and a user-visible warning before route
+notice validation or activation can suppress it.
 
-FAILURE ALGEBRA. Every branch is Refusal, and Refusal means NO stdout plus exit
-0, because a SessionStart hook that blocks or crashes bricks a session. An
-absent or ambiguous asset, an unreadable or undecodable file, an empty template
-and a notice grown past its declared ceiling all yield the same observation:
-nothing on stdout, one WHAT/WHY/HOW line on stderr, exit 0. Per-project scope is
-not this module's concern -- the activation gate in ``hook_router`` already exits
-0 before dispatch for a project that has not opted in.
+ROUTE-NOTICE FAILURE ALGEBRA. A route-notice refusal means no stdout plus exit
+0. An absent or ambiguous asset, an unreadable or undecodable file, an empty
+template and a notice grown past its declared ceiling yield one WHAT/WHY/HOW
+line on stderr. Admission warnings are not route notices and bypass this
+refusal family. Native hooks do not establish that the host blocked work;
+controlled host launchers own that boundary.
 
 A DECLARED, MEASURED SIZE. The notice is a standing tax on every session's
 context, so its cost is reported as a measured fact on EVERY invocation, and the
@@ -104,9 +102,8 @@ NOTICE_CEILING_TOKENS = math.ceil(NOTICE_CEILING_BYTES / 4)
 
 #: Tokens may only ever be presented as what they are.
 TOKEN_PROVENANCE = (
-    "derived as ceil(bytes/4), a conservative upper bound -- a session-start "
-    "hook must never touch the network, so no tokenizer is reachable to count "
-    "them"
+    "derived as ceil(bytes/4), a conservative upper bound -- notice measurement "
+    "uses no tokenizer"
 )
 
 #: The closed forbidden set, REUSED rather than redefined: these are the same
@@ -252,8 +249,31 @@ def _descriptive_report(verdict: str) -> str:
     return f"descriptive={verdict} phrases-checked={len(COMMANDING_PHRASES)}"
 
 
-def handle_session_start() -> int:
+def emit_admission_warning(registration: object) -> int:
+    """Deliver one safety reply; native hosts may still proceed after exit 0."""
+    warning = getattr(registration, "notice", "") or (
+        "nWave session admission is unknown; installation safety was not "
+        "established. Close this session and inspect the update state."
+    )
+    print(warning, file=sys.stderr)
+    print(
+        json.dumps(
+            {
+                "systemMessage": warning,
+                "hookSpecificOutput": {
+                    "hookEventName": HOOK_EVENT_NAME,
+                    "additionalContext": warning,
+                },
+            }
+        )
+    )
+    return 0
+
+
+def handle_session_start(registration: object | None = None) -> int:
     """Emit the route notice into the agent's starting context. Always exit 0."""
+    if registration is not None and not getattr(registration, "admitted", False):
+        return emit_admission_warning(registration)
     notice = _read_route_notice()
     if notice is None:
         return 0
@@ -316,12 +336,47 @@ def handle_session_start() -> int:
         f"{_descriptive_report('pass')}.",
         file=sys.stderr,
     )
+    try:
+        envelope = sys.stdin.read()
+    except (OSError, ValueError):
+        envelope = ""
+    try:
+        event = json.loads(envelope)
+        startup = isinstance(event, dict) and event.get("source") == "startup"
+    except (TypeError, json.JSONDecodeError):
+        startup = False
+    check_consent = False
+    if startup:
+        try:
+            from nwave_ai.update.permissions import update_permissions
+
+            check_consent, _install_consent = update_permissions()
+        except Exception:
+            pass
+    try:
+        if check_consent:
+            from nwave_ai.update.startup import startup_update_context
+
+            update_context = startup_update_context(envelope)
+        else:
+            update_context = ""
+    except Exception as exc:
+        update_context = (
+            f"Automatic update refused: the consented startup updater could not run ({exc}). "
+            "Inspect the selected installation and retry explicitly."
+        )
+    if update_context:
+        print(f"nWave {update_context}", file=sys.stderr)
+    additional_context = (
+        notice if not update_context else f"{notice}\n\n{update_context}"
+    )
+
     print(
         json.dumps(
             {
                 "hookSpecificOutput": {
                     "hookEventName": HOOK_EVENT_NAME,
-                    "additionalContext": notice,
+                    "additionalContext": additional_context,
                 }
             }
         )

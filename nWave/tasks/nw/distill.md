@@ -13,8 +13,9 @@ task.
 
 ## Invocation
 
-Role: installed `nw-acceptance-designer`, invoked as `nw-role-invocation`
-describes (native, or `des oracle --repo-root ROOT --value N`).
+Role: installed `nw-acceptance-designer`, invoked natively as
+`nw-role-invocation` describes. DES constructs the supplied facts; it does not
+invoke the role.
 
 Resolve the durable value and architecture authority needed for the selected
 outcome. Missing authority is `EVIDENCE_GAP`; do not reconstruct it from

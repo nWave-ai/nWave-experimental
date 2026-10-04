@@ -15,9 +15,12 @@ HOOK_EVENTS is the installed hook SSOT for the fixed manifest.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+from des.domain.update_timing import UPDATE_TIMING
 
 
 if TYPE_CHECKING:
@@ -122,10 +125,14 @@ HOOK_EVENTS: tuple[HookEvent, ...] = (
     # This does NOT reopen the retired DES-runtime SessionStart entry: the
     # standing decision refused that one because it performed maintenance, so
     # opening a session mutated maintainer state. `session_start_notice_handler`
-    # is read-only by mandate -- it reads one shipped template and prints one
-    # JSON object, with no ledger write, update check, housekeeping or
-    # filesystem mutation of any kind.
+    # is read-only for the route notice. Before it runs, the router records
+    # the session in the global activity registry under the selected agents
+    # home (the only lifecycle write), and a separately consented update may
+    # run only after local and global idle are both established.
     HookEvent(event="SessionStart", matcher=None, action="session-start"),
+    # Closes the activity-registry record SessionStart wrote, so an idle
+    # installation can be proven positively rather than guessed from PIDs.
+    HookEvent(event="SessionEnd", matcher=None, action="session-end"),
 )
 
 # The distinct event types DES registers (for validation).
@@ -161,7 +168,11 @@ def generate_hook_config(
         else:
             command = command_fn(hook_event.action)
 
-        entry: dict = {"hooks": [{"type": "command", "command": command}]}
+        hook: dict = {"type": "command", "command": command}
+        if hook_event.action == "session-start":
+            # Advisory native hook allowance, not a host-admission guarantee.
+            hook["timeout"] = math.ceil(UPDATE_TIMING.session_start_seconds)
+        entry: dict = {"hooks": [hook]}
         if hook_event.matcher is not None:
             entry["matcher"] = hook_event.matcher
 

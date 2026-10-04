@@ -4,7 +4,7 @@ Migrated from: tests/e2e/Dockerfile.env-idempotent
 Layer 4 of platform-testing-strategy.md
 
 Contract: running nwave-ai install TWICE must:
-  - succeed both times (exit 0 or success message)
+  - succeed both times (exit 0)
   - produce identical content snapshots (files + hashes + hook counts)
   - result in zero duplicate hook commands in settings.json
   - result in zero duplicate skill directories
@@ -75,7 +75,7 @@ print("\\n".join(lines))
 
 _INSTALL_SCRIPT = (
     f"export PYTHONPATH={_CONTAINER_SRC} && "
-    "echo y | /opt/nwave-venv/bin/python -m nwave_ai.cli install 2>&1 || true"
+    "echo y | /opt/nwave-venv/bin/python -m nwave_ai.cli install --platform claude-code 2>&1"
 )
 
 
@@ -114,7 +114,7 @@ def idempotent_install_container():
             "rich typer pydantic 'pydantic-settings' httpx platformdirs pyyaml packaging && "
             f"pip install --quiet --no-deps {_CONTAINER_SRC} && "
             f"export PYTHONPATH={_CONTAINER_SRC} && "
-            "echo y | python -m nwave_ai.cli install"
+            "echo y | python -m nwave_ai.cli install --platform claude-code"
         )
         code, out = exec_in_container(container, ["bash", "-c", bootstrap_script])
         assert code == 0, f"First install failed (exit {code}).\nOutput:\n{out}"
@@ -124,14 +124,15 @@ def idempotent_install_container():
         assert code == 0, f"Snapshot 1 failed (exit {code}).\nOutput:\n{snap1}"
 
         # Second install
-        code, _out2 = exec_in_container(container, ["bash", "-c", _INSTALL_SCRIPT])
-        # Non-zero tolerated — assertions check idempotence individually
+        second_code, second_output = exec_in_container(
+            container, ["bash", "-c", _INSTALL_SCRIPT]
+        )
 
         # Capture snapshot after second install
         code, snap2 = exec_in_container(container, ["python3", "-c", _SNAPSHOT_SCRIPT])
         assert code == 0, f"Snapshot 2 failed (exit {code}).\nOutput:\n{snap2}"
 
-        yield container, snap1, snap2
+        yield container, snap1, snap2, second_code, second_output
 
 
 @pytest.mark.e2e
@@ -144,19 +145,10 @@ class TestIdempotentInstall:
     """
 
     def test_both_installs_succeed(self, idempotent_install_container) -> None:
-        """Both install runs must complete (verified by fixture — fixture asserts first install exits 0).
-
-        Second install exit code is verified here via a re-run.
-        """
-        container, _, _ = idempotent_install_container
-        code, out = exec_in_container(container, ["bash", "-c", _INSTALL_SCRIPT])
-        # Accept exit 0 or presence of success keyword
-        succeeded = code == 0 or any(
-            kw in out.lower() for kw in ("installed", "success", "healthy")
-        )
-        assert succeeded, (
-            f"nwave-ai install (idempotent run) returned non-zero exit with no "
-            f"success indicator.\nOutput (last 300 chars):\n{out[-300:]}"
+        """The two observed installs, not an unrelated third run, must exit 0."""
+        _, _, _, second_code, second_output = idempotent_install_container
+        assert second_code == 0, (
+            f"Second nwave-ai install exited {second_code}.\nOutput:\n{second_output}"
         )
 
     def test_content_snapshots_identical(self, idempotent_install_container) -> None:
@@ -165,7 +157,7 @@ class TestIdempotentInstall:
         A non-idempotent installer may regenerate files with different content
         (e.g. timestamps embedded in files, rewritten hooks with different UUIDs).
         """
-        _, snap1, snap2 = idempotent_install_container
+        _, snap1, snap2, _, _ = idempotent_install_container
 
         snap1_hash_lines = [
             l
@@ -195,44 +187,38 @@ class TestIdempotentInstall:
     def test_no_duplicate_hook_commands_in_settings(
         self, idempotent_install_container
     ) -> None:
-        """settings.json must contain no duplicate hook command strings after two installs.
+        """settings.json must not repeat a command for the same event and matcher.
 
-        An installer that appends rather than deduplicates hook entries would
-        create duplicate commands (same command string appearing twice in the
-        same event's list).
+        Different tools may intentionally dispatch the same hook action. Repeated
+        registrations for one matcher, not commands shared by distinct matchers,
+        indicate that reinstall appended rather than deduplicated hooks.
         """
-        container, _, _ = idempotent_install_container
+        container, _, _, _, _ = idempotent_install_container
 
         dedup_script = """
 import json, pathlib
-p = pathlib.Path('/root/.claude/settings.json')
-if not p.exists():
-    print("0")
-else:
-    d = json.loads(p.read_text())
-    duplicates = 0
-    for event, entries in d.get('hooks', {}).items():
-        if isinstance(entries, list):
-            commands = []
-            for e in entries:
-                if 'command' in e and e['command']:
-                    commands.append(e['command'])
-                elif 'hooks' in e:
-                    for h in e['hooks']:
-                        if h.get('command'):
-                            commands.append(h['command'])
-            if len(commands) != len(set(commands)):
-                duplicates += len(commands) - len(set(commands))
-    print(duplicates)
+
+settings = json.loads(pathlib.Path('/root/.claude/settings.json').read_text())
+assert settings.get('hooks'), "Installed hook registrations are missing"
+duplicates = 0
+for event, entries in settings['hooks'].items():
+    assert isinstance(entries, list), f"Invalid hook entries for {event}"
+    registrations = []
+    for entry in entries:
+        matcher = entry.get('matcher', '')
+        hooks = entry.get('hooks', [entry])
+        for hook in hooks:
+            if hook.get('command'):
+                registrations.append((matcher, hook['command']))
+    duplicates += len(registrations) - len(set(registrations))
+print(duplicates)
 """
-        _code, count_out = exec_in_container(container, ["python3", "-c", dedup_script])
-        try:
-            duplicates = int(count_out.strip())
-        except ValueError:
-            duplicates = 0
+        code, count_out = exec_in_container(container, ["python3", "-c", dedup_script])
+        assert code == 0, f"Cannot inspect installed hook registrations.\n{count_out}"
+        duplicates = int(count_out.strip())
         assert duplicates == 0, (
-            f"Found {duplicates} duplicate hook command(s) in settings.json after "
-            "two install runs.  Installer must deduplicate hook entries."
+            f"Found {duplicates} duplicate event/matcher hook registration(s) after "
+            "two install runs. Installer must deduplicate hook registrations."
         )
 
     def test_no_duplicate_skill_directories(self, idempotent_install_container) -> None:
@@ -241,7 +227,7 @@ else:
         Detects backup copies (nw-tdd-methodology, nw-tdd-methodology.bak) created
         by a non-idempotent installer.
         """
-        container, _, _ = idempotent_install_container
+        container, _, _, _, _ = idempotent_install_container
 
         _code, listing = exec_in_container(
             container,
@@ -267,7 +253,7 @@ else:
         New files appearing after the second install (e.g. .bak, .orig, copies)
         indicate the installer is not cleaning up temporary artifacts.
         """
-        _, snap1, snap2 = idempotent_install_container
+        _, snap1, snap2, _, _ = idempotent_install_container
 
         def file_lines(snap: str) -> set[str]:
             in_files = False

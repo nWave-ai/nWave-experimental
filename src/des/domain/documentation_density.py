@@ -24,9 +24,11 @@ Per DDD-5 + D12 + Decision 4 (2026-04-28),
     3. Else hard default "lean" + "ask-intelligent" (fresh-install per
        Decision 4).
 
-Provenance is reported on the returned Density value so consumers (telemetry,
-doctor, audit) can explain *why* a given density is in effect without
-re-running the cascade.
+Provenance is reported on the returned Density value so entry and diagnostic
+consumers can explain *why* a given density is in effect without re-running
+the cascade. Density selects the completed-wave reading surface; expansion
+prompt selects optional conversational detail. Neither selects a provider,
+model, or mandatory check.
 """
 
 from __future__ import annotations
@@ -51,7 +53,9 @@ class Density:
     provenance string that explains which cascade branch produced this result.
 
     Attributes:
-        mode: "lean" or "full" (per DDD-5).
+        mode: "lean" or "full" (per DDD-5). The installed wave consumer
+            uses full to render a local view of a completed DES authority;
+            lean retains the authoritative handoff.
         expansion_prompt: "ask" | "always-skip" | "always-expand" |
             "smart" | "ask-intelligent" (the last one added per
             Decision 4 2026-04-28; scoped trigger-based menu).

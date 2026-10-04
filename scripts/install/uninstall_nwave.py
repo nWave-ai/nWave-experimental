@@ -359,6 +359,55 @@ class NWaveUninstaller:
             installation_found = True
             self.logger.info(f"    📄 Found OpenCode DES manifest: {opencode_manifest}")
 
+        # OMP native assets: manifest-driven, same root the omp installer
+        # plugins write through. OMP 18.5 splits roots (skills follow
+        # PI_CODING_AGENT_DIR, agents follow the config root), so BOTH
+        # candidate skill roots are probed -- an override-installed skills
+        # tree must still be recognized when the uninstall environment lost
+        # the override spelling.
+        try:
+            from scripts.shared.install_paths import (
+                omp_agents_dir,
+                omp_config_root,
+                omp_skills_dir,
+            )
+        except ImportError:
+            from shared.install_paths import (
+                omp_agents_dir,
+                omp_config_root,
+                omp_skills_dir,
+            )
+
+        omp_agents_manifest = omp_agents_dir() / ".nwave-agents-manifest.json"
+        if omp_agents_manifest.exists():
+            installation_found = True
+            self.logger.info(f"    📄 Found OMP agents manifest: {omp_agents_manifest}")
+
+        omp_skill_manifest_roots = [
+            omp_skills_dir(),
+            omp_config_root() / "agent" / "skills",
+        ]
+        try:
+            receipt_doc = json.loads(
+                (Path.home() / ".nwave" / "config.json").read_text(encoding="utf-8")
+            )
+            recorded = (
+                receipt_doc.get("install", {})
+                .get("host_paths", {})
+                .get("omp_skills_dir")
+            )
+            if isinstance(recorded, str) and recorded:
+                omp_skill_manifest_roots.append(Path(recorded))
+        except (OSError, json.JSONDecodeError):
+            pass
+        for candidate_root in omp_skill_manifest_roots:
+            omp_skills_manifest = candidate_root / ".nwave-manifest.json"
+            if omp_skills_manifest.exists():
+                installation_found = True
+                self.logger.info(
+                    f"    📄 Found OMP skills manifest: {omp_skills_manifest}"
+                )
+
         native_runtime_dir = host_neutral_runtime_dir() / "des"
         if native_runtime_dir.exists():
             installation_found = True
@@ -985,7 +1034,7 @@ class NWaveUninstaller:
         ``DESPlugin`` is the sole writer and cleanup authority for this
         surface.  The former standalone hook installer was a second writer
         with substring-based ownership detection, so it could delete a
-        neighbouring user or Lyra hook merely because its command happened to
+        neighbouring user or External hook merely because its command happened to
         contain a DES-looking fragment.
         """
         if self.dry_run:
@@ -1077,6 +1126,104 @@ class NWaveUninstaller:
             self.logger.info("  🗑️ Removed OpenCode DES shim")
         else:
             self.logger.warn(f"  ⚠️ OpenCode DES shim removal: {result.message}")
+
+    def remove_omp_assets(self) -> None:
+        """Remove manifest-owned OMP skills and task agents.
+
+        Resolves the SAME omp destination the installer plugins write through
+        (``scripts.shared.install_paths`` omp helpers), so an uninstall can
+        never remove from a root the installer did not write. Ownership is
+        manifest-driven: only names recorded in the omp manifests are
+        removed; foreign and user-created entries (including private
+        symlinks) are never touched. A named-profile environment is honored
+        by refusal: the uninstall reports the unsupported profile rather
+        than silently operating on the default root.
+        """
+        if self.dry_run:
+            self.logger.info("  🚨 [DRY RUN] Would remove OMP skills and agents")
+            return
+
+        try:
+            from scripts.install.plugins.base import InstallContext
+            from scripts.install.plugins.omp_agents_plugin import OmpAgentsPlugin
+            from scripts.install.plugins.omp_common import OmpProfileNotSupported
+            from scripts.install.plugins.omp_skills_plugin import OmpSkillsPlugin
+        except ImportError:
+            from plugins.base import InstallContext
+            from plugins.omp_agents_plugin import OmpAgentsPlugin
+            from plugins.omp_common import OmpProfileNotSupported
+            from plugins.omp_skills_plugin import OmpSkillsPlugin
+
+        context = InstallContext(
+            claude_dir=self.claude_config_dir,
+            scripts_dir=self.claude_config_dir / "scripts",
+            templates_dir=self.claude_config_dir / "templates",
+            logger=self.logger,
+        )
+        try:
+            # OMP 18.5 resolves the skills root from PI_CODING_AGENT_DIR while
+            # the agents root follows the config root. The uninstall
+            # environment may no longer carry the install-time override
+            # spelling, so candidates come from the persisted receipt
+            # (install.host_paths.omp_skills_dir) AND both env-resolved
+            # spellings. Each pass is manifest-driven and a no-op when its
+            # root carries no trusted manifest, so a root that never saw an
+            # install cannot lose foreign or private bytes.
+            agents_result = OmpAgentsPlugin().uninstall(context)
+            skills_results = []
+            from scripts.shared.install_paths import omp_config_root, omp_skills_dir
+
+            receipt_candidates: list[str] = []
+            receipt_path = Path.home() / ".nwave" / "config.json"
+            try:
+                receipt_doc = json.loads(receipt_path.read_text(encoding="utf-8"))
+                recorded = (
+                    receipt_doc.get("install", {})
+                    .get("host_paths", {})
+                    .get("omp_skills_dir")
+                )
+                if isinstance(recorded, str) and recorded:
+                    receipt_candidates.append(recorded)
+            except (OSError, json.JSONDecodeError):
+                pass
+
+            roots = {
+                str(omp_skills_dir()): "env",  # current env spelling
+                str(omp_config_root() / "agent" / "skills"): None,  # no override
+            }
+            for path in receipt_candidates:
+                roots.setdefault(path, "receipt")
+            previous_env = os.environ.get("PI_CODING_AGENT_DIR")
+            try:
+                for root_str, spelling in roots.items():
+                    root = Path(root_str)
+                    if not (root / ".nwave-manifest.json").exists():
+                        continue
+                    if spelling is None:
+                        os.environ.pop("PI_CODING_AGENT_DIR", None)
+                    elif spelling == "receipt" and root.parent != (
+                        omp_config_root() / "agent"
+                    ):
+                        # <override>/skills recorded at install time
+                        os.environ["PI_CODING_AGENT_DIR"] = str(root.parent)
+                    skills_results.append(OmpSkillsPlugin().uninstall(context))
+            finally:
+                if previous_env is None:
+                    os.environ.pop("PI_CODING_AGENT_DIR", None)
+                else:
+                    os.environ["PI_CODING_AGENT_DIR"] = previous_env
+        except OmpProfileNotSupported as e:
+            self.logger.warn(f"  ⚠️ OMP asset removal skipped: {e}")
+            return
+        if all(r.success for r in skills_results) and agents_result.success:
+            self.logger.info("  🗑️ Removed OMP assets (manifest-owned only)")
+        else:
+            failures = [
+                result.message
+                for result in (*skills_results, agents_result)
+                if not result.success
+            ]
+            self.logger.warn(f"  ⚠️ OMP asset removal: {'; '.join(failures)}")
 
     def remove_des_hook_scripts(self) -> None:
         """Remove current and retired installer-owned DES hook scripts."""
@@ -1422,6 +1569,7 @@ def main():
     uninstaller.remove_des_hooks()
     uninstaller.remove_copilot_des_hooks()
     uninstaller.remove_opencode_des_hooks()
+    uninstaller.remove_omp_assets()
     uninstaller.remove_des_hook_scripts()
     uninstaller.remove_attribution()
     uninstaller.remove_config_files()

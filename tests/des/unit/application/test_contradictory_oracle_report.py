@@ -28,6 +28,7 @@ report-count semantics beyond what the classifier already declares.
 
 from __future__ import annotations
 
+import json
 import stat
 from pathlib import Path
 
@@ -149,53 +150,61 @@ def test_zero_executed_tests_with_zero_exit_is_unaffected_by_this_fix() -> None:
 # ---------------------------------------------------------------------------
 # 2. Service integration fixture reproduction through the real production
 #    flow (`_executed_oracle_set`), with a genuine JUnit XML report on disk
-#    and a genuine native (non-pytest) executable, exactly matching the host
-#    reproduction's `report_requested=False` shape. This exercises the
-#    private application service directly -- it is NOT a full CLI proof;
-#    no `des` command line is invoked and no process boundary outside this
-#    interpreter is crossed.
+#    requested explicitly in a native (non-pytest) executable's declared argv.
+#    The process really executes; no mock supplies the report or exit status.
 # ---------------------------------------------------------------------------
 
 
-def _fake_native_oracle(root: Path) -> Path:
-    """A tool that is NOT pytest, exits 0, yet writes a JUnit report with one
-    failed test case to the `--junitxml=` path the runner places in
-    `PYTEST_ADDOPTS` for exactly this purpose.
-
-    This is not a pytest invocation (`invokes_pytest` sees no `pytest` token
-    in its argv), so it exercises the SAME `report_requested=False` axis the
-    two exact host reproductions above were measured on -- but through the
-    real production service call (`_executed_oracle_set`), with a genuine
-    file on disk, not only the classifier called directly. This is service
-    integration, not a full CLI proof: no `des` executable is invoked.
-    """
+def _fake_native_oracle(root: Path, exit_status: int, produces_report: bool) -> Path:
+    """A native checker writes only to its explicitly declared report output."""
     script = root / "bin" / "fake-native-oracle"
     script.parent.mkdir(parents=True, exist_ok=True)
-    script.write_text(
-        "#!/bin/sh\n"
-        "report=$(printf '%s' \"$PYTEST_ADDOPTS\" | sed -n 's/.*--junitxml=\\([^ ]*\\).*/\\1/p')\n"
+    report_body = (
+        "report=${1#--junitxml=}\n"
         "cat > \"$report\" <<'XML'\n"
         '<testsuite tests="1" errors="0" failures="1">'
         '<testcase classname="fake" name="reports_failure">'
         '<failure message="the assertion the oracle checks was not met" />'
         "</testcase></testsuite>\n"
         "XML\n"
-        "exit 0\n",
+    )
+    script.write_text(
+        "#!/bin/sh\n"
+        + (report_body if produces_report else "")
+        + f"exit {exit_status}\n",
         encoding="utf-8",
     )
     script.chmod(script.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     return script
 
 
-def test_native_oracle_with_zero_exit_and_reported_failure_is_not_green_via_service(
+@pytest.mark.parametrize(
+    ("exit_status", "produces_report", "expected"),
+    [
+        (0, True, ("indeterminate", "junit-report-contradicts-exit-status")),
+        (101, True, ("red", "junit-report")),
+        (0, False, ("broken", "junit-report-absent")),
+    ],
+)
+def test_native_oracle_judges_its_explicit_report_without_pytest_exit_conventions(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    exit_status: int,
+    produces_report: bool,
+    expected: tuple[str, str],
 ) -> None:
+    verdict, axis = expected
     root = tmp_path / "subject"
     root.mkdir()
-    fake_checker = _fake_native_oracle(root)
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    monkeypatch.delenv("PYTEST_ADDOPTS", raising=False)
+    fake_checker = _fake_native_oracle(root, exit_status, produces_report)
+    report = root / "native-report.xml"
+    # A report from an earlier execution cannot stand in for this observation.
+    report.write_text('<testsuite tests="1" errors="0" failures="1"/>')
 
     oracle_locator = "tests/acceptance/fake_oracle.check"
-    declared_argv = (str(fake_checker),)
+    declared_argv = (str(fake_checker), "--junitxml=native-report.xml")
     authority = AuthorityFacts(
         locator="docs/architecture.md#native oracle contradicts its own exit status",
         modified_authority_paths=(),
@@ -212,24 +221,22 @@ def test_native_oracle_with_zero_exit_and_reported_failure_is_not_green_via_serv
     runner = DeliveryContinuationRunner()
     measured = runner._executed_oracle_set(root, [("the observation", authority)])
 
-    # The corrected classifier makes this contradiction `indeterminate`
-    # (never `green`), and `_executed_oracle_set` already routes an
-    # `indeterminate` verdict on a non-`exit-status-only` axis straight to a
-    # `Disposition.Indeterminate` outcome -- the SAME handling the mirror
-    # contradiction (nonzero exit, clean report) already receives. Reaching
-    # THAT outcome, rather than a silent `OracleExecution` with a `green`
-    # row, is the service-integration proof the bug is fixed.
-    assert isinstance(measured, DeliveryOutcome), (
-        f"WHAT: through the _executed_oracle_set service call, a native oracle "
-        f"that exited 0 while its own JUnit report recorded 1 failure "
-        f"produced {measured!r} instead of an Indeterminate DeliveryOutcome\n"
-        f"WHY: this reproduces the exact host bug -- a zero process exit "
-        f"must never outrank a report the runner itself just measured\n"
-        f"HOW: `_oracle_verdict` must read counts before trusting a zero exit"
-    )
-    assert measured.disposition == Disposition.Indeterminate, measured
-    assert (
-        measured.failure is not None
-        and measured.failure.what == "OracleRedUnobservable"
-    ), measured.failure
-    assert measured.failure.why.startswith(oracle_locator), measured.failure
+    records = list((root / ".nwave/des/logs/native").glob("oracle-*.json"))
+    retained = json.loads(records[0].read_text())[0]
+    assert retained["argv"] == list(declared_argv)
+    assert retained["exit"] == exit_status
+    assert "PYTEST_ADDOPTS" not in retained["declared_environment"]
+    assert "PYTHONPATH" not in retained["declared_environment"]
+    if verdict == "indeterminate":
+        assert isinstance(measured, DeliveryOutcome), measured
+        assert measured.disposition is Disposition.Indeterminate
+        assert measured.failure.what == "OracleRedUnobservable"
+        assert measured.failure.why.startswith(oracle_locator)
+    else:
+        assert not isinstance(measured, DeliveryOutcome), measured
+        assert measured.measured[0]["verdict"] == verdict
+        assert measured.measured[0]["axis"] == axis
+        assert measured.measured[0]["counts"] == (
+            (1, 0, 1) if produces_report else None
+        )
+        assert (measured.refusal is not None) is (verdict == "broken")

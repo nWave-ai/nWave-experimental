@@ -53,7 +53,12 @@ def _canned_xml_run_cmd(tmp_path: Path, xml: str) -> str:
     xml_src = tmp_path / "canned.xml"
     xml_src.write_text(xml)
     copier = tmp_path / "copier.py"
-    copier.write_text("import shutil, sys\nshutil.copy(sys.argv[1], sys.argv[2])\n")
+    # Exit like a real runner: non-zero iff the report contains a failure
+    # (the adapter refuses to seal a report that contradicts the exit code).
+    copier.write_text(
+        "import shutil, sys\nshutil.copy(sys.argv[1], sys.argv[2])\n"
+        "sys.exit(1 if b'<failure' in open(sys.argv[1], 'rb').read() else 0)\n"
+    )
     return f"{sys.executable} {copier} {xml_src} {{junit_out}}"
 
 

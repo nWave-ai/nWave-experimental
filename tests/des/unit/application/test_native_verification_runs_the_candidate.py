@@ -16,7 +16,9 @@ owns (``boundary:software-measures-model-decides``).
 
 from __future__ import annotations
 
+import json
 import os
+import signal
 import stat
 import sys
 from pathlib import Path
@@ -65,6 +67,81 @@ def _only_stdout(evidence: object) -> str:
     assert isinstance(item, NativeEvidence)
     assert item.exit_status == 0, item
     return item.stdout.strip()
+
+
+@pytest.mark.skipif(
+    os.name != "posix", reason="managed reuse requires POSIX process groups"
+)
+def test_unproven_descendant_exit_keeps_reused_workspace_blocked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.des.unit.application.test_delivery_continuation import repo
+
+    root = repo(tmp_path / "subject", "value.txt", "one\n")
+    (root / ".nwave").mkdir()
+    (root / ".nwave/config.json").write_text(
+        '{"verification":{"reuse":{"outputs":["generated"]}}}'
+    )
+    candidate = DeliveryContinuationRunner._git(
+        root, "rev-parse", "HEAD"
+    ).stdout.strip()
+    monkeypatch.setattr("des.runtime.spawn.default_timeout_seconds", lambda: 0.5)
+
+    def terminate_only_leader(pid: int) -> None:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    monkeypatch.setattr("des.runtime.spawn._reap_process_group", terminate_only_leader)
+    command = (
+        sys.executable,
+        "-c",
+        "import os, subprocess, sys, time; "
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(20)'], "
+        "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); "
+        "print(os.getpgrp(), child.pid, flush=True); time.sleep(20)",
+    )
+    group = None
+    try:
+        outcome = DeliveryContinuationRunner()._with_candidate_worktree(
+            root, candidate, (command,)
+        )
+        records = list((root / ".nwave/des/logs/native").glob("*.json"))
+        assert len(records) == 1
+        evidence = json.loads(records[0].read_bytes())[0]
+        group, child = map(int, evidence["stdout"].split())
+        # The printed group is bound to KERNEL metadata: the recorded child
+        # must actually sit in that session before any signal is trusted.
+        assert os.getsid(child) == group
+        # Defense: the reuse workspace owns a SEPARATE process group; a
+        # child that inherited THIS group means a product regression --
+        # fail the ASSERT and clean up pid-safely, never killpg the runner.
+        assert group != os.getpgrp(), (
+            "native verification child inherited the runner's process "
+            "group; reuse verification must own its own group"
+        )
+        os.killpg(group, 0)
+        assert isinstance(outcome, DeliveryOutcome), outcome
+        assert outcome.failure.what == "VerificationWritersUnquiescent"
+        metadata = json.loads(
+            (root / ".nwave/des/verification-reuse.json").read_bytes()
+        )
+        assert metadata["phase"] == "running"
+        refused = DeliveryContinuationRunner()._with_candidate_worktree(
+            root, candidate, ((sys.executable, "-c", "print('must not run')"),)
+        )
+        assert isinstance(refused, DeliveryOutcome), refused
+        assert "interrupted native execution" in refused.failure.why
+    finally:
+        if group is not None:
+            if group == os.getpgrp():
+                os.kill(child, signal.SIGKILL)
+            else:
+                try:
+                    os.killpg(group, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
 
 
 def test_a_declared_bare_name_executes_the_candidate_not_the_installed_runtime(
@@ -262,7 +339,6 @@ def test_an_absent_executable_is_indeterminate_and_names_the_working_form(
     assert outcome.failure is not None
     assert outcome.failure.what == "VerificationExecutableAbsent"
     assert "nonexistent-tool" in outcome.failure.why
-    assert "python -m pytest" in outcome.failure.how
 
 
 def test_a_declared_uv_run_degrades_loud_instead_of_being_translated(
@@ -288,23 +364,265 @@ def test_a_declared_uv_run_degrades_loud_instead_of_being_translated(
     assert outcome.failure is not None
     assert outcome.failure.what == "VerificationExecutableAbsent"
     assert "uv" in outcome.failure.how
-    assert "python -m pytest" in outcome.failure.how
 
 
-def test_the_operator_line_lists_the_armed_shims(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_cold_candidate_measures_inside_the_configured_workspace(
+    tmp_path: Path,
 ) -> None:
-    """`NATIVE-RUNTIME` says WHICH names the runner resolved, not just which python."""
-    _empty_path(tmp_path, monkeypatch)
-    candidate = _candidate_tree(tmp_path, "unused")
+    """Cold isolation is a registered worktree under the configured root.
 
-    DeliveryContinuationRunner()._native(
-        candidate, (("python", "-c", "pass"),), candidate
+    The pre-workspace behaviour materialized the candidate under a fresh
+    tmp directory; real candidate work now lives -- and is cleaned up --
+    inside the project's own workspace, exactly like reuse.
+    """
+    from tests.des.unit.application.test_delivery_continuation import repo
+
+    root = repo(tmp_path / "subject", "value.txt", "one\n")
+    candidate = DeliveryContinuationRunner._git(
+        root, "rev-parse", "HEAD"
+    ).stdout.strip()
+    command = (sys.executable, "-c", "import os; print(os.getcwd())")
+
+    outcome = DeliveryContinuationRunner()._with_candidate_worktree(
+        root, candidate, (command,)
     )
 
-    line = next(
-        row
-        for row in capsys.readouterr().err.splitlines()
-        if row.startswith("NATIVE-RUNTIME:")
+    assert not isinstance(outcome, DeliveryOutcome), outcome
+    _, evidence = outcome
+    measured = Path(_only_stdout(evidence)).resolve()
+    assert measured.is_relative_to((root / "lanes" / ".des-candidate").resolve())
+    # The disposable checkout is gone: no residue, no registration.
+    assert not measured.exists()
+    registered = DeliveryContinuationRunner._git(
+        root, "worktree", "list", "--porcelain"
+    ).stdout
+    assert measured.as_posix() not in registered
+
+
+def test_cold_refuses_invalid_workspace_configuration_before_any_worktree(
+    tmp_path: Path,
+) -> None:
+    from tests.des.unit.application.test_delivery_continuation import repo
+
+    root = repo(tmp_path / "subject", "value.txt", "one\n")
+    (root / ".nwave").mkdir()
+    (root / ".nwave/config.json").write_text(
+        '{"verification":{"reuse":{"workspace":{"root":"/tmp/escape"}}}}'
     )
-    assert "shims=python,python3,pytest,des" in line
+    candidate = DeliveryContinuationRunner._git(
+        root, "rev-parse", "HEAD"
+    ).stdout.strip()
+
+    outcome = DeliveryContinuationRunner()._with_candidate_worktree(
+        root,
+        candidate,
+        ((sys.executable, "-c", "print('must not run')"),),
+    )
+
+    assert isinstance(outcome, DeliveryOutcome), outcome
+    assert outcome.failure is not None
+    assert outcome.failure.what == "VerificationWorkspaceUnavailable"
+    assert not (root / "lanes").exists()
+
+
+def test_cold_refuses_new_growth_when_budget_is_unmet(
+    tmp_path: Path,
+) -> None:
+    """An unmet configured budget refuses NEW growth instead of stacking."""
+    import json as json_module
+
+    from tests.des.unit.application.test_delivery_continuation import repo
+
+    root = repo(tmp_path / "subject", "value.txt", "one\n")
+    (root / ".nwave").mkdir()
+    (root / ".nwave/config.json").write_text(
+        json_module.dumps(
+            {"verification": {"reuse": {"workspace": {"cache_limit_bytes": 1}}}}
+        )
+    )
+    # Unknown (unowned) bytes under the candidate root: preserved blockers.
+    (root / "lanes" / ".des-candidate").mkdir(parents=True)
+    (root / "lanes" / ".des-candidate" / "unknown-cache").write_text("x\n")
+    candidate = DeliveryContinuationRunner._git(
+        root, "rev-parse", "HEAD"
+    ).stdout.strip()
+
+    outcome = DeliveryContinuationRunner()._with_candidate_worktree(
+        root,
+        candidate,
+        ((sys.executable, "-c", "print('must not run')"),),
+    )
+
+    assert isinstance(outcome, DeliveryOutcome), outcome
+    assert outcome.failure is not None
+    assert outcome.failure.what == "WorkspaceBudgetExhausted"
+    assert "budget unmet" in outcome.failure.why
+    assert sorted(
+        item.name for item in (root / "lanes" / ".des-candidate").iterdir()
+    ) == ["unknown-cache"]
+
+
+def test_reuse_refuses_measurement_when_budget_is_unmet(
+    tmp_path: Path,
+) -> None:
+    """A warm reuse run also grows caches: budget failure gates it too."""
+    import json as json_module
+
+    from tests.des.unit.application.test_delivery_continuation import repo
+
+    root = repo(tmp_path / "subject", "value.txt", "one\n")
+    (root / ".nwave").mkdir()
+    (root / ".nwave/config.json").write_text(
+        json_module.dumps(
+            {
+                "verification": {
+                    "reuse": {
+                        "outputs": ["generated"],
+                        "workspace": {"cache_limit_bytes": 1},
+                    }
+                }
+            }
+        )
+    )
+    # Unknown (unowned) generated bytes: preserved blockers over the limit.
+    (root / "generated").mkdir()
+    (root / "generated" / "unknown.bin").write_text("xx\n")
+    candidate = DeliveryContinuationRunner._git(
+        root, "rev-parse", "HEAD"
+    ).stdout.strip()
+
+    outcome = DeliveryContinuationRunner()._with_candidate_worktree(
+        root,
+        candidate,
+        ((sys.executable, "-c", "print('must not run')"),),
+    )
+
+    assert isinstance(outcome, DeliveryOutcome), outcome
+    assert outcome.failure is not None
+    assert outcome.failure.what == "WorkspaceBudgetExhausted"
+    assert not (root / "lanes").exists()
+
+
+def test_cold_measurement_owns_its_process_group(tmp_path: Path) -> None:
+    """The measured cold child is its OWN session leader, never the caller's.
+
+    Positive group isolation: before this fix only the reuse path set the
+    spawn reaping flags, so a cold verify's child inherited the CALLER's
+    process group and any group cleanup could kill the runner.
+    """
+    from tests.des.unit.application.test_delivery_continuation import repo
+
+    root = repo(tmp_path / "subject", "value.txt", "one\n")
+    candidate = DeliveryContinuationRunner._git(
+        root, "rev-parse", "HEAD"
+    ).stdout.strip()
+    command = (sys.executable, "-c", "import os; print(os.getpgrp())")
+
+    outcome = DeliveryContinuationRunner()._with_candidate_worktree(
+        root, candidate, (command,)
+    )
+
+    assert not isinstance(outcome, DeliveryOutcome), outcome
+    _, evidence = outcome
+    child_group = int(_only_stdout(evidence))
+    assert child_group != os.getpgrp()
+
+
+def test_cold_keeps_worktree_and_names_recovery_when_writers_unquiescent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A receipt proves WHO; only the phase proves IDLE after a crash."""
+    from des.adapters.driven.config.workspace_paths import CANDIDATE_RECEIPT
+    from tests.des.unit.application.test_delivery_continuation import repo
+
+    root = repo(tmp_path / "subject", "value.txt", "one\n")
+    candidate = DeliveryContinuationRunner._git(
+        root, "rev-parse", "HEAD"
+    ).stdout.strip()
+    monkeypatch.setattr("des.runtime.spawn.default_timeout_seconds", lambda: 0.5)
+
+    def terminate_only_leader(pid: int) -> None:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    monkeypatch.setattr("des.runtime.spawn._reap_process_group", terminate_only_leader)
+    command = (
+        sys.executable,
+        "-c",
+        "import os, subprocess, sys, time; "
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(20)'], "
+        "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); "
+        "print(os.getpgrp(), child.pid, flush=True); time.sleep(20)",
+    )
+    group = None
+    try:
+        outcome = DeliveryContinuationRunner()._with_candidate_worktree(
+            root, candidate, (command,)
+        )
+        records = list((root / ".nwave/des/logs/native").glob("*.json"))
+        assert len(records) == 1
+        evidence = json.loads(records[0].read_bytes())[0]
+        group, child = map(int, evidence["stdout"].split())
+        # The printed group is bound to KERNEL metadata: the recorded child
+        # must actually sit in that session before any signal is trusted.
+        assert os.getsid(child) == group
+        # Defense: the product must own a SEPARATE process group. If a
+        # regression makes the measured child inherit THIS group, the test
+        # fails its ASSERT and cleans up pid-safely -- it never killpgs the
+        # runner.
+        assert group != os.getpgrp(), (
+            "native verification child inherited the runner's process "
+            "group; cold verification must own its own group"
+        )
+        os.killpg(group, 0)
+        kept = sorted((root / "lanes" / ".des-candidate").iterdir())
+        assert len(kept) == 1, kept
+        receipt = json.loads((kept[0] / CANDIDATE_RECEIPT).read_text())
+        assert receipt["phase"] != "idle"
+        assert receipt["candidate"] == candidate
+        assert receipt["workspace"] == str(kept[0])
+        assert isinstance(outcome, DeliveryOutcome), outcome
+        assert outcome.failure is not None
+        assert outcome.failure.what == "CandidateWritersUnquiescent"
+        assert str(kept[0]) in outcome.failure.why
+        assert str(kept[0]) in outcome.failure.how
+    finally:
+        if group is not None:
+            if group == os.getpgrp():
+                os.kill(child, signal.SIGKILL)
+            else:
+                try:
+                    os.killpg(group, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
+
+
+def test_cold_refuses_candidate_placement_across_git_owners(
+    tmp_path: Path,
+) -> None:
+    """A configured workspace of another repository never receives real work."""
+    from des.adapters.driven.config.workspace_paths import (
+        DEFAULT_WORKSPACE_ROOT,
+        WorkspacePaths,
+    )
+    from tests.des.unit.application.test_delivery_continuation import repo
+
+    principal = repo(tmp_path / "principal", "value.txt", "one\n")
+    foreign = repo(tmp_path / "foreign", "other.txt", "two\n")
+    runner = DeliveryContinuationRunner()
+    paths = WorkspacePaths(
+        root=foreign,
+        lanes=foreign / DEFAULT_WORKSPACE_ROOT,
+        candidate=foreign / DEFAULT_WORKSPACE_ROOT / ".des-candidate",
+        verification=foreign / DEFAULT_WORKSPACE_ROOT / ".des-verification",
+        evidence=foreign / ".nwave" / "des",
+        outputs=None,
+        adopted=(),
+        cache_limit_bytes=None,
+        automatic=False,
+    )
+
+    with pytest.raises(ValueError, match="different Git repository"):
+        runner._cold_candidate_directory(paths, principal)

@@ -200,24 +200,38 @@ def is_design_oracle_locator(locator: str) -> bool:
     return _DESIGN_ORACLE_LOCATOR_RE.fullmatch(locator) is not None
 
 
-def new_target_acceptance_support_conflict(
+def target_acceptance_support_conflict(
     oracle: str,
-    target_decisions: Iterable[tuple[str, str]],
+    target_paths: Iterable[str],
     acceptance_supports: Iterable[str],
 ) -> str | None:
-    """Return the non-oracle new target reused as required support, if any.
+    """Return the first non-oracle craft target also required as support, if any.
 
-    An acceptance support may be new when it is only support evidence, and an
-    existing target may be read as support.  The contradiction is narrower:
-    DESIGN cannot require the crafter to create a non-oracle target while the
-    same path is already required as acceptance evidence.
+    A support is acceptance evidence: the oracle witness is recorded over the
+    oracle and its supports BEFORE craft, and craft is refused unless those
+    bytes are unchanged.  Every target decision (`EXTEND` or `CREATE_NEW`)
+    authorizes craft to change its path, so a target that is also a support
+    either never changes or invalidates its own witness (`OracleRecordMoved`).
+    A production module the oracle imports is a target, not a support.
     """
     oracle_path = oracle.partition("::")[0]
     support_paths = frozenset(acceptance_supports)
-    for path, decision in target_decisions:
-        if path != oracle_path and decision == "CREATE_NEW" and path in support_paths:
+    for path in target_paths:
+        if path != oracle_path and path in support_paths:
             return path
     return None
+
+
+def target_acceptance_support_conflict_text(path: str) -> str:
+    """The one sentence every admission of this conflict prints."""
+    return (
+        f"{path} is both a craft target and a required acceptance support; the "
+        "oracle witness is recorded over its supports before craft and craft is "
+        "refused when they change, so declare an acceptance-owned fixture only "
+        "in acceptance_supports and a file the crafter changes (EXTEND or "
+        "CREATE_NEW, including a production module the oracle imports) only in "
+        "targets; never label an absent file EXTEND"
+    )
 
 
 def is_canonical_oracle_locator(locator: str) -> bool:
@@ -315,6 +329,9 @@ _FUNCTIONAL_PARADIGM_RE = re.compile(
 _OBJECT_ORIENTED_PARADIGM_RE = re.compile(
     r"^(?:object[-_ ]oriented|oo|oop)(?:[ \t]*\([^\n]*\))?$", re.IGNORECASE
 )
+_PROCEDURAL_PARADIGM_RE = re.compile(
+    r"^procedural(?:[ \t]*\([^\n]*\))?$", re.IGNORECASE
+)
 
 
 def extract_declared_paradigms(brief_text: str) -> list[str]:
@@ -333,6 +350,8 @@ def canonical_paradigm(value: str) -> str | None:
         return "functional"
     if _OBJECT_ORIENTED_PARADIGM_RE.fullmatch(value):
         return "object_oriented"
+    if _PROCEDURAL_PARADIGM_RE.fullmatch(value):
+        return "procedural"
     return None
 
 
@@ -816,33 +835,16 @@ def extract_declared_verification_authority_locators(
     return found
 
 
-#: The declared-ORACLE-locator line shape: the SAME ``Oracle target
-#: locator:`` label ``_DECLARED_TARGET_LOCATOR_RE`` already reads, but with
-#: the ``::symbol`` suffix OPTIONAL. ADR-AUM-001 reproduction, 2026-08-22
-#: (second same-class occurrence -- ADR-CFG-001's own declarations are the
-#: same bare shape and only ever survived because their all-Python target
-#: set reached the pytest-convention fallback): a RED_TO_GREEN oracle is
-#: authored at a path that does NOT exist yet, so the authority can cite it
-#: neither as ``file:line`` (no lines to cite) nor necessarily as
-#: ``path::TestName`` (the test function may be unnamed at DESIGN time).
-#: The bare declared path under this explicit label IS the judgment call
-#: and is unambiguous: the label says oracle, and admissibility still turns
-#: on the same shape rule every other citation source obeys.
+# Explicit DESIGN declarations use DESIGN's locator grammar, not a test filename
+# convention. Capture the complete spelling so an unsafe declaration cannot
+# silently become a different, admissible path.
 _DECLARED_ORACLE_LOCATOR_RE = re.compile(
-    r"Oracle target locator:[^`\n]*"
-    "`(?P<citation>" + _PATH_CITATION_CHARS + r"+\.\w+(?:::[A-Za-z_]\w*)*)`"
+    r"Oracle target locator:[^`\n]*`(?P<citation>[^`\r\n]+)`"
 )
 
 
 def extract_declared_oracle_locator_candidates(brief_text: str) -> list[str]:
-    """Every backtick-quoted path an ``Oracle target locator:`` line
-    declares, verbatim, in first-appearance order, deduplicated exactly.
-    SHAPE only -- whether a candidate is ADMISSIBLE as an oracle
-    (test/spec-shaped, non-documentary) is ``extract_oracle_citations``'
-    concern. Exported so a refusal can name the declaration it did NOT
-    admit and WHY, rather than claim the brief declared nothing (GDP-3: a
-    rejection that lies is worse than a bare traceback)."""
-    brief_text = _join_wrapped_backticks(brief_text)
+    """Return explicit oracle declarations verbatim, including unsafe input."""
     found: list[str] = []
     for match in _DECLARED_ORACLE_LOCATOR_RE.finditer(brief_text):
         citation = match.group("citation")
@@ -852,39 +854,22 @@ def extract_declared_oracle_locator_candidates(brief_text: str) -> list[str]:
 
 
 def extract_oracle_citations(brief_text: str) -> list[str]:
-    """Every citation naming the acceptance oracle, deduplicated per file.
+    """Return explicit DESIGN oracles, or conventional citations when undeclared.
 
-    A typed ``Oracle target locator: `<path>``` declaration is DESIGN's
-    explicit judgment call, so every such declaration is listed FIRST, in
-    its own first-appearance order -- regardless of where it sits in the
-    brief relative to other citations (reproduction: a brief listing its
-    ``Test dependency locator:`` lines before an ``Oracle target locator:``
-    declaration let the earlier dependency citation's mere textual position
-    outrank the explicit declaration). After the declared locators, every
-    remaining selector/``file:line`` citation follows in its existing,
-    position-ordered, first-durable-identity behaviour (SF friction report
-    2026-08-20, sister reproduction): a ``path::Selector`` citation is kept
-    VERBATIM (selector preserved); a ``file:line`` citation whose own
-    filename is test/spec-shaped (``is_test_shaped_path``) yields its plain
-    path. When the same file is cited both ways, its first durable identity
-    remains primary -- a later technical selector cannot rewrite public
-    oracle ownership. A declared locator's own line and selector are
-    optional (``_DECLARED_ORACLE_LOCATOR_RE``): RED_TO_GREEN's oracle does
-    not exist yet, so demanding either shape made the one explicit
-    declaration DESIGN can make unrepresentable. Documentary/formal-proof
-    files (``is_code_target_citation`` false) and production files are
-    never oracle candidates. Shape only: existence is the resolvers' own
-    concern (required for GREEN_TO_GREEN's already-committed oracle,
-    deliberately NOT for RED_TO_GREEN's to-be-authored one)."""
+    An explicit declaration is authoritative. Unsafe or malformed declarations
+    must not fall back to an incidental test citation elsewhere in the section.
+    """
+    declared = extract_declared_oracle_locator_candidates(brief_text)
+    if "Oracle target locator:" in brief_text:
+        matches = tuple(_DECLARED_ORACLE_LOCATOR_RE.finditer(brief_text))
+        if (
+            len(matches) != brief_text.count("Oracle target locator:")
+            or not declared
+            or not all(is_design_oracle_locator(item) for item in declared)
+        ):
+            return []
+        return declared
     brief_text = _join_wrapped_backticks(brief_text)
-    declared_matches = sorted(
-        (
-            match.start("citation"),
-            "::" in match.group("citation"),
-            match.group("citation"),
-        )
-        for match in _DECLARED_ORACLE_LOCATOR_RE.finditer(brief_text)
-    )
     other_matches = sorted(
         [
             (match.start(), True, match.group(0))
@@ -896,7 +881,7 @@ def extract_oracle_citations(brief_text: str) -> list[str]:
         ]
     )
     by_file: dict[str, str] = {}
-    for _, has_selector, citation in declared_matches + other_matches:
+    for _, has_selector, citation in other_matches:
         if has_selector:
             file_part = citation.partition("::")[0]
         else:

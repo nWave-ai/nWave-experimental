@@ -10,15 +10,31 @@ delivery steps. Before them the cycle was hand-typed Git -- `worktree add`,
 CLAUDE.md named `des` subcommands for it that no longer exist, so the standing
 instruction taught a contract the CLI could not honour.
 
-WHERE THE LANE IS PUT, and why the software decides it.  The path is derived,
-never passed: `<system temp>/nwave-<name>-lane`.  Derived, because a caller that
-chooses the path can open two worktrees for one lane and the software has
-nothing left to refuse; derived THIS way, because it is what the lanes on this
-project already do -- `/tmp/nwave-<name>-lane` was the measured shape of every
-live lane when this step was written.  `tempfile.gettempdir()` rather than a
-literal `/tmp` keeps the only runtime dependency Python: the same code answers on
-a platform that has no `/tmp`, and a caller isolating itself (a test, a second
-operator on one box) redirects the whole family with `TMPDIR`.
+The lane path follows the repository's configured verification workspace root,
+defaulting to ``<repo-root>/lanes/<name>``. It is durable, independent of TMPDIR,
+and names in separate repositories do not collide. A local Git info/exclude
+entry keeps nested worktrees out of the
+destination's status without editing its tracked ignore policy. Existing
+registered worktrees at older locations remain valid integrate/finalize inputs.
+
+WHAT `status` IS FOR.  A lane's finished work is not delivered while its tip is
+outside the destination, and no other step enumerates the lanes a root HAS:
+`integrate` and `finalize` each answer one path an orchestrator already names.
+`status` is the read-only inventory over the same registration table Git's
+`worktree list` already is, one block per lane: whether its tip is an ancestor
+of the destination (measured, never assumed from a clean worktree), which bytes
+no commit carries -- uncommitted, untracked AND ignored -- whether the
+registration still names a directory at all, and the next command that applies.
+It observes; it never merges, writes, or removes, and `NEXT` remains data.
+
+WHY REMOVAL REFUSES IGNORED BYTES.  Git refuses to remove a worktree holding
+uncommitted or untracked files, but removes one holding only IGNORED files
+without a word -- so a lane whose every extra byte is ignored reads as clean to
+`git status` and is deleted with its evidence.  A lane is where a person's or
+an agent's unpushed work AND uncommitted evidence live, so the removal paths
+(`finalize`, and `integrate` without `--keep-worktree`) prove no ignored bytes
+remain, or name them and refuse.  Retaining the worktree skips the proof: the
+bytes stay where they are.
 
 WHY `integrate` TAKES THE WORKTREE AND NOT THE BRANCH.  One form, and this one,
 because `worktree list --porcelain` maps a path to its branch AND its tip, so
@@ -41,10 +57,14 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from des.adapters.driven.config.workspace_paths import (
+    WorkspaceConfigInvalid,
+    WorkspacePaths,
+    resolve_workspace_paths,
+)
 from des.adapters.driven.git.git_observation import GitObservation, observe_text
 from des.application.head_advance import AdvanceRefusal, GitObserver, HeadAdvance
 from des.cli._repo_root_arg import add_repo_root_argument
@@ -84,6 +104,35 @@ _NAMED_PATHS = 3
 NOTHING_OWED = f"{_NO_STEP_OWED} -- the integrated delta touches no shipped asset"
 
 
+def _workspace_paths(root: Path) -> WorkspacePaths | StepRefusal:
+    """Resolve project identity and placement through their shared owner."""
+    try:
+        return resolve_workspace_paths(root)
+    except WorkspaceConfigInvalid as error:
+        return StepRefusal(
+            "WorkspaceConfigInvalid",
+            str(error),
+            "correct verification.reuse in the repository's .nwave/config.json "
+            "and re-run this step",
+        )
+
+
+def _reserved_segment(path: Path, lanes_directory: Path) -> bool:
+    """Whether `path` lives under a DOT-leading segment of the lanes directory.
+
+    The lane name grammar cannot produce a dot, so dot-leading segments under
+    the lanes root are reserved infrastructure (candidate and verification
+    workspaces), never lanes -- however many registrations they come to hold.
+    A path OUTSIDE the lanes directory is never reserved: historical external
+    lanes remain first-class inputs.
+    """
+    try:
+        relative = path.resolve().relative_to(lanes_directory.resolve())
+    except ValueError:
+        return False
+    return any(part.startswith(".") for part in relative.parts)
+
+
 @dataclass(frozen=True, slots=True)
 class OpenedLane:
     worktree: Path
@@ -110,6 +159,39 @@ class RegisteredLane:
 
 
 @dataclass(frozen=True, slots=True)
+class LaneObservation:
+    """One registered lane's inventory row, every field a Git measurement.
+
+    Three separate facts that must never collapse into one verdict:
+    AVAILABILITY is the registration's own state (present, locked, missing) --
+    never a readiness claim; CONTENT names bytes no commit carries; INTEGRATED
+    is ancestry against the destination, the only delivery fact here.  A clean
+    worktree whose tip is outside the destination is AVAILABLE, CONTENT-clean
+    and NOT delivered, all at once.
+    """
+
+    worktree: Path
+    branch: str | None
+    tip: str
+    integrated: bool | None
+    changes: tuple[str, ...] | None
+    ignored: tuple[str, ...]
+    availability: str
+    next_step: str
+    content_note: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LaneInventory:
+    """The whole lane surface of one destination, measured in one pass."""
+
+    destination: Path
+    head: str
+    lanes: tuple[LaneObservation, ...]
+    unregistered: tuple[Path, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class LaneSteps:
     """The lane steps, over one injected Git observation seam."""
 
@@ -124,7 +206,7 @@ class LaneSteps:
     def open(
         self, root: Path, name: str, base_ref: str | None
     ) -> OpenedLane | StepRefusal:
-        """Create the lane worktree and its branch, or refuse without writing."""
+        """Create a project-local lane, refusing occupied or escaping paths."""
         if LANE_NAME.match(name) is None:
             return StepRefusal(
                 "InvalidLaneName",
@@ -134,14 +216,41 @@ class LaneSteps:
                 "re-run with a name inside that grammar, for example "
                 "`--name lane-open-and-integrate-steps`",
             )
+        root = root.resolve()
         branch = f"lane/{name}"
-        worktree = Path(tempfile.gettempdir()).resolve() / f"nwave-{name}-lane"
+        workspace = _workspace_paths(root)
+        if isinstance(workspace, StepRefusal):
+            return workspace
+        directory = workspace.lanes
+        worktree = directory / name
+        if worktree.parent.is_symlink() or (
+            worktree.parent.exists() and not worktree.parent.is_dir()
+        ):
+            return StepRefusal(
+                "UnsafeLanePath",
+                f"{worktree.parent} is a symlink or is not a directory",
+                "preserve that path and use a project with a real lanes directory",
+            )
         base = self._resolve(root, base_ref)
         if isinstance(base, StepRefusal):
             return base
         held = self._existing(root, worktree, branch)
         if held is not None:
             return held
+        excluded = self._exclude_lanes(workspace.root, directory)
+        if excluded is not None:
+            return excluded
+        ignored = self.observe(
+            workspace.root, "check-ignore", "--quiet", "--", str(worktree)
+        )
+        if ignored.returncode:
+            return self._git_refusal(
+                ignored,
+                "LaneNotOpened",
+                f"{worktree} is not excluded by the project's Git ignore policy",
+                f"resolve ignore rules overriding the local exclusion for {directory} "
+                "before re-running; no lane was created",
+            )
         added = self.observe(root, "worktree", "add", str(worktree), "-b", branch, base)
         if added.returncode:
             return self._git_refusal(
@@ -152,6 +261,61 @@ class LaneSteps:
                 "this step; no worktree and no branch were created",
             )
         return OpenedLane(worktree, branch, base)
+
+    def _exclude_lanes(self, root: Path, directory: Path) -> StepRefusal | None:
+        """Exclude the configured directory without changing existing bytes."""
+        relative = directory.relative_to(root).as_posix()
+        if "\n" in relative or "\r" in relative:
+            return StepRefusal(
+                "UnsafeLanePath",
+                "the configured workspace path contains a line break",
+                "use a workspace path representable in Git info/exclude",
+            )
+        escaped = re.sub(r"([\\*?\[])", r"\\\1", relative)
+        pattern = f"/{escaped}/".encode()
+        tracked = self.observe(root, "ls-files", "--", f":(literal){relative}")
+        if tracked.returncode:
+            return self._git_refusal(
+                tracked,
+                "LaneNotOpened",
+                "could not inspect the lanes directory",
+                "restore Git access and re-run this step",
+            )
+        if tracked.stdout.strip():
+            return StepRefusal(
+                "UnsafeLanePath",
+                f"{directory} contains tracked project files",
+                "preserve those files; reserve a source-free lanes directory "
+                "before opening a lane",
+            )
+        observed = self.observe(root, "rev-parse", "--git-path", "info/exclude")
+        if observed.returncode:
+            return self._git_refusal(
+                observed,
+                "LaneNotOpened",
+                "could not locate Git's local exclusions",
+                "restore Git access and re-run this step",
+            )
+        exclude = Path(observed.stdout.strip())
+        if not exclude.is_absolute():
+            exclude = root / exclude
+        try:
+            if exclude.is_symlink() or exclude.parent.is_symlink():
+                raise OSError("the local exclusion path is a symlink")
+            existing = exclude.read_bytes() if exclude.exists() else b""
+            if pattern not in existing.splitlines():
+                exclude.parent.mkdir(parents=True, exist_ok=True)
+                with exclude.open("ab") as stream:
+                    if existing and not existing.endswith(b"\n"):
+                        stream.write(b"\n")
+                    stream.write(pattern + b"\n")
+        except OSError as error:
+            return StepRefusal(
+                "LaneNotOpened",
+                f"could not update {exclude}: {error}",
+                "restore a writable, non-symlink Git info/exclude and re-run",
+            )
+        return None
 
     def _resolve(self, root: Path, base_ref: str | None) -> str | StepRefusal:
         """The commit the lane starts from -- the root's HEAD unless told otherwise."""
@@ -179,7 +343,7 @@ class LaneSteps:
         directory.  Either one alone means a `worktree add` would fail or, worse,
         would land on top of work in flight.
         """
-        if worktree.exists():
+        if worktree.exists() or worktree.is_symlink():
             return StepRefusal(
                 "LaneExists",
                 f"{worktree} already exists, and this step never writes into a "
@@ -221,7 +385,7 @@ class LaneSteps:
         not_disposable = self._not_a_disposable_lane(root, registered)
         if not_disposable is not None:
             return not_disposable
-        dirty = self._dirty(registered.worktree)
+        dirty = self._dirty(registered.worktree, removing=not keep_worktree)
         if dirty is not None:
             return dirty
         advanced = self._advance.fast_forward(root, registered.tip)
@@ -256,7 +420,7 @@ class LaneSteps:
         not_disposable = self._not_a_disposable_lane(root, registered)
         if not_disposable is not None:
             return not_disposable
-        dirty = self._dirty(registered.worktree)
+        dirty = self._dirty(registered.worktree, removing=True)
         if dirty is not None:
             return dirty
         integrated = self._is_integrated(root, registered)
@@ -266,6 +430,363 @@ class LaneSteps:
         if closed is not None:
             return closed
         return registered
+
+    def status(
+        self,
+        root: Path,
+        destination_ref: str | None = None,
+        require_integrated: tuple[Path, ...] = (),
+    ) -> LaneInventory | StepRefusal:
+        """Enumerate every registered lane of this root, reading nothing else.
+
+        One pass measures, per lane, three facts it never collapses: whether
+        the lane's tip is an ancestor of the destination (the ONLY delivery
+        fact here), which bytes no commit carries, and whether the
+        registration still names a usable directory.  It never merges, writes,
+        or removes; a finished tip outside the destination is reported exactly
+        as what it is -- work the destination does not hold.
+
+        When ``require_integrated`` names lanes, this becomes the caller's
+        completion assertion: the named lanes' MEASURED tips are compared
+        against the destination, and any lane whose tip is outside it refuses
+        the step -- so a completion claim built on this command's success is
+        built on ancestry, not on a clean worktree or a lane's own word.
+        Content is not consulted here: a retained lane holding ignored bytes
+        is still integrated, and its removal is guarded separately.
+        """
+        workspace = _workspace_paths(root)
+        if isinstance(workspace, StepRefusal):
+            return workspace
+        root = workspace.root
+        directory = workspace.lanes
+        entries = self._worktree_entries(root)
+        if isinstance(entries, StepRefusal):
+            return entries
+        destination = self._destination_commit(root, destination_ref)
+        if isinstance(destination, StepRefusal):
+            return destination
+        root_path = root.resolve()
+        registered_paths: set[Path] = set()
+        lanes: list[LaneObservation] = []
+        for fields in entries:
+            path = Path(fields["worktree"])
+            registered_paths.add(path.resolve())
+            if path.resolve() == root_path:
+                continue  # the destination itself, rendered once from its HEAD
+            if _reserved_segment(path, directory):
+                continue  # reserved workspace registrations are not lanes
+            branch = fields.get("branch") or None
+            branch = branch.removeprefix("refs/heads/") if branch else None
+            tip = fields.get("HEAD", "").strip()
+            prunable = fields.get("prunable")
+            try:
+                linked = path.is_symlink()
+                exists = path.exists()
+                read_error: str | None = None
+            except OSError as error:
+                linked = exists = False
+                read_error = str(error)
+            content_note: str | None = None
+            if read_error is not None:
+                # Degrade THIS lane, loudly, and keep the inventory measurable.
+                availability = (
+                    f"UNMEASURABLE: the registered path could not be "
+                    f"inspected: {read_error}"
+                )
+            elif prunable or not exists:
+                availability = (
+                    f"MISSING: {prunable or 'the registered directory is absent'}"
+                )
+                if linked:
+                    content_note = "the registered path is a dangling symlink"
+            elif "locked" in fields:
+                availability = (
+                    f"LOCKED: {fields.get('locked') or 'locked by Git registration'}"
+                )
+            else:
+                availability = "AVAILABLE"
+            integrated = self._ancestor_of(root, tip, destination)
+            if isinstance(integrated, StepRefusal):
+                return integrated
+            changes: tuple[str, ...] | None = None
+            ignored: tuple[str, ...] = ()
+            if exists and read_error is None:
+                observed = self._content(path)
+                if isinstance(observed, StepRefusal):
+                    return observed
+                changes, ignored, content_note = observed
+            lanes.append(
+                LaneObservation(
+                    path,
+                    branch,
+                    tip,
+                    integrated,
+                    changes,
+                    ignored,
+                    availability,
+                    self._lane_next(
+                        root,
+                        RegisteredLane(path, branch, tip),
+                        availability,
+                        integrated,
+                        (changes, ignored),
+                    ),
+                    content_note,
+                )
+            )
+        unregistered = self._unregistered_entries(directory, registered_paths)
+        refused = self._requirement(root, destination, lanes, require_integrated)
+        if refused is not None:
+            return refused
+        return LaneInventory(root, destination, tuple(lanes), unregistered)
+
+    def _destination_commit(
+        self, root: Path, destination_ref: str | None
+    ) -> str | StepRefusal:
+        """The commit reachability is measured against: HEAD unless named."""
+        if destination_ref is None:
+            destination = self._advance.destination(root)
+            if isinstance(destination, AdvanceRefusal):
+                return self._from_advance(destination)
+            return destination
+        observed = self.observe(
+            root, "rev-parse", "--verify", f"{destination_ref}^{{commit}}"
+        )
+        if observed.returncode:
+            return self._git_refusal(
+                observed,
+                "InvalidDestination",
+                f"{destination_ref!r} does not name a commit in {root}",
+                "re-run with a commit this repository resolves, or omit "
+                "--destination to measure against the root's own HEAD",
+            )
+        return observed.stdout.strip()
+
+    def _ancestor_of(
+        self, root: Path, tip: str, destination: str
+    ) -> bool | StepRefusal | None:
+        """Whether `tip` is destination history; refusal when Git never answered.
+
+        `None` is for a tip that does not exist to measure (an empty
+        registration), never for a Git that failed: a Git that never ANSWERED
+        is never reported as a repository fact.
+        """
+        if not tip:
+            return None
+        ancestry = self.observe(root, "merge-base", "--is-ancestor", tip, destination)
+        if ancestry.unanswered is not None:
+            return self._git_refusal(
+                ancestry, "GitUnavailable", ancestry.stderr, "restore Git"
+            )
+        if ancestry.returncode == 0:
+            return True
+        if ancestry.returncode == 1:
+            return False
+        return self._git_refusal(
+            ancestry, "GitUnavailable", ancestry.stderr, "restore Git"
+        )
+
+    def _content(
+        self, worktree: Path
+    ) -> tuple[tuple[str, ...] | None, tuple[str, ...], str | None] | StepRefusal:
+        """The bytes the worktree holds beyond its commit, in two classes.
+
+        A Git that never ANSWERED is a refusal (the whole inventory is built
+        on Git).  A Git that answered and FAILED on this one path degrades
+        THIS lane's content to unobservable, naming why, so one unreadable
+        registration cannot discard the measured rows of every other lane.
+        """
+        observed = self.observe(
+            worktree,
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--ignored=matching",
+        )
+        if observed.unanswered is not None:
+            return self._git_refusal(
+                observed, "GitUnavailable", observed.stderr, "restore Git"
+            )
+        if observed.returncode:
+            return (
+                None,
+                (),
+                f"git status failed in the registered path: {observed.stderr.strip()}",
+            )
+        carried = []
+        ignored = []
+        for line in observed.stdout.splitlines():
+            if line.startswith("!! "):
+                path = line[3:].strip()
+                if path == "lanes" or path.startswith("lanes/"):
+                    continue  # nested lanes are their own protected jurisdiction
+                ignored.append(path)
+            elif line.strip():
+                carried.append(line)
+        return tuple(carried), tuple(ignored), None
+
+    def _unregistered_entries(
+        self, directory: Path, registered: set[Path]
+    ) -> tuple[Path, ...]:
+        """Lane-directory entries NO registration owns -- disk with no Git fact.
+
+        Dot-leading entries are skipped: the lane name grammar cannot produce
+        them, so they are reserved infrastructure (candidate and verification
+        workspaces), never orphaned lanes.
+        """
+        if not directory.is_dir() or directory.is_symlink():
+            return ()
+        return tuple(
+            child
+            for child in sorted(directory.iterdir())
+            if not child.name.startswith(".") and child.resolve() not in registered
+        )
+
+    def _requirement(
+        self,
+        root: Path,
+        destination: str,
+        lanes: list[LaneObservation],
+        require_integrated: tuple[Path, ...],
+    ) -> StepRefusal | None:
+        """The caller's opt-in completion assertion over MEASURED tips.
+
+        Every named lane is judged in ONE pass: the refusal reports all
+        independent failures together, numbered, because reporting the first
+        and waiting for a second run would bill the caller N dispatches for N
+        defects it could have seen at once.  A single failure keeps the exact
+        rendering it always had; any unmeasurable tip makes the whole refusal
+        Indeterminate -- a pass built on a tip nobody could observe is no pass.
+        """
+        if not require_integrated:
+            return None
+        measured = {lane.worktree.resolve(): lane for lane in lanes}
+        problems: list[StepRefusal] = []
+        unmeasured = False
+        for named in require_integrated:
+            lane = measured.get(named.resolve())
+            if lane is None:
+                problems.append(
+                    StepRefusal(
+                        "LaneNotRegistered",
+                        f"{named} is not a worktree of {root}, so its integration "
+                        "cannot be asserted",
+                        "pass the path `des lane open` reported for the lane, or "
+                        "run this step without --require-integrated to see the "
+                        "lanes this root has",
+                    )
+                )
+            elif lane.integrated is None:
+                unmeasured = True
+                problems.append(
+                    StepRefusal(
+                        "IntegrationUnmeasured",
+                        f"the tip of {named} could not be measured against "
+                        f"destination {destination}",
+                        "restore Git access and re-run this assertion; it refuses "
+                        "to pass on a tip it could not observe",
+                        Disposition.Indeterminate,
+                    )
+                )
+            elif not lane.integrated:
+                problems.append(
+                    StepRefusal(
+                        "LaneNotIntegrated",
+                        f"the named lane {named} is not delivered: its tip "
+                        f"{lane.tip} is not an ancestor of destination "
+                        f"{destination}, so a completion claim must not stand on "
+                        "this assertion",
+                        f"integrate it with `des lane integrate --repo-root {root} "
+                        f"--worktree {named}`, or preserve its commits elsewhere, "
+                        "then re-run this assertion; it never merges by itself",
+                    )
+                )
+        if not problems:
+            return None
+        if len(problems) == 1:
+            return problems[0]
+        uniform = len({problem.what for problem in problems}) == 1
+        what = problems[0].what if uniform else "RequirementsRefused"
+        why = f"{len(problems)} named lanes refuse this requirement: " + " ".join(
+            f"({number}) {problem.why}" for number, problem in enumerate(problems, 1)
+        )
+        how = " ".join(
+            f"({number}) {problem.how}" for number, problem in enumerate(problems, 1)
+        )
+        return StepRefusal(
+            what,
+            why,
+            how,
+            Disposition.Indeterminate if unmeasured else Disposition.Refusal,
+        )
+
+    def _lane_next(
+        self,
+        root: Path,
+        lane: RegisteredLane,
+        availability: str,
+        integrated: bool | None,
+        content: tuple[tuple[str, ...] | None, tuple[str, ...]],
+    ) -> str:
+        """The next command this lane itself implies -- advisory data, always.
+
+        A MISSING registration is cleaned PER LANE or not at all: a global
+        prune sweeps every prunable registration of the root, and a detached
+        registration can be the ONLY ref to its tip -- executing a prune HOW
+        has destroyed sibling work, so no advice here ever names one.  An
+        unintegrated missing lane is anchored BEFORE any removal is named:
+        retain the bytes first, remove registration residue only after the
+        tip provably lives in a ref the destination does not hold hostage.
+        """
+        worktree, branch, tip = lane.worktree, lane.branch, lane.tip
+        changes, ignored = content
+        if availability.startswith("UNMEASURABLE"):
+            return "restore read access to the registered path, then re-run this step"
+        if availability.startswith("MISSING"):
+            if integrated:
+                return (
+                    "the measured tip is already in the destination, and this "
+                    "clears only this registration, never the root's other "
+                    "registrations: after its owner confirms no active use, "
+                    f"git -C {root} worktree remove {worktree}"
+                )
+            if branch:
+                return (
+                    f"the branch {branch} still anchors tip {tip}, so retain "
+                    "it before anything is cleared, and clear only this "
+                    "registration, never the root's other registrations: "
+                    f"(1) git -C {root} rev-parse refs/heads/{branch}; "
+                    f"(2) git -C {root} worktree remove {worktree}; "
+                    f"(3) git -C {root} worktree add {worktree} {branch}; "
+                    "then integrate normally"
+                )
+            return (
+                "the registration is this tip's only ref, so anchor a "
+                "recoverable branch before anything is cleared, and clear "
+                "only this registration, never the root's other "
+                "registrations: "
+                f"(1) git -C {root} branch recover/{worktree.name} {tip}; "
+                f"(2) git -C {root} worktree remove {worktree}; "
+                f"(3) git -C {root} worktree add {worktree} "
+                f"recover/{worktree.name}; then integrate normally"
+            )
+        if availability.startswith("LOCKED"):
+            return f"git -C {root} worktree unlock {worktree}"
+        closing = "finalize" if integrated else "integrate"
+        invocation = f"des lane {closing} --repo-root {root} --worktree {worktree}"
+        if changes:
+            return (
+                "commit what belongs to the lane, or remove what does not, in "
+                f"that worktree, then {invocation}"
+            )
+        if ignored:
+            return (
+                "preserve the named ignored bytes outside the lane, or delete "
+                f"them deliberately in it, then {invocation}"
+            )
+        if integrated:
+            return f"the lane tip is in the destination; cleanup is available as {invocation}"
+        return invocation
 
     def _not_a_disposable_lane(
         self, root: Path, lane: RegisteredLane
@@ -318,6 +839,28 @@ class LaneSteps:
             )
         return None
 
+    def _worktree_entries(self, root: Path) -> tuple[dict[str, str], ...] | StepRefusal:
+        """Every registered worktree of this root, in Git's own enumeration.
+
+        ONE observation and ONE parser over the registration table for every
+        consumer: `integrate` and `finalize` look one caller-named path up in
+        it, `status` enumerates it whole.  A predicate and its enumerator read
+        the same source, so neither can drift from the other.
+        """
+        listed = self.observe(root, "worktree", "list", "--porcelain")
+        if listed.returncode:
+            return self._git_refusal(
+                listed, "GitUnavailable", listed.stderr, "restore Git"
+            )
+        entries = []
+        for entry in listed.stdout.split("\n\n"):
+            fields = dict(
+                [*line.split(" ", 1), ""][:2] for line in entry.splitlines() if line
+            )
+            if fields.get("worktree"):
+                entries.append(fields)
+        return tuple(entries)
+
     def _registered(self, root: Path, worktree: Path) -> RegisteredLane | StepRefusal:
         """The lane as GIT reports it -- its real branch and its real tip.
 
@@ -325,17 +868,12 @@ class LaneSteps:
         knows, while the branch and the tip are what the repository knows, and
         the step must integrate the second.
         """
-        listed = self.observe(root, "worktree", "list", "--porcelain")
-        if listed.returncode:
-            return self._git_refusal(
-                listed, "GitUnavailable", listed.stderr, "restore Git"
-            )
-        for entry in listed.stdout.split("\n\n"):
-            fields = dict(
-                [*line.split(" ", 1), ""][:2] for line in entry.splitlines() if line
-            )
-            listed_path = fields.get("worktree", "")
-            if not listed_path or Path(listed_path).resolve() != worktree:
+        entries = self._worktree_entries(root)
+        if isinstance(entries, StepRefusal):
+            return entries
+        for fields in entries:
+            listed_path = fields["worktree"]
+            if Path(listed_path).resolve() != worktree:
                 continue
             branch = fields.get("branch") or None
             return RegisteredLane(
@@ -350,28 +888,89 @@ class LaneSteps:
             f"`git -C {root} worktree list` to see the lanes this root has",
         )
 
-    def _dirty(self, worktree: Path) -> StepRefusal | None:
-        """Refuse a lane holding bytes no commit carries, and NAME them."""
-        status = self.observe(
-            worktree, "status", "--porcelain=v1", "--untracked-files=all"
+    def _dirty(self, worktree: Path, *, removing: bool) -> StepRefusal | None:
+        """Refuse a lane holding bytes no commit carries, and NAME them.
+
+        When the lane will be REMOVED by this step, ignored bytes are refused
+        too: Git refuses to remove a worktree holding untracked files, but
+        deletes one holding only ignored files without a word, so ignored
+        evidence would vanish behind a "clean" status line.
+        """
+        nested = worktree / "lanes"
+        nested_status = None
+        if nested.exists() or nested.is_symlink():
+            nested_status = self.observe(
+                worktree,
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+                "--ignored=matching",
+                "--",
+                "lanes",
+            )
+            if nested_status.returncode:
+                return self._git_refusal(
+                    nested_status,
+                    "GitUnavailable",
+                    nested_status.stderr,
+                    "restore Git access before inspecting nested lane content",
+                )
+        if nested_status is not None and nested_status.stdout.strip():
+            return StepRefusal(
+                "LaneDirty",
+                f"{nested} holds uncommitted or ignored nested content: "
+                + "; ".join(nested_status.stdout.splitlines()),
+                "integrate or preserve and relocate nested lanes before closing "
+                "their containing worktree; never force removal",
+            )
+        observed = self.observe(
+            worktree,
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            *(("--ignored=matching",) if removing else ()),
         )
-        if status.returncode:
+        if observed.returncode:
             return self._git_refusal(
-                status,
+                observed,
                 "GitUnavailable",
-                status.stderr,
+                observed.stderr,
                 "restore Git",
             )
-        if not status.stdout.strip():
+        if not observed.stdout.strip():
             return None
-        return StepRefusal(
-            "LaneDirty",
-            f"{worktree} holds changes no commit carries, so integrating it "
-            "would leave them behind: " + "; ".join(status.stdout.split("\n")).strip(),
-            "commit what belongs to the lane, or remove what does not, in that "
-            "worktree, then re-run this step; this step never discards a byte "
-            "it did not see committed",
-        )
+        carried = []
+        ignored = []
+        for line in observed.stdout.splitlines():
+            if line.startswith("!! "):
+                path = line[3:].strip()
+                if path == "lanes" or path.startswith("lanes/"):
+                    continue  # the nested-lane check above owns that jurisdiction
+                ignored.append(path)
+            elif line.strip():
+                carried.append(line)
+        if carried:
+            return StepRefusal(
+                "LaneDirty",
+                f"{worktree} holds changes no commit carries, so integrating it "
+                "would leave them behind: " + "; ".join(carried),
+                "commit what belongs to the lane, or remove what does not, in that "
+                "worktree, then re-run this step; this step never discards a byte "
+                "it did not see committed",
+            )
+        if ignored:
+            return StepRefusal(
+                "LaneIgnoredContent",
+                f"{worktree} reads as clean to a plain `git status`, but holds "
+                "ignored bytes no commit carries ("
+                + ", ".join(ignored)
+                + "), and removing the lane would delete them without a word: "
+                "Git refuses untracked files yet removes ignored ones silently",
+                "preserve those bytes outside the lane, or delete them "
+                "deliberately in the worktree, then re-run this step; a lane is "
+                "never removed merely because Git reports it clean",
+            )
+        return None
 
     def _shipped(
         self, root: Path, base: str, tip: str
@@ -487,7 +1086,7 @@ def _next_after_open(root: Path, lane: OpenedLane) -> str:
     return (
         f"des po --repo-root {lane.worktree} "
         "(--project | --epic ID | --feature ID | --slice FEATURE_ID SLICE_ID) "
-        "-- one Request on stdin, decomposed "
+        "--input - -- closed host DISCUSS facts on stdin, constructed "
         f"inside the lane; then `des state --repo-root {lane.worktree}` names "
         f"each following step, and close the lane with "
         f"`des lane integrate --repo-root {root} --worktree {lane.worktree}`"
@@ -519,9 +1118,16 @@ def _next_after_retained_integrate(root: Path, lane: IntegratedLane) -> str:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="des lane")
     steps = parser.add_subparsers(dest="step", required=True)
-    opening = steps.add_parser("open", help="create one lane worktree and branch")
+    opening = steps.add_parser(
+        "open",
+        help="create a lane beneath the configured project workspace root",
+        description="Create a durable project-local lane, independent of TMPDIR. "
+        "Excludes its configured directory in Git info/exclude, not tracked .gitignore.",
+    )
     add_repo_root_argument(opening, "--repo-root", type=Path, required=True)
-    opening.add_argument("--name", required=True)
+    opening.add_argument(
+        "--name", required=True, help="one unique lane name in this project"
+    )
     opening.add_argument("--base", default=None)
     closing = steps.add_parser(
         "integrate", help="fast-forward the root onto one lane, then close it"
@@ -538,7 +1144,66 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     add_repo_root_argument(finalizing, "--repo-root", type=Path, required=True)
     finalizing.add_argument("--worktree", type=Path, required=True)
+    reporting = steps.add_parser(
+        "status",
+        help="report every registered lane of this root, read-only",
+        description="Enumerate the lanes this root has registered: each lane's "
+        "tip measured against the destination, the bytes no commit carries, "
+        "and the registration's availability. Observes only -- never merges, "
+        "writes, or removes.",
+    )
+    add_repo_root_argument(reporting, "--repo-root", type=Path, required=True)
+    reporting.add_argument(
+        "--destination",
+        default=None,
+        help="measure reachability against this commit, not the root's HEAD",
+    )
+    reporting.add_argument(
+        "--require-integrated",
+        type=Path,
+        action="append",
+        default=[],
+        metavar="WORKTREE",
+        help="assert every named lane's measured tip is in the destination; "
+        "refuses otherwise (repeatable)",
+    )
     return parser
+
+
+def _integrated_word(integrated: bool | None) -> str:
+    if integrated is None:
+        return "unknown -- the tip was not measurable against the destination"
+    return "yes" if integrated else "no -- the tip is outside the destination"
+
+
+def _content_word(
+    changes: tuple[str, ...] | None,
+    ignored: tuple[str, ...],
+    note: str | None = None,
+) -> str:
+    """The CONTENT row: what the worktree holds beyond its commit, or so."""
+    if changes is None:
+        return f"unobservable -- {note or 'the registration names no directory'}"
+    parts = []
+    for named, paths in (("uncommitted/untracked", changes), ("ignored", ignored)):
+        if not paths:
+            continue
+        listed = ", ".join(paths[:_NAMED_PATHS])
+        more = len(paths) - _NAMED_PATHS
+        parts.append(f"{named}: {listed}" + (f" and {more} more" if more > 0 else ""))
+    return "; ".join(parts) if parts else "clean"
+
+
+def _aggregate_next(inventory: LaneInventory) -> str:
+    for lane in inventory.lanes:
+        if lane.next_step:
+            return lane.next_step
+    if inventory.unregistered:
+        return (
+            "inspect each UNREGISTERED path -- no lane step registered it, so "
+            "no lane step removes it"
+        )
+    return _NO_STEP_OWED
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -562,6 +1227,38 @@ def main(argv: list[str] | None = None) -> int:
             ],
             _next_after_open(root, opened),
         )
+        return 0
+    if args.step == "status":
+        inventory = steps.status(root, args.destination, tuple(args.require_integrated))
+        if isinstance(inventory, StepRefusal):
+            return _refuse(
+                inventory,
+                f"des lane status --repo-root {root} -- after the HOW above",
+            )
+        fields = [
+            f"DESTINATION: {inventory.destination}",
+            f"DESTINATION-HEAD: {inventory.head}",
+        ]
+        if args.require_integrated:
+            fields.append(
+                "REQUIRE-INTEGRATED: satisfied -- every named lane's measured "
+                "tip is an ancestor of the destination"
+            )
+        for path in inventory.unregistered:
+            fields.append(f"UNREGISTERED: {path}")
+        for lane in inventory.lanes:
+            fields.extend(
+                [
+                    f"LANE: {lane.worktree}",
+                    f"BRANCH: {lane.branch or '(detached)'}",
+                    f"TIP: {lane.tip}",
+                    f"INTEGRATED: {_integrated_word(lane.integrated)}",
+                    f"CONTENT: {_content_word(lane.changes, lane.ignored, lane.content_note)}",
+                    f"AVAILABILITY: {lane.availability}",
+                    f"NEXT: {lane.next_step}",
+                ]
+            )
+        _succeed(fields, _aggregate_next(inventory))
         return 0
     worktree = args.worktree.resolve()
     if args.step == "integrate":

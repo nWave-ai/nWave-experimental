@@ -1,7 +1,7 @@
 """Acceptance supports for `config follows the repository`.
 
 Everything here drives ONLY the declared public port: the real `des` process
-(`python -m des blast-radius --repo . --paths alpha.txt beta.txt`), whose
+(`python -m des blast-radius --repo . --paths alpha.py beta.py`), whose
 stdout grammar is documented at src/des/cli/blast_radius.py:13-31.
 
 No git binary is used anywhere -- the worktree checkouts are hand-built with
@@ -26,6 +26,13 @@ from pathlib import Path
 # `blast_radius.small_max_files` threshold is the repository-rooted 1 rather
 # than the canonical default 2, for the two scope files the fixture names.
 DISCRIMINATOR_REASON = "files=2 > small_max_files=1"
+
+# The two scope entries every measurement names: Python modules that define no
+# symbol. The consumer-count analysis enumerates a Python file's symbols and
+# finds none, so it contributes no count; a non-Python path would instead be
+# recorded as an unknown (null) count, which classifies the scope as L before
+# the S/M `files=` reason is ever built.
+SCOPE_FILES = ("alpha.py", "beta.py")
 
 REPO_ROOTED_THRESHOLD = {"blast_radius": {"small_max_files": 1}}
 
@@ -62,15 +69,15 @@ def write_config(root: Path, payload: dict) -> None:
 
 
 def make_scope_files(checkout: Path) -> None:
-    """Create the two NON-python scope entries the port is asked to measure.
+    """Create the two symbol-free Python modules the port is asked to measure.
 
-    Non-python on purpose: the measurement's consumer-count and boundary-file
-    analyses skip non-`.py` scope entries outright, so neither can contribute
-    a competing reason and starve the `files=` discriminator.
+    Symbol-free on purpose: neither the consumer-count analysis nor the
+    boundary-file globs can contribute a competing reason, so the `files=`
+    discriminator is the only threshold-dependent reason in the verdict.
     """
     checkout.mkdir(parents=True, exist_ok=True)
-    (checkout / "alpha.txt").write_text("alpha\n", encoding="utf-8")
-    (checkout / "beta.txt").write_text("beta\n", encoding="utf-8")
+    for name in SCOPE_FILES:
+        (checkout / name).write_text(f'"""{name} scope module."""\n', encoding="utf-8")
 
 
 def make_plain_checkout(root: Path) -> Path:
@@ -155,8 +162,7 @@ def measure_blast_radius(checkout: Path, home: Path, *, path_dir: Path) -> PortO
             "--repo",
             ".",
             "--paths",
-            "alpha.txt",
-            "beta.txt",
+            *SCOPE_FILES,
         ],
         cwd=str(checkout),
         env=env,

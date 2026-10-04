@@ -28,9 +28,12 @@ Usage:
       --step-id 02-03 \\
       --message "feat: add foo"
 
+Output is the shared DES terminal block (``des.cli.step_terminal``): a success
+names the commit and step; a refusal carries WHAT / WHY / HOW.
+
 Exit codes:
     0 = Success, commit created containing only the owned paths
-    1 = Git/commit error (nothing to commit, bad repo, git failure)
+    1 = Refusal (nothing to commit, bad repo, git failure)
     2 = Usage error (argparse default for missing/invalid arguments)
 """
 
@@ -45,7 +48,15 @@ from pathlib import Path
 
 from des.application.commit_message_attribution import attribute_commit_message
 from des.cli._repo_root_arg import add_repo_root_argument
+from des.cli.step_terminal import NOTHING_OWED, StepRefusal, refuse, succeed
 from des.domain.commit_trailer_append import append_mechanical_trailer_block
+
+
+#: The invocation form a refusal names as the move after its HOW.
+_AGAIN = (
+    "des commit --repo-dir <repo> --owned-paths <path>... --step-id <id> "
+    "--message <text> -- after the HOW above"
+)
 
 
 try:
@@ -112,14 +123,15 @@ def _with_step_id_trailer(message: str, step_id: str) -> str:
 
 def _commit_owned_locked(
     repo: Path, owned_paths: list[str], message: str
-) -> tuple[int, str]:
+) -> StepRefusal | str:
     """Commit only *owned_paths* via a temporary scoped index, under a lock.
 
-    Returns ``(exit_code, error_message)``. The lock (``.nwave/des/commit.lock``)
-    serializes concurrent callers. The commit is built from a private index
-    (``GIT_INDEX_FILE``) seeded with HEAD plus the owned paths only, so foreign
-    or hook-staged files cannot land. The shared index/working tree are
-    untouched apart from resyncing the owned paths to the new HEAD.
+    Returns the refusal, or the new commit read under the lock. The lock
+    (``.nwave/des/commit.lock``) serializes concurrent callers. The commit is
+    built from a private index (``GIT_INDEX_FILE``) seeded with HEAD plus the
+    owned paths only, so foreign or hook-staged files cannot land. The shared
+    index/working tree are untouched apart from resyncing the owned paths to
+    the new HEAD.
     """
     lock_path = repo / ".nwave" / "des" / "commit.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -134,9 +146,19 @@ def _commit_owned_locked(
                 fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
 
 
+def _git_refusal(command: str, result: subprocess.CompletedProcess[str]) -> StepRefusal:
+    detail = (result.stderr or result.stdout).strip()
+    return StepRefusal(
+        "CommitFailed",
+        f"git {command} exited {result.returncode}: {detail}",
+        "repair the repository state Git names, then commit again; the shared "
+        "index and working tree were left unchanged",
+    )
+
+
 def _commit_via_scoped_index(
     repo: Path, owned_paths: list[str], message: str
-) -> tuple[int, str]:
+) -> StepRefusal | str:
     """Commit owned paths through a private temporary index (lock already held)."""
     # A private index file, seeded from HEAD, that only the owned paths are
     # staged into — keeps foreign/hook-staged files out of the commit by
@@ -148,28 +170,32 @@ def _commit_via_scoped_index(
     try:
         seed = _git(repo, "read-tree", "HEAD", env=env)
         if seed.returncode != 0:
-            return 1, f"git read-tree failed: {seed.stderr.strip()}"
+            return _git_refusal("read-tree", seed)
 
         # -A stages additions, modifications AND deletions for the owned paths.
         add = _git(repo, "add", "-A", "--", *owned_paths, env=env)
         if add.returncode != 0:
-            return 1, f"git add failed: {add.stderr.strip()}"
+            return _git_refusal("add", add)
 
         # Nothing changed in the owned paths relative to HEAD → nothing to commit.
         if _git(repo, "diff", "--cached", "--quiet", env=env).returncode == 0:
-            return 1, "no changes in owned paths to commit"
+            return StepRefusal(
+                "NothingToCommit",
+                f"the owned paths {' '.join(owned_paths)} hold no change against HEAD",
+                "name the paths this step actually changed in --owned-paths, or "
+                "skip the commit when the step changed nothing",
+            )
 
         commit = _git(repo, "commit", "--no-verify", "-m", message, env=env)
         if commit.returncode != 0:
-            detail = (commit.stderr or commit.stdout).strip()
-            return 1, f"git commit failed: {detail}"
+            return _git_refusal("commit", commit)
     finally:
         Path(tmp_index).unlink(missing_ok=True)
 
     # Resync the shared index for owned paths to the new HEAD so they show clean;
     # any foreign staged work in the shared index is left untouched.
     _git(repo, "reset", "-q", "--", *owned_paths)
-    return 0, ""
+    return _git(repo, "rev-parse", "HEAD").stdout.strip()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -179,27 +205,30 @@ def main(argv: list[str] | None = None) -> int:
         argv: Command-line arguments. Uses sys.argv[1:] if None.
 
     Returns:
-        Exit code: 0=success, 1=git error, 2=usage error.
+        Exit code: 0=success, 1=refusal, 2=usage error.
     """
     parser = _build_parser()
     args = parser.parse_args(argv)
 
     repo = Path(args.repo_dir)
     if not (repo / ".git").exists():
-        print(f"Error: not a git repository: {repo}")
-        return 1
+        return refuse(
+            StepRefusal(
+                "RepositoryUnavailable",
+                f"{repo} holds no .git, so no commit can be built there",
+                "pass --repo-dir naming the repository root",
+            ),
+            _AGAIN,
+        )
 
     owned_paths: list[str] = list(args.owned_paths)
     message = _with_step_id_trailer(args.message, args.step_id)
     message = attribute_commit_message(repo, message)
 
-    exit_code, error = _commit_owned_locked(repo, owned_paths, message)
-    if exit_code != 0:
-        print(f"Error: {error}")
-        return exit_code
-
-    print(f"Committed owned file(s) for step {args.step_id}")
-    return 0
+    committed = _commit_owned_locked(repo, owned_paths, message)
+    if isinstance(committed, StepRefusal):
+        return refuse(committed, _AGAIN)
+    return succeed([f"COMMIT: {committed}", f"STEP-ID: {args.step_id}"], NOTHING_OWED)
 
 
 if __name__ == "__main__":

@@ -228,6 +228,69 @@ def codex_config_dir() -> Path:
     return Path(override) if override else Path.home() / ".codex"
 
 
+# OMP (oh-my-pi) native roots. OMP 18.5 resolves TWO DIFFERENT roots, and the
+# installer must follow each faithfully:
+#
+# - Native SKILLS discovery follows PI_CODING_AGENT_DIR: the skill tree is
+#   <PI_CODING_AGENT_DIR>/skills when that override is set (non-empty), else
+#   <config-root>/agent/skills.
+# - TASK-AGENT discovery follows the generic config root: agents are
+#   <config-root>/agent/agents/*.md where the config root is
+#   $HOME/<PI_CONFIG_DIR or ".omp"> -- PI_CODING_AGENT_DIR does NOT relocate
+#   the agent-file root (empirical probe 2026-10-03: agent files written under
+#   $PI_CODING_AGENT_DIR/agents are never discovered).
+#
+# NWAVE_AGENTS_HOME relocates the home root for install isolation, exactly as
+# for every other platform target; PI_CONFIG_DIR renames the config root under
+# that home exactly as OMP itself resolves it. The split is resolved ONCE,
+# here, so every consumer (detector, plugins, receipt) shares one resolution.
+OMP_CONFIG_DIR_ENV = "PI_CONFIG_DIR"
+OMP_AGENT_DIR_ENV = "PI_CODING_AGENT_DIR"
+
+
+def omp_config_root() -> Path:
+    """Return the OMP config root, honoring NWAVE_AGENTS_HOME and PI_CONFIG_DIR.
+
+    NWAVE_AGENTS_HOME relocates the home root for install isolation (the same
+    override every other platform target honors); PI_CONFIG_DIR renames the
+    config root under that home exactly as OMP itself resolves it.
+    """
+    home_override = env_or_none("NWAVE_AGENTS_HOME")
+    home = Path(home_override) if home_override else Path.home()
+    return home / (env_or_none(OMP_CONFIG_DIR_ENV) or ".omp")
+
+
+def omp_agent_dir() -> Path:
+    """Return the OMP native agent directory (config root's ``agent/``).
+
+    The task-agent discovery root -- the directory whose ``agents/`` and
+    (when no PI_CODING_AGENT_DIR override is set) ``skills/`` OMP reads.
+    """
+    return omp_config_root() / "agent"
+
+
+def omp_agents_dir() -> Path:
+    """Return the OMP native task-agent directory.
+
+    Follows the generic config root: OMP's task-agent discovery never reads
+    PI_CODING_AGENT_DIR for agent files.
+    """
+    return omp_agent_dir() / "agents"
+
+
+def omp_skills_dir() -> Path:
+    """Return the OMP native skills directory.
+
+    Native skill discovery follows PI_CODING_AGENT_DIR: a non-empty override
+    relocates the skills root to ``<override>/skills``; otherwise the skills
+    tree lives under the config-root agent directory.
+    """
+    override = env_or_none(OMP_AGENT_DIR_ENV)
+    if override:
+        return Path(override) / "skills"
+    return omp_agent_dir() / "skills"
+
+
 def nwave_config_dir() -> Path:
     """Return the global nWave state root for this install destination."""
     return agents_home() / ".nwave"

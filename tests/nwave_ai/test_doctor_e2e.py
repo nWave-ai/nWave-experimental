@@ -1,12 +1,12 @@
 """E2E regression tests for `nwave-ai doctor`.
 
 Stages a fake healthy ~/.claude in tmp_path and exercises the full
-doctor stack (runner + all 7 checks + formatter) through DoctorContext.
+doctor stack (runner, checks, and formatter) through DoctorContext.
 Each broken-variant test removes or corrupts exactly one piece and asserts
 the correct check fails with the expected remediation text.
 
 AC coverage:
-  01-05 AC1: healthy install → exit 0, 7 passing checks
+  01-05 AC1: healthy install → exit 0, all checks passing
   01-05 AC2: shims missing → ShimsDeployedCheck fails, remediation mentions nwave-ai install
   01-05 AC3: empty hooks in settings.json → HooksRegisteredCheck fails
   01-05 AC4: non-existent Python binary in hook command → HookPythonPathCheck fails
@@ -94,6 +94,7 @@ def stage_healthy_install(base: Path) -> Path:
             "PostToolUse": [{"hooks": [{"command": hook_command}]}],
             "SubagentStop": [{"hooks": [{"command": hook_command}]}],
             "SessionStart": [{"hooks": [{"command": hook_command}]}],
+            "SessionEnd": [{"hooks": [{"command": hook_command}]}],
         },
         "env": {
             "PATH": f"{bin_dir}:/usr/bin:/bin",
@@ -105,36 +106,21 @@ def stage_healthy_install(base: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# AC1 — healthy install: exit 0, all 7 checks pass
+# AC1 — healthy install: exit 0, all checks pass
 # ---------------------------------------------------------------------------
 
 
 def test_doctor_reports_healthy_install(tmp_path: Path) -> None:
-    """Healthy staged install: runner returns 11 results, all passed=True.
+    """A complete staged install passes every doctor check.
 
-    Given a complete fake ~/.claude with shims, settings.json, DES module,
-    and framework directories,
-    When doctor runs,
-    Then all 11 checks pass and there are no failures.
-
-    Step 02-02 added DensityCheck (D6 + D12), bumping the count from 7 to 8.
-    The claude-code-attribution-migration feature added AttributionCheck (R7),
-    a read-only diagnostic that always passes, bumping the count from 8 to 9.
-    The install-version-drift feature added VersionSyncCheck, bumping the count
-    from 9 to 10. The config-SSOT feature added ConfigSsotCheck, bumping the
-    count from 10 to 11. A fresh tmp_path home has no `~/.nwave/config.json`
-    or `~/.nwave/config.json`, so density, version-sync and config_ssot all
-    resolve to their undeterminable/fresh-install pass branch. ``project_root``
-    is pinned to the same isolated ``tmp_path`` (not the default ``Path.cwd()``)
-    so ConfigSsotCheck's per-repo tier never leaks this checkout's own
-    committed ``.nwave/config.json`` into the fixture.
+    Pin project_root to the isolated home so this checkout's configuration
+    cannot affect the diagnostic result.
     """
     stage_healthy_install(tmp_path)
     context = DoctorContext(home_dir=tmp_path, project_root=tmp_path)
 
     results = run_doctor(context)
 
-    assert len(results) == 11, f"Expected 11 results, got {len(results)}"
     failed = [r for r in results if not r.passed]
     assert not failed, "Expected all checks to pass, but these failed: " + ", ".join(
         f"{r.check_name}: {r.message}" for r in failed

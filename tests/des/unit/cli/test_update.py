@@ -131,6 +131,8 @@ class TestUpdateDryRun:
         assert "WHAT" in captured.err
         assert "WHY" in captured.err
         assert "HOW" in captured.err
+        assert str(artifact) in captured.err
+        assert "schema-version" in captured.err
         assert "Traceback" not in captured.err
 
     def test_dry_run_writes_nothing_content_hash_unchanged(
@@ -319,6 +321,7 @@ class TestUpdateApply:
             {"schema-version": 0, "phase": "RED", "tag": "v4", "unknown-field": True},
             {"schema-version": 0, "phase": "RED"},
             {"schema-version": "1", "phase": "RED", "tag": "v4"},
+            {"schema-version": -1, "phase": "RED", "tag": "v4"},
         ],
     )
     def test_apply_invalid_or_unversioned_input_refuses_without_mutation(
@@ -338,7 +341,139 @@ class TestUpdateApply:
         assert "WHAT" in captured.err
         assert "WHY" in captured.err
         assert "HOW" in captured.err
+        assert str(artifact) in captured.err
         assert _sha256(artifact) == before
+
+
+class TestUpdateInputRefusal:
+    """Invalid discovered input is reported at the CLI without persistent effects."""
+
+    @pytest.mark.parametrize("operation", ["--dry-run", "--apply"])
+    @pytest.mark.parametrize(
+        ("contents", "cause"),
+        [
+            ("[]", "object"),
+            ("{invalid json", "json"),
+            ('{"schema-version": -1}', "schema-version"),
+        ],
+        ids=["non-object-config", "malformed-json-config", "negative-config-version"],
+    )
+    def test_malformed_config_names_path_and_cause_without_writes(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+        operation: str,
+        contents: str,
+        cause: str,
+    ) -> None:
+        artifact = tmp_path / ".nwave" / "config.json"
+        artifact.parent.mkdir(parents=True)
+        artifact.write_text(contents, encoding="utf-8")
+        before = _fixture_tree_snapshot(tmp_path)
+
+        exit_code = main([operation, "--root", str(tmp_path)])
+
+        diagnostic = capsys.readouterr().err
+        assert exit_code != 0, (
+            "WHAT: malformed config must refuse; WHY: its shape cannot be "
+            "classified or migrated; HOW: validate the input before planning."
+        )
+        assert str(artifact) in diagnostic and cause in diagnostic.lower(), (
+            "WHAT: refusal must name the input path and cause; WHY: an operator "
+            "cannot repair an anonymous artifact error; HOW: include both in "
+            "the CLI diagnostic."
+        )
+        assert "WHAT" in diagnostic and "WHY" in diagnostic and "HOW" in diagnostic
+        assert "Traceback" not in diagnostic
+        assert "list' object has no attribute" not in diagnostic
+        assert _fixture_tree_snapshot(tmp_path) == before, (
+            "WHAT: malformed input must leave every fixture byte unchanged; "
+            "WHY: refusal precedes persistence; HOW: finish validation before writes."
+        )
+
+    def test_later_malformed_artifact_refuses_whole_apply_batch(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        eligible = tmp_path / ".nwave" / "expectation-charters" / "a-wip-v4.json"
+        malformed = tmp_path / ".nwave" / "expectation-charters" / "z-broken.json"
+        _write(eligible, {"schema-version": 0, "phase": "RED", "tag": "v4"})
+        malformed.write_text("[]", encoding="utf-8")
+        before = _fixture_tree_snapshot(tmp_path)
+
+        exit_code = main(["--apply", "--root", str(tmp_path)])
+
+        diagnostic = capsys.readouterr().err
+        assert exit_code != 0 and str(malformed) in diagnostic
+        assert "object" in diagnostic.lower(), (
+            "WHAT: later malformed input must report its shape; WHY: full-batch "
+            "validation prevents partial migration; HOW: reject it in preflight."
+        )
+        assert _fixture_tree_snapshot(tmp_path) == before, (
+            "WHAT: the earlier eligible config and all paths must remain unchanged; "
+            "WHY: a later invalid member invalidates the batch; HOW: plan the "
+            "complete batch before any backup or replacement."
+        )
+
+    def test_unrelated_json_is_classified_and_never_deleted(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        unrelated = tmp_path / ".nwave" / "custom" / "operator-data.json"
+        _write(unrelated, {"schema-version": 1, "data": "keep"})
+        before = _fixture_tree_snapshot(tmp_path)
+
+        dry_exit = main(["--dry-run", "--root", str(tmp_path)])
+        dry_output = capsys.readouterr().out
+        apply_exit = main(["--apply", "--root", str(tmp_path)])
+        apply_diagnostic = capsys.readouterr().err
+
+        assert dry_exit == 0 and str(unrelated) in dry_output
+        assert "Indeterminate" in dry_output
+        assert apply_exit != 0 and str(unrelated) in apply_diagnostic
+        assert "migration" in apply_diagnostic.lower(), (
+            "WHAT: unsupported family must explain the policy gap; WHY: its "
+            "mapping cannot be inferred; HOW: report no registered migration."
+        )
+        assert _fixture_tree_snapshot(tmp_path) == before, (
+            "WHAT: unrelated JSON must remain byte-identical; WHY: an unknown "
+            "family is not a deletion instruction; HOW: refuse without writes."
+        )
+
+    def test_nested_family_lookalikes_remain_unrelated_without_partial_apply(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        eligible = tmp_path / ".nwave" / "expectation-charters" / "wip-v4.json"
+        nested_charter = (
+            tmp_path / ".nwave" / "custom" / "expectation-charters" / "data.json"
+        )
+        nested_config = tmp_path / ".nwave" / "custom" / ".nwave" / "config.json"
+        _write(eligible, {"schema-version": 0, "phase": "RED", "tag": "v4"})
+        _write(nested_charter, {"schema-version": 0, "phase": "RED", "tag": "v4"})
+        _write(nested_config, {"schema-version": 0, "setting": "keep"})
+        before = _fixture_tree_snapshot(tmp_path)
+
+        dry_exit = main(["--dry-run", "--root", str(tmp_path)])
+        dry_output = capsys.readouterr().out
+        for unrelated in (nested_charter, nested_config):
+            line = next(
+                line for line in dry_output.splitlines() if str(unrelated) in line
+            )
+            assert "Indeterminate" in line, (
+                "WHAT: nested name lookalike must have no registered family; "
+                "WHY: family identity depends on its location under the root; "
+                "HOW: classify against the exact family path."
+            )
+        assert dry_exit == 0 and _fixture_tree_snapshot(tmp_path) == before
+
+        apply_exit = main(["--apply", "--root", str(tmp_path)])
+        diagnostic = capsys.readouterr().err
+        assert apply_exit != 0
+        assert any(str(path) in diagnostic for path in (nested_charter, nested_config))
+        assert "migration" in diagnostic.lower()
+        assert _fixture_tree_snapshot(tmp_path) == before, (
+            "WHAT: nested lookalikes and the eligible artifact must remain unchanged; "
+            "WHY: an unsupported family invalidates the full batch; HOW: refuse "
+            "before backup or replacement."
+        )
 
 
 def _use_transition_catalog(monkeypatch: pytest.MonkeyPatch, catalog_dir: Path) -> None:
@@ -424,6 +559,15 @@ class TestWorkflowTransitionCatalogApply:
             for path in tmp_path.rglob("*")
         ), "the original bytes must remain recoverable after the composed route"
 
+        after_first = _fixture_tree_snapshot(tmp_path)
+        rerun_exit = main(["--apply", "--root", str(tmp_path)])
+        assert rerun_exit == 0
+        assert _fixture_tree_snapshot(tmp_path) == after_first, (
+            "WHAT: rerunning a composed supported route must change no bytes or "
+            "paths; WHY: the terminal tag is already current; HOW: preserve "
+            "terminal artifacts without another backup or replacement."
+        )
+
     @pytest.mark.parametrize(
         ("transitions", "diagnostic"),
         [
@@ -490,6 +634,12 @@ class TestWorkflowTransitionCatalogApply:
             "WHAT" in captured.err and "WHY" in captured.err and "HOW" in captured.err
         )
         assert diagnostic in captured.err.lower()
+        for name, _, _ in transitions:
+            assert str(catalog / name) in captured.err, (
+                "WHAT: malformed topology must name its transition inputs; "
+                "WHY: operators need the exact source of the conflict; HOW: "
+                "include the involved packaged transition paths in the refusal."
+            )
         assert _fixture_tree_snapshot(tmp_path) == before, (
             "catalog refusal must occur before the first backup, replacement, "
             "deletion, or production residue"
@@ -522,6 +672,7 @@ class TestWorkflowTransitionCatalogApply:
             "WHAT" in captured.err and "WHY" in captured.err and "HOW" in captured.err
         )
         assert "malformed" in captured.err.lower()
+        assert str(catalog / "broken.json") in captured.err
         assert _fixture_tree_snapshot(tmp_path) == before, (
             "catalog refusal must occur before the first backup, replacement, "
             "deletion, or production residue"
@@ -578,6 +729,7 @@ class TestWorkflowTransitionCatalogApply:
             "WHY: the catalog is otherwise complete and this field is the sole defect; "
             "HOW: include the rejected field in the catalog validation reason."
         )
+        assert str(transition) in captured.err
         assert _fixture_tree_snapshot(tmp_path) == before, (
             "WHAT: every fixture byte and path must remain unchanged after malformed "
             "catalog refusal; WHY: whole-batch preflight precedes all backup and write "
@@ -608,6 +760,7 @@ class TestWorkflowTransitionCatalogApply:
             "WHAT" in captured.err and "WHY" in captured.err and "HOW" in captured.err
         )
         assert "v99" in captured.err
+        assert str(unknown) in captured.err
         assert _fixture_tree_snapshot(tmp_path) == before, (
             "catalog refusal must occur before the first backup, replacement, "
             "deletion, or production residue"

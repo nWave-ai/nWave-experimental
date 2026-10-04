@@ -15,10 +15,17 @@ from pathlib import Path
 from des.domain.architecture_brief_resolver import (
     is_design_oracle_locator,
     is_repository_relative_whole_file_locator,
-    new_target_acceptance_support_conflict,
+    target_acceptance_support_conflict,
+    target_acceptance_support_conflict_text,
 )
 from des.domain.design_authority_locator import is_design_authority_locator
-from des.domain.design_document import native_verification_defect
+from des.domain.design_document import (
+    DesignDocumentInvalid,
+    decode_design_decisions,
+    design_decisions_defect,
+    design_decisions_wire,
+    native_verification_defect,
+)
 from des.domain.distill_document import AcceptanceObligation
 from des.domain.document_scope import (
     DocumentScope,
@@ -32,6 +39,7 @@ from des.domain.feature_documents import FeatureDocumentsInvalid, valid_feature_
 from des.ports.driven_ports.task_invocation_port import (
     DesignFacts,
     DesignTarget,
+    LegacyDesignFacts,
     PublicOracle,
 )
 
@@ -85,12 +93,21 @@ class SharedDesign:
 
 
 @dataclass(frozen=True, slots=True)
+class ProductAuthority:
+    """The exact whole-file product authority constructed for this Request."""
+
+    locator: str
+    sha256: str
+
+
+@dataclass(frozen=True, slots=True)
 class StoredHandover:
     request: str
     values: tuple[HandoverValue, ...]
     raw: bytes
     scope: DocumentScope
     shared_design: SharedDesign | None = None
+    product_authority: ProductAuthority | None = None
 
     @property
     def has_explicit_scope(self) -> bool:
@@ -114,7 +131,7 @@ _HANDOVER_REPAIR = (
     "durable authorities; the generated artifacts themselves are never removed"
 )
 
-_PARADIGMS = ("object_oriented", "functional")
+_PARADIGMS = ("object_oriented", "functional", "procedural")
 _DECISIONS = ("EXTEND", "CREATE_NEW")
 _QUOTED_VALUE_BUDGET = 120
 _JSON_NESTING_LIMIT = 4096
@@ -147,7 +164,7 @@ def _is_section_locator(locator: str) -> bool:
     )
 
 
-def design_facts_defect(facts: DesignFacts) -> str | None:
+def design_facts_defect(facts: DesignFacts, *, historical: bool = False) -> str | None:
     """The FIRST contract clause ``facts`` violates, or ``None`` when valid.
 
     Every caller used to print "incomplete facts" for ANY violation.  Measured
@@ -206,18 +223,21 @@ def design_facts_defect(facts: DesignFacts) -> str | None:
         if path in seen_supports:
             return f"acceptance_supports[{index}] repeats an earlier support: {_shown(path)}"
         seen_supports.add(path)
-    conflict = new_target_acceptance_support_conflict(
+    # A binding persisted before EXTEND targets were refused as supports stays
+    # READABLE, so `des design --replace-current` can correct it and craft can
+    # name the moved target; only new admissions refuse the EXTEND half.
+    conflict = target_acceptance_support_conflict(
         facts.oracle,
-        ((target.path, target.decision) for target in facts.targets),
+        (
+            target.path
+            for target in facts.targets
+            if not historical or target.decision == "CREATE_NEW"
+        ),
         facts.acceptance_supports,
     )
     if conflict is not None:
-        return (
-            "a non-oracle CREATE_NEW target is also a required acceptance support: "
-            f"{_shown(conflict)}; the acceptance designer must create supports "
-            "before craft: declare an oracle fixture only as acceptance_supports, "
-            "or remove a craft-created target from acceptance_supports; "
-            "do not label a new file EXTEND"
+        return "acceptance_supports: " + target_acceptance_support_conflict_text(
+            _shown(conflict)
         )
     if not facts.verification:
         return "verification is empty"
@@ -260,7 +280,7 @@ def design_facts_defect(facts: DesignFacts) -> str | None:
                 "authority_locator is not a repository-relative DESIGN section "
                 f"locator: {_shown(facts.authority_locator)}"
             )
-    return None
+    return design_decisions_defect(facts, historical=historical)
 
 
 def valid_design_facts(facts: DesignFacts) -> bool:
@@ -405,6 +425,7 @@ def _facts_wire(
         "acceptance_supports": list(value.acceptance_supports),
         "verification": [list(argv) for argv in value.verification],
         "oracle_verification_index": value.oracle_verification_index,
+        **design_decisions_wire(value),
     }
     if include_obligations:
         facts["obligations"] = list(value.obligations)
@@ -504,12 +525,13 @@ class _CanonicalProjection:
 _WHOLE_ENCODING = _CanonicalProjection()
 
 
-def _canonical_bytes(
+def _canonical_bytes(  # noqa: PLR0913 - canonical graph, bound authorities and wire projection
     request: str,
     values: tuple[HandoverValue, ...],
     *,
     feature_id: str | None = None,
     shared: SharedDesign | None = None,
+    product_authority: ProductAuthority | None = None,
     projection: _CanonicalProjection = _WHOLE_ENCODING,
 ) -> bytes:
     # Bound once, and under the projection's own name, because the acceptance
@@ -579,6 +601,16 @@ def _canonical_bytes(
                 for value in values
             ],
             **({"shared_design": _shared_wire(shared)} if shared is not None else {}),
+            **(
+                {
+                    "product_authority": {
+                        "locator": product_authority.locator,
+                        "sha256": product_authority.sha256,
+                    }
+                }
+                if product_authority is not None
+                else {}
+            ),
         },
         ensure_ascii=False,
         allow_nan=False,
@@ -588,6 +620,36 @@ def _canonical_bytes(
 
 _SHARED_KEYS = {"authority_locator", "section_sha256", "semantic_sha256", "design"}
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
+
+
+def _decode_product_authority(raw: object) -> ProductAuthority | Blocked:
+    if (
+        not isinstance(raw, dict)
+        or set(raw) != {"locator", "sha256"}
+        or not isinstance(raw["locator"], str)
+        or not is_repository_relative_whole_file_locator(raw["locator"])
+        or not raw["locator"].endswith(".md")
+        or not isinstance(raw["sha256"], str)
+        or _SHA256_HEX.fullmatch(raw["sha256"]) is None
+    ):
+        return Blocked(
+            "HandoverMalformed",
+            "product_authority must bind a repository-relative Markdown locator and SHA256",
+            "restore the canonical handover or reconstruct complete DISCUSS facts",
+        )
+    return ProductAuthority(raw["locator"], raw["sha256"])
+
+
+def _bound_product_authority(raw: bytes) -> ProductAuthority | None:
+    """Retain known binding facts; an opaque losing CAS token binds nothing."""
+    try:
+        payload = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
+        return None
+    if not isinstance(payload, dict) or "product_authority" not in payload:
+        return None
+    bound = _decode_product_authority(payload["product_authority"])
+    return None if isinstance(bound, Blocked) else bound
 
 
 def _shared_malformed(why: str) -> Blocked:
@@ -614,7 +676,7 @@ def _decode_shared(raw: object) -> SharedDesign | Blocked:
     design = _restore_facts(design_raw)
     if isinstance(design, Blocked):
         return design
-    defect = design_facts_defect(design)
+    defect = design_facts_defect(design, historical=True)
     if defect is not None:
         return _shared_malformed(f"design is inadmissible: {defect}")
     locator = raw["authority_locator"]
@@ -653,6 +715,15 @@ def _restore_facts(authority: dict) -> DesignFacts | Blocked:
             "design facts omit the required oracle_verification_index binding",
             _HANDOVER_REPAIR,
         )
+    required_decisions = {
+        "architectural_tests",
+        "contract_tests",
+        "prefactoring",
+        "agreement_analysis",
+        "reuse_analysis",
+        "impact_closure",
+    }
+    missing_decisions = tuple(sorted(required_decisions - set(authority)))
     legacy_keys = {
         "targets",
         "paradigm",
@@ -661,6 +732,7 @@ def _restore_facts(authority: dict) -> DesignFacts | Blocked:
         "acceptance_supports",
         "verification",
         "oracle_verification_index",
+        *(required_decisions & set(authority)),
     }
     keys = {
         *legacy_keys,
@@ -673,6 +745,7 @@ def _restore_facts(authority: dict) -> DesignFacts | Blocked:
     authority_keys = set(authority)
     if "public_oracle" in authority_keys:
         authority_keys = authority_keys - {"public_oracle"}
+    authority_keys -= {"adr"}
     if authority_keys not in (
         legacy_keys,
         keys,
@@ -705,7 +778,8 @@ def _restore_facts(authority: dict) -> DesignFacts | Blocked:
             DesignTarget(item["path"], item["decision"])
             for item in authority["targets"]
         )
-        facts = DesignFacts(
+        record_type = LegacyDesignFacts if missing_decisions else DesignFacts
+        facts = record_type(
             targets,
             authority["paradigm"],
             tuple(authority["decisions"]),
@@ -718,8 +792,10 @@ def _restore_facts(authority: dict) -> DesignFacts | Blocked:
             else (),
             authority.get("authority_locator", ""),
             public_oracle=public_oracle,
+            **decode_design_decisions(authority, historical=bool(missing_decisions)),
+            **({"missing_decisions": missing_decisions} if missing_decisions else {}),
         )
-    except (KeyError, TypeError) as error:
+    except (KeyError, TypeError, DesignDocumentInvalid) as error:
         return Blocked(
             "HandoverMalformed",
             f"design facts cannot be reconstructed: {_shown(str(error))}",
@@ -854,8 +930,12 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
     if not isinstance(payload, dict) or set(payload) not in (
         {"request", "values"},  # legacy project handover
         {"request", "values", "feature_id"},  # legacy feature handover
+        {"request", "values", "product_authority"},
+        {"request", "values", "feature_id", "product_authority"},
         {"request", "values", "scope"},
         {"request", "values", "scope", "shared_design"},
+        {"request", "values", "scope", "product_authority"},
+        {"request", "values", "scope", "shared_design", "product_authority"},
     ):
         return Blocked(
             "HandoverMalformed",
@@ -969,7 +1049,7 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
                     _HANDOVER_REPAIR,
                 )
         if isinstance(facts, DesignFacts):
-            defect = design_facts_defect(facts)
+            defect = design_facts_defect(facts, historical=True)
             if defect is not None:
                 return Blocked(
                     "HandoverMalformed",
@@ -1047,6 +1127,13 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
         if decoded.authority_locator in bound_headings:
             return _shared_malformed("its locator is owned by a bound value")
         shared = decoded
+    # Product ownership is independent of the historical value/scope wire shape:
+    # retain its strict binding through the same canonical projection ladder.
+    product_authority: ProductAuthority | None = None
+    if "product_authority" in payload:
+        product_authority = _decode_product_authority(payload["product_authority"])
+        if isinstance(product_authority, Blocked):
+            return product_authority
     # Persisted bytes must BE the canonical encoding, not merely parse to it:
     # pretty printing or reordered keys would break byte compare-and-swap.
     comparison_raw = raw
@@ -1056,6 +1143,8 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             if "feature_id" not in payload
             else ["request", "feature_id", "values"]
         )
+        if product_authority is not None:
+            expected_keys.append("product_authority")
         compact = json.dumps(
             payload, ensure_ascii=False, allow_nan=False, separators=(",", ":")
         ).encode("utf-8")
@@ -1070,13 +1159,22 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
                 "request": request,
                 "scope": scope_json(legacy_scope(feature_id)),
                 "values": items,
+                **(
+                    {"product_authority": payload["product_authority"]}
+                    if product_authority is not None
+                    else {}
+                ),
             },
             ensure_ascii=False,
             allow_nan=False,
             separators=(",", ":"),
         ).encode("utf-8")
     if shared is not None and comparison_raw != _canonical_bytes(
-        feature_id=feature_id, request=request, values=stored, shared=shared
+        feature_id=feature_id,
+        request=request,
+        values=stored,
+        shared=shared,
+        product_authority=product_authority,
     ):
         # A bound shared design admits only the current encoding: a legacy
         # value encoding could hide a heading collision.
@@ -1093,16 +1191,22 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             request=request,
             values=stored,
             shared=shared,
+            product_authority=product_authority,
             projection=_CanonicalProjection(include_scope=False),
-        ),
-        _canonical_bytes(
-            feature_id=feature_id, request=request, values=stored, shared=shared
         ),
         _canonical_bytes(
             feature_id=feature_id,
             request=request,
             values=stored,
             shared=shared,
+            product_authority=product_authority,
+        ),
+        _canonical_bytes(
+            feature_id=feature_id,
+            request=request,
+            values=stored,
+            shared=shared,
+            product_authority=product_authority,
             projection=_CanonicalProjection(include_obligations=False),
         ),
         # Typed handovers from before the section-identity migration have no
@@ -1113,6 +1217,7 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             request=request,
             values=stored,
             shared=shared,
+            product_authority=product_authority,
             projection=_CanonicalProjection(include_authority_locator=False),
         ),
         _canonical_bytes(
@@ -1120,6 +1225,7 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             request=request,
             values=stored,
             shared=shared,
+            product_authority=product_authority,
             projection=_CanonicalProjection(
                 include_obligations=False, include_authority_locator=False
             ),
@@ -1131,6 +1237,7 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             request=request,
             values=stored,
             shared=shared,
+            product_authority=product_authority,
             projection=_CanonicalProjection(include_acceptance=False),
         ),
         _canonical_bytes(
@@ -1138,6 +1245,7 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             request=request,
             values=stored,
             shared=shared,
+            product_authority=product_authority,
             projection=_CanonicalProjection(
                 include_obligations=False,
                 include_acceptance=False,
@@ -1151,6 +1259,7 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             request=request,
             values=stored,
             shared=shared,
+            product_authority=product_authority,
             projection=_CanonicalProjection(include_acceptance=True),
         ),
         _canonical_bytes(
@@ -1158,6 +1267,7 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             request=request,
             values=stored,
             shared=shared,
+            product_authority=product_authority,
             projection=_CanonicalProjection(
                 include_acceptance=True, include_authority_locator=False
             ),
@@ -1168,7 +1278,9 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             "handover bytes are not canonical",
             "restore the handover",
         )
-    return StoredHandover(request, stored, raw, legacy_scope(feature_id), shared)
+    return StoredHandover(
+        request, stored, raw, legacy_scope(feature_id), shared, product_authority
+    )
 
 
 def _write_temporary(
@@ -1516,6 +1628,8 @@ def create_constructed_handover(
     request: str,
     values: tuple[HandoverValue, ...],
     feature_id: str | None = None,
+    *,
+    product_authority: ProductAuthority | None = None,
 ) -> StoredHandover | Blocked:
     """Write an already-validated ordered graph without decoding its own bytes.
 
@@ -1523,12 +1637,20 @@ def create_constructed_handover(
     contract. Persisted files still enter only through :func:`read_handover`.
     """
     path = handover_path(root)
-    raw = _canonical_bytes(request, values, feature_id=feature_id)
+    raw = _canonical_bytes(
+        request, values, feature_id=feature_id, product_authority=product_authority
+    )
     created = _create_if_absent(path, raw)
     if isinstance(created, Blocked):
         return created
     if created:
-        return StoredHandover(request, values, raw, legacy_scope(feature_id))
+        return StoredHandover(
+            request,
+            values,
+            raw,
+            legacy_scope(feature_id),
+            product_authority=product_authority,
+        )
     winner = load_handover(root, request)
     if winner is None:
         return Blocked(
@@ -1545,16 +1667,27 @@ def create_constructed_handover(
             "inspect the winning handover and reconcile the DISCUSS authority",
             refusal=True,
         )
+    if (
+        isinstance(winner, StoredHandover)
+        and winner.product_authority != product_authority
+    ):
+        return Blocked(
+            "HandoverProductAuthorityMismatch",
+            "the concurrent handover winner binds a different product authority",
+            "retry complete DISCUSS construction against the winning handover",
+            retry=True,
+        )
     return winner
 
 
-def rewrite_handover(
+def rewrite_handover(  # noqa: PLR0913 - CAS operands and explicit scope/authority bindings
     root: Path,
     expected: bytes,
     request: str,
     values: tuple[HandoverValue, ...],
     *,
     feature_id: str | object | None = _MISSING,
+    product_authority: ProductAuthority | object | None = _MISSING,
 ) -> StoredHandover | Blocked:
     normalized = _normalize_values(values)
     if isinstance(normalized, Blocked):
@@ -1564,8 +1697,17 @@ def rewrite_handover(
     )
     legacy_scope(resolved_feature_id)
     shared = _bound_shared(expected)
+    product = (
+        _bound_product_authority(expected)
+        if product_authority is _MISSING
+        else product_authority
+    )
     raw = _canonical_bytes(
-        request, normalized, feature_id=resolved_feature_id, shared=shared
+        request,
+        normalized,
+        feature_id=resolved_feature_id,
+        shared=shared,
+        product_authority=product,
     )
     validated = read_handover(raw)
     if isinstance(validated, Blocked):
@@ -1576,7 +1718,7 @@ def rewrite_handover(
     if replaced is not None:
         return replaced
     return StoredHandover(
-        request, normalized, raw, legacy_scope(resolved_feature_id), shared
+        request, normalized, raw, legacy_scope(resolved_feature_id), shared, product
     )
 
 
@@ -1591,13 +1733,18 @@ def rewrite_constructed_handover(
     """
     feature_id = _bound_feature(expected)
     shared = _bound_shared(expected)
-    raw = _canonical_bytes(request, values, feature_id=feature_id, shared=shared)
+    product = _bound_product_authority(expected)
+    raw = _canonical_bytes(
+        request, values, feature_id=feature_id, shared=shared, product_authority=product
+    )
     replaced = replace_exact_bytes(
         handover_path(root), expected, raw, words=_HANDOVER_REPLACE_WORDS
     )
     if replaced is not None:
         return replaced
-    return StoredHandover(request, values, raw, legacy_scope(feature_id), shared)
+    return StoredHandover(
+        request, values, raw, legacy_scope(feature_id), shared, product
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1641,6 +1788,14 @@ def bind_design_facts(
             "read des state and retry with a valid value",
             refusal=True,
         )
+    defect = design_facts_defect(design.facts)
+    if defect is not None:
+        return Blocked(
+            "DesignFactsInvalid",
+            defect,
+            "supply complete DESIGN decisions before binding",
+            refusal=True,
+        )
     values = list(stored.values)
     current = values[position - 1]
     if current.authority == design.facts and (
@@ -1677,6 +1832,14 @@ def bind_shared_design(
     The only writer that changes ``shared_design``; values, design facts,
     acceptance and selections are re-encoded from ``stored`` untouched.
     """
+    defect = design_facts_defect(shared.design)
+    if defect is not None:
+        return Blocked(
+            "DesignFactsInvalid",
+            defect,
+            "supply complete shared DESIGN decisions before binding",
+            refusal=True,
+        )
     if stored.shared_design == shared and stored.scope == scope:
         return stored
     feature_id = (
@@ -1687,7 +1850,11 @@ def bind_shared_design(
         else scope
     )
     raw = _canonical_bytes(
-        stored.request, stored.values, feature_id=feature_id, shared=shared
+        stored.request,
+        stored.values,
+        feature_id=feature_id,
+        shared=shared,
+        product_authority=stored.product_authority,
     )
     validated = read_handover(raw)
     if isinstance(validated, Blocked):
@@ -1697,7 +1864,9 @@ def bind_shared_design(
     )
     if replaced is not None:
         return replaced
-    return StoredHandover(stored.request, stored.values, raw, scope, shared)
+    return StoredHandover(
+        stored.request, stored.values, raw, scope, shared, stored.product_authority
+    )
 
 
 def handover_unchanged(root: Path, expected: bytes) -> Blocked | None:
@@ -1764,7 +1933,10 @@ class DeliveryLock:
 
 
 def acquire_delivery_lock(root: Path) -> DeliveryLock | Blocked:
-    path = root / ".nwave" / "des" / "commit.lock"
+    return acquire_file_lock(root / ".nwave" / "des" / "commit.lock")
+
+
+def acquire_file_lock(path: Path) -> DeliveryLock | Blocked:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         handle = path.open("a+b")

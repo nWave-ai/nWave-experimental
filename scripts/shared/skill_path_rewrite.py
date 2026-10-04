@@ -23,6 +23,8 @@ from __future__ import annotations
 
 from scripts.shared.platform_contracts import (
     CODEX_PATH_REWRITES,
+    OMP_PATH_REWRITE_EXCEPTIONS,
+    OMP_PATH_REWRITES,
     OPENCODE_PATH_REWRITE_EXCEPTIONS,
     OPENCODE_PATH_REWRITES,
 )
@@ -33,18 +35,22 @@ from scripts.shared.platform_contracts import (
 # "claude_code" is the canonical no-op host: empty rules -> body returned
 # verbatim, preserving the A06 validator anchor on ~/.claude/skills/.
 # Codex has no exception tuple today (its rules target skills/agents/hooks/nWave,
-# never lib/, so a lib/python token is left alone by absence-of-rule).
+# never lib/, so a lib/python token is left alone by absence-of-rule). OMP
+# carries the same lib/python exception as OpenCode: role bodies must keep
+# naming the DES runtime through its pointer scheme, never a per-host copy.
 
 HOST_PATH_REWRITES: dict[str, tuple[tuple[str, str], ...]] = {
     "claude_code": (),
     "opencode": OPENCODE_PATH_REWRITES,
     "codex": CODEX_PATH_REWRITES,
+    "omp": OMP_PATH_REWRITES,
 }
 
 HOST_PATH_REWRITE_EXCEPTIONS: dict[str, tuple[str, ...]] = {
     "claude_code": (),
     "opencode": OPENCODE_PATH_REWRITE_EXCEPTIONS,
     "codex": (),
+    "omp": OMP_PATH_REWRITE_EXCEPTIONS,
 }
 
 _EXCEPTION_CONTEXT_WINDOW = 100

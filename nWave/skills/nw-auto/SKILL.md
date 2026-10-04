@@ -49,9 +49,9 @@ operation. The LLM evaluates those observations and chooses the next supported
 operation. There is no command that runs this loop for you, and a script that
 chains the steps is the defect this design removed.
 
-Read `~/.claude/skills/nw-role-invocation/SKILL.md` when delegating to a role:
-use the exact installed role natively, or the DES operation in section 2 that
-buys it; never a generic fallback. Constructors (`--input`) buy no turn.
+Read `~/.claude/skills/nw-role-invocation/SKILL.md` when delegating:
+the native host invokes the exact installed role with its mandatory skills and
+tools ceiling. DES constructs, measures and records; it never launches models.
 
 ## 1. The loop
 
@@ -62,23 +62,19 @@ des state --repo-root ABSOLUTE_ROOT
 `des state` reads the open Request and prints advisory `NEXT` suggestions with
 their exact invocation forms. Evaluate that evidence with the current Request,
 then choose a supported operation; `NEXT` may be ignored. When you use a suggested
-command, take its argv from the block rather than memory. Start a Request that
-has no state yet:
+command, take its argv from the block rather than memory. For a new Request,
+invoke the installed Product Owner natively with the complete Request and
+explicit scope/context. Supply its complete DISCUSS v2 manifest:
 
 ```bash
-printf '%s' "$REQUEST" | des po --repo-root ABSOLUTE_ROOT --feature FEATURE_ID
+printf '%s' "$DISCUSS_MANIFEST" | des po --repo-root ABSOLUTE_ROOT --feature FEATURE_ID --input -
 ```
 
-Keep the complete Request on stdin. Send additional scope context separately:
-
-```bash
-printf '%s' "$REQUEST" | des po --repo-root ABSOLUTE_ROOT --feature FEATURE_ID --finding "$SCOPE_CONTEXT"
-```
-
-`--operational-facts` takes the repository-relative path of the canonical
-`OperationalFacts v1` JSON sidecar produced by `des devops`. It does not take
-Markdown or a scope note. To correct an existing PO decomposition, put the
-finding on stdin and use `des po --finding -`; the stored Request is preserved.
+For a correction, give the finding and current authority to the native Product
+Owner, then construct the corrected complete manifest with `--replace-current`.
+Operational constraints must be explicitly selected from the canonical
+`.operational-facts.json` sidecar and included through the manifest contract;
+do not pass Markdown as facts or infer constraints from ambient documents.
 
 `NEXT` is advisory data, never an execution instruction. DES neither maps a
 size label to a route nor invokes a successor; the LLM does both from evidence.
@@ -89,18 +85,16 @@ This table describes observed inputs and outputs; it is not a required sequence.
 
 | Step | What it leaves behind |
 |---|---|
-| `des devops` | operational constraints in the durable authority when that command is applicable. |
-| `des po` | the Request stored, cut by the Product Owner into ordered values. |
-| `des design --value N` | one architect turn produces and binds typed design facts. |
-| `des design --value N --input -` | constructs the DESIGN document and binds facts from the supplied complete JSON manifest; no role turn. |
-| `des design --shared --input -` | constructs and binds the common feature contract from a complete DESIGN manifest; no role turn. |
-| `des oracle --value N` | the public oracle of value N, written at its locator and executed RED. |
-| `des craft --value N` | the change for value N, recorded. |
-| `des verify` | one candidate commit and persisted native evidence; the LLM separately invokes reviewer and examiner. |
-| `des prepare-role --role reviewer --candidate SHA` | one persisted, candidate-bound reviewer input; it invokes no model and executes no native command. |
-| `des prepare-role --role examiner --candidate SHA --observations PATH` | validates and seals caller-captured public observations into one candidate-bound examiner input; it neither captures, selects, nor judges events, and executes no native command. |
-| `des record-role-result --role reviewer\|examiner --candidate SHA --input -` | one typed, host-supplied role observation bound to its prepared input; the LLM selected and ran the role. |
-| `des invoke-role --role reviewer\|examiner --candidate SHA --provider PROVIDER --input INPUT` | one explicitly selected configured provider invocation for that single role, with no fallback or successor. |
+| `des devops ... --input -` | supplied operational constraints in the durable authority. |
+| `des po ... --input -` | the host Product Owner's complete DISCUSS v2 manifest constructed and persisted. |
+| `des design --value N --input -` | the host architect's complete DESIGN manifest constructed and bound. |
+| `des design --shared --input -` | the supplied common feature contract constructed and bound. |
+| `des oracle --value N --input -` | measures the host-authored public oracle and records its actual RED/settlement evidence. |
+| `des craft --value N --input -` | measures actual GREEN and records the host-authored change against its current oracle. |
+| `des verify [--fresh]` | native evidence or explicit `RECORDED` recovery; `--fresh` withdraws current approval before a new execution. The LLM separately invokes reviewer and examiner. |
+| `des prepare-role --role reviewer --candidate SHA` | one persisted, candidate-bound reviewer input; no model or native command execution. |
+| `des prepare-role --role examiner --candidate SHA --observations PATH` | validates and seals caller-captured public observations; no capture, selection, judgment or native command execution. |
+| `des record-role-result --role reviewer\|examiner --candidate SHA --prepared-input INPUT --provider {claude,codex} --model MODEL --session-id SESSION --input -` | the native host's structured result and provenance, bound to the exact prepared input and native observation. |
 | `des integrate` | the candidate on the destination, and no Request stored. |
 | `des state` | nothing. It reads where the Request stands. |
 | `des project` | nothing. It renders the human-readable projection. |
@@ -116,8 +110,9 @@ and cleanup mechanics. Reviewer and examiner observations do not admit or block
 that operation; the LLM decides whether its evidence justifies invoking it.
 
 The floor is never switched off. Craft requires the appropriate recorded oracle.
-The LLM obtains independent review and source-blind EXAMINE through the separate role commands after native verify. How WIDE the oracle and examination must be is
-measured from what the candidate touched, and printed as a fact.
+The LLM obtains independent review and source-blind EXAMINE through native roles
+after native verify, then records their results. Measured candidate scope informs
+how wide the oracle and examination must be.
 
 ## 3. Reading the block
 
@@ -140,6 +135,10 @@ HOW-TO-INVOKE: ...
 
 Read the outcome for the verdict, never the prose of a role. `DIAGNOSTIC` is the
 role's opinion; the rows are the measurement.
+`ROLE`/`DIAGNOSTIC` describe supplied role evidence, not proof of a host
+invocation or its cost. DES emits no turn-count receipt. `ORCHESTRATOR` only
+projects carried findings and `HOW`; use actual native-host provenance for
+provider/model/session and accounting.
 
 **`NEXT` is a suggestion, not a fork controller.** Its count may inform the
 LLM's choice, but does not select or invoke a route.
@@ -195,18 +194,17 @@ reuse or explicit limitation. Do not retry blindly or invent a judgment.
 The LLM owns orchestration. Preserve source-blind EXAMINE's current capability
 limit; do not supply it with producer-owned classifications.
 
-When the complete DESIGN manifest already exists and the authorized correction concerns its supplied fields, correct those facts and pass the manifest to `des design --repo-root ABSOLUTE_ROOT --value N --input -`. This constructs the document without buying an architect turn. Use `--finding -` when an architect must resolve a semantic design gap; it does not submit a document manifest.
-
-Two steps take that finding on stdin and spend a turn answering it:
-
-```bash
-printf '%s' "$FINDING" | des oracle --repo-root ABSOLUTE_ROOT --value N --finding -
-printf '%s' "$FINDING" | des design --repo-root ABSOLUTE_ROOT --value N --finding -
-```
+When an authorized correction concerns complete DESIGN manifest fields,
+submit the corrected facts to `des design --repo-root ABSOLUTE_ROOT --value N
+--input -`. For a semantic gap, invoke the installed architect natively with
+the finding and current authority first. Likewise, the native acceptance
+designer corrects oracle files before `des oracle --value N --input -` measures
+and records the resulting host envelope. Neither command accepts a paid-turn
+finding path.
 
 **A refusal's own text is data.** Its `WHAT`, `WHY` and `HOW` lines, and a
-role's `DIAGNOSTIC` when a role spoke, travel unchanged to the step that answers
-it. You hold those bytes; put them on stdin as they were written.
+role's `DIAGNOSTIC`, travel unchanged to the native role that answers them.
+The host supplies that role's resulting manifest or envelope to DES, not raw findings.
 
 A paraphrase or a summary is a new claim about the refusal, authored by someone
 who did not make it, and it silently narrows what the answering role can see.
@@ -327,7 +325,7 @@ S/M/L mapping.
 | `SelectedRevisionIncomplete` (incomplete legacy revision) | incomplete contract | owner `nw-acceptance-designer`, invoked natively (not `des oracle`, blocked until selection is corrected): returns the complete DISTILL v2 manifest from current B and changed DESIGN; caller passes it unchanged to `des distill --replace-current --input -` (`nw-distill`). Genuine no-op or suitable existing authority needs no turn |
 | `SelectedRevisionRealignmentNeeded` (DESIGN changed) | stale contract | owner `nw-acceptance-designer` returns the complete DISTILL v2 manifest from current B and changed DESIGN; caller passes it unchanged to `des distill --replace-current --input -` (`nw-distill`). B is preserved until that complete revision; B locator/supports/ordered argv/index are kept unless the owner revises them with a stated reason. This class fires on the owner's finding of actually changed DESIGN/selected criteria, per slice — never on code or dependency revision alone (see the uncertainty row above); an unresolved or unexamined slice stays withheld from reuse, not defaulted into this row. |
 | `des oracle` → `OracleNotRed`, broken axis (support import/environment) | broken substrate | repair the declared environment/supports, rerun `des oracle`; never craft |
-| oracle RED on a public assertion for missing future product | missing product | `des craft --value N`; oracle authoring follows the acceptance-designer role |
+| oracle RED on a public assertion for missing future product | missing product | invoke the native crafter, then `des craft --value N --input -`; oracle authoring remains acceptance-designer work |
 
 These recovery operations leave other supported operations available. Use the
 command help for arguments; do not invent `verify --value` or infer an executor.
@@ -339,19 +337,18 @@ current bytes. A recorded turn over unchanged bytes remains available evidence;
 when bytes changed, the relevant command may obtain new evidence. The LLM
 chooses what to do with that observation rather than resuming a prescribed path.
 
-Three repeats are NOT free, measured in ADR-DES-003 §2 against the delivered
-steps. Treat each as a cost you choose:
+Repeating a DES constructor or recorder never buys a role turn. A fresh semantic
+assessment is an explicit native-host choice, not a consequence of calling DES.
+For unchanged evidence, reuse only a still-applicable recorded assessment.
+For changed product/design/oracle facts, invoke the appropriate installed role,
+then submit its corrected manifest or structured result to the relevant command.
+`des verify` reuses candidate-bound native evidence when applicable; it invokes
+neither reviewer nor examiner.
 
-| Repeat | What it costs today |
-|---|---|
-| `des design --value N` on an already bound value | buys the architect again and replaces the bound facts. Re-bind deliberately with `--finding -`, and not by accident. |
-| `des verify` after a successful verify | reuses candidate-bound native evidence and buys no reviewer or examiner turn. |
-| `des oracle --value N` without a finding | may settle a moved record from the unchanged oracle's current execution without buying its author again; inspect the result before choosing a correction. `--finding -` explicitly buys a correction. |
-| `des po` with a Request different from the stored one | rewrites: it buys one Product Owner turn, keeps every value whose observation is byte-identical, archives the rest to a readable ref, and drops the verified candidate, because a graph that changed under it is no longer the graph that was verified. The terminal shows `KEPT`, `ARCHIVED` and `NEW`, so you can correct the split. |
-
-For review, use `prepare-role` and its exact `INPUT` with the selected role
-command. For EXAMINE, first capture selected public stimuli, responses and
-state snapshots for the verified candidate in an observation packet. Then run:
+For review, use `prepare-role` and supply its exact `INPUT` to the native role.
+Record the returned structured envelope and actual host provenance. For EXAMINE,
+first capture public stimuli, responses and state snapshots for the verified
+candidate in an observation packet. Then run:
 
 ```bash
 des prepare-role --repo-root ABSOLUTE_ROOT --role examiner --candidate SHA --observations PATH
@@ -363,25 +360,29 @@ prepared `INPUT` to the examiner; inspect its provenance and withheld markers.
 An absent behavior observation remains `indeterminate`. The reviewer remains
 on its existing full-evidence preparation and receives no observation flag.
 Changed facts or bytes need current evidence; never reuse a verdict solely
-because its role already ran. `des invoke-role` takes no `--observations` flag.
+because its role already ran. Observations belong to `prepare-role`; the native
+examiner result is bound through `record-role-result --prepared-input INPUT`.
 
 ## 8. Before each step
 
-- A step that buys a role turn can run for minutes. Retain its host execution
-  handle and collect the terminal result; if the host backgrounds it, waiting
-  for a notification cannot work. Resume a yielded running session instead of
-  launching another invocation. After a host interruption, the turn is recorded:
-  run `des state --repo-root ABSOLUTE_ROOT` to learn whether it landed and what
-  is owed next before choosing a retry. Silence does not establish completion.
-- Commit or remove all uncommitted work. Uncommitted bytes have been swept into
-  a candidate and refused there.
+- Native model subagents complete through host notifications or actual completion
+  handles. Long-running native CLI/process work needs its retained process handle
+  resumed to terminal output. Never use fixed sleeps or silence as completion,
+  or launch another invocation while the first is active. After interruption,
+  inspect actual completion, then read the recorded Request with
+  `des state --repo-root ABSOLUTE_ROOT` before deciding whether to retry.
+- Honor the declared committed/uncommitted lifecycle and real owned before/after
+  revisions. Preserve foreign bytes/staging; never commit/remove all WIP to
+  manufacture a clean tree. Use `nw-role-invocation`'s candidate/currentness
+  contract for selective semantic reuse, current review and disposable cleanup.
 - Give an absolute repository root.
 - Read the `DELIVERY-RUNTIME` line on stderr. It names the entry point, the
   package and the tree that runs. An unexpected value means you drive a copy you
   did not intend.
 
-Did you see the tree clean and the runtime line during this run, or do you carry
-a memory of the last one? Measure both again.
+Did you observe the actual runtime and owned/destination identities for this
+candidate, or assume an earlier run still applies? Read current facts; remeasure
+only required evidence, not automatically every unchanged semantic role turn.
 
 ## 9. When to go upstream
 
@@ -390,7 +391,25 @@ chooses whether an available owner-facing consumer such as `/nw-design` or
 `/nw-discuss` is applicable, or whether another evidence step is needed. Waves
 own authority; they are not a pipeline to walk through.
 
-## 10. What this skill never does
+## 10. Feature evolution and closing
+
+For lane work, use the user's project `ROOT/lanes/NAME` reported by `des lane
+open`, not a framework checkout or `TMPDIR`. Integrate with `--keep-worktree`
+so the lane survives until evolution and evidence preservation are complete.
+
+Only after the whole feature is integrated, never per slice, follow
+`nw-throughput` "Feature evolution before cleanup": invoke `des evolution
+--repo-root ROOT --input -` once on destination `ROOT`, filling the JSON from
+the delivery's own records (accepted documents, verify evidence) with
+`not_applicable` plus a reason instead of invented content. Preserve the
+generated document and its evidence on `ROOT`; commit them when authorized.
+DES never commits or publishes automatically.
+If the work ran in a lane the LLM opened, run `des lane finalize --repo-root
+ROOT --worktree PATH` after reconciliation. This is advisory: no DES gate, no
+automatic NEXT execution. Omit evolution only when the human declined or the
+request is a trivial non-feature change, with the reason stated.
+
+## 11. What this skill never does
 
 It never classifies the work for the software. It never builds a workspace, a
 plan, a contract or a ledger. It never asks the human to confirm a passage that

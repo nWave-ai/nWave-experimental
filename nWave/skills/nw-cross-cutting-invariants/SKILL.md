@@ -73,13 +73,21 @@ controller, runtime gate, mandatory artifact or guarantee of termination.
 
 ## `construction:design-paradigm-projection` — DESIGN owns the crafter paradigm
 
-Before handing any durable DESIGN authority to DISTILL, its writer records the
-resolved functional or object-oriented decision once on a `Paradigm:` line in
-the cited section. A specialized domain, system or platform writer preserves
-the established application paradigm; when it is absent or contested, return
-the decision to `nw-design`/solution architecture. Never default an unspecified
-project to object-oriented. `des compile-contract` consumes this projection
-directly; root and ATD neither retype nor infer it.
+Before handing a supported durable DESIGN authority to DISTILL, supply its
+established `functional`, `object_oriented` or `procedural` decision through the
+closed DESIGN input; DES writes the `Paradigm:` projection consumed by
+`des compile-contract`. Specialized domain, system and platform roles preserve
+that application authority; root and ATD neither retype nor infer it. Absent or
+contested authority returns to `nw-design`/solution architecture, never defaults
+to OO. An evidenced imperative transaction script is `procedural`, not FP merely
+because it exposes functions.
+
+A settled paradigm outside those three supported values is a representation gap
+in the current closed input, not a missing human choice. Preserve its truth,
+identify the affected paradigm-dependent handoff, and continue independent
+semantic work. Do not submit an unsupported enum, relabel it, force classes, or
+claim the constructor accepted it. Report that bounded gap to the caller; this
+rule changes neither the software schema nor the established paradigm.
 
 ## `gate:self-explaining-what-why-how` — gate and error surfaces state WHAT / WHY / HOW (STANDING)
 
@@ -448,5 +456,29 @@ its own contract. A predicate whose docs describe periodic, whole-set behavior b
 shipped caller queries one target at a time is a claim with no producer for the AGGREGATE case
 — the GDP-8 authoring corollary above, one level up: the population itself needs a producer,
 not only the per-item verdict.
+
+---
+
+## `delivery:completion-claims-the-destination` — a completion claim is a receipt about the DESTINATION, not about the producing worktree (STANDING)
+
+A work result is delivered when its named ready revision is REACHABLE FROM the destination —
+a measured ancestry fact about the destination — never when the producing lane or worktree
+reports clean, finished, or self-declared ready. Clean Git is a property of a worktree;
+delivery is a relation between a revision and a destination, and the two diverge exactly
+whenever integration has not happened. Mechanical completion therefore must not claim
+delivered while the named revision remains outside its destination: before any completion
+claim, run the producing tool's assertion over MEASURED tips — in this framework,
+`des lane status --repo-root ROOT --require-integrated PATH` (repeatable) — and let its
+refusal stop the claim. The assertion compares the registration's actual tip against the
+named destination, never merges, and treats an unmeasurable tip as INDETERMINATE, not pass.
+A retained integrated lane reports pending cleanup, not completion. Content
+(uncommitted/untracked/ignored) and availability (present/locked/missing) are separate
+observations and imply neither review readiness nor delivery. Until a receipt-producing
+completion consumer exists, this assertion is the software enforcement; do not invent a
+completion record, ledger event or readiness producer that does not exist (GDP-8 authoring
+corollary).
+
+**Falsifier**: a delivery claimed complete while `merge-base --is-ancestor <named tip>
+<destination>` answers no.
 
 ---

@@ -14,11 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
-    asked,
-    block,
-    nexts,
-)
+from tests.des.acceptance.steps_for_the_orchestrator.conftest import block
 
 
 #: Far above any honest read of a local file, far below a hang.
@@ -89,11 +85,7 @@ def test_state_refuses_a_handover_that_is_not_a_regular_file(
         f".nwave/des/handover.json is not a regular file: it is a {kind}"
     ), stdout
     assert rows.get("HOW") == HANDOVER_REPAIR, stdout
-    assert rows.get("TURNS-BOUGHT") == "0", stdout
-    assert nexts(stdout) == [
-        f"des state --repo-root {root.resolve()} -- after the HOW above"
-    ], stdout
-    assert asked(turns) == []
+
     # Read-only: the non-regular handover is left exactly as it was found.
     assert handover.is_symlink() == (kind == "symbolic link")
     if kind == "directory":

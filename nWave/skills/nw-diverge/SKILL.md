@@ -63,7 +63,21 @@ already resolved at this entry.
 Say nothing about expansion before your final response for this wave, and only
 after the whole wave has really completed. The `WAVE-END-OFFER-INTERNAL-NOT-NOW`
 rows decide which situations carry no offer — a single DES step terminal of any
-outcome among them. Invoke no wave-end step: none exists.
+outcome among them. Invoke no wave-end expansion step; the local view has a
+separate completion port.
 
 If `des wave-entry` refuses or returns `Indeterminate`, make no offer and do not
 invent one; report its WHAT/WHY/HOW to the human.
+
+## Completed-wave local view
+
+Read `nw-doc-as-artifact`. Retain `WAVE-DOCUMENTATION-DENSITY` from wave entry.
+After whole-wave success, invoke `des wave-entry --complete` with the captured
+entry and successful constructor terminals as that skill describes.
+After this whole wave succeeds, full density runs the packaged renderer on each
+actual successful DES Markdown `DOCUMENT:` authority produced by this wave,
+following that skill's path checks, and reports the local HTML path. DIVERGE's
+normal durable `jobs.yaml` is not a DES Markdown document and is not rendered
+as one. Lean retains the authority and handoff. Never render for a lone DES
+step, stopped wave or partial outcome. This choice does not alter optional
+explanation, provider/model selection or required checks.

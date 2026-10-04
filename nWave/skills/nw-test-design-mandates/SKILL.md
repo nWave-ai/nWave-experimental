@@ -106,23 +106,33 @@ Mandate numbers are an **SSOT-internal index**, defined in exactly one place —
 
 **Code examples in the modules use Python syntax for illustration only.** They are NOT prescriptive about target language. nWave is language-agnostic per the "genericity and agnosticism" mandate (2026-05-24).
 
-**Before applying mandates**, detect the target project's language from manifest files: `package.json` → TypeScript/JS; `Cargo.toml` → Rust; `go.mod` → Go; `pyproject.toml`/`setup.py`/`Pipfile` → Python; `pom.xml`/`build.gradle` → Java/Kotlin; `*.csproj`/`*.fsproj` → C#/F#; `Gemfile` → Ruby; `Package.swift` → Swift.
+Discover the project's native test/build contract from actual manifests, lockfiles,
+build files, test stanzas/targets and incumbent source/test conventions. This is
+an open evidence set, not a language allowlist: include `dune-project`, `dune`
+library/executable/test stanzas and `.opam` when present, as well as whatever
+the repository actually uses. Follow native interfaces, export/discovery metadata,
+build aliases, runner argv, cwd and declared dependencies.
 
-**When the target language is NOT Python**: adapt EVERY code example — replace Python imports (`from pytest_bdd import ...`, `from hypothesis import ...`), type hints, class/function syntax, test-framework idioms, directory conventions (`tests/` vs `test/` vs `__tests__/`) with target equivalents. Project conventions ALWAYS WIN over skill examples — if the user's repo has 50 TS files and zero Python files, mandates apply via TypeScript test framework, never Python pytest.
-
-**Empirical anchor**: 5 of 5 Python code blocks in the original skill, zero TS/Go/Rust — root-cause for language-leak per F-SKILL-EXAMPLES-LANGUAGE-LEAK. Connects [[feedback_language_adapter_plugin_architecture_2026_05_24]] (genericity mandate).
+Project conventions win over every illustrative import, suffix and directory.
+Use native generators, shrinking/replay and assertions when a broad law needs
+PBT; native examples suffice for closed finite or singular observations. A
+matching `nw-pbt-*` skill is optional on need, not a required adapter enrollment.
+For an unlisted stack, investigate its incumbent/native tool rather than reject
+it or introduce Python, pytest, Hypothesis, Gherkin or `tests/common`.
+Missing toolchain or needed native capability is an explicit evidence gap,
+never permission to switch the project's stack.
 
 ## Mandate Compliance Verification
 
 Handoff to software-crafter includes proof all mandates pass (definitions per the cited module):
 
 - **CM-A** (Mandate 1 — scenario-design): All test files import entry points (driving ports), zero internal component imports
-- **CM-B** (Mandate 2 — scenario-design): Gherkin uses business terms only, step methods delegate to services
+- **CM-B** (Business Language Abstraction — scenario-design): Scenarios and helpers use business terms; Gherkin is optional and technical protocol details live in project-native helpers.
 - **CM-C** (Mandate 3 — scenario-design): Scenarios validate complete user journeys with business value
 - **CM-D** (Mandate 4 — scenario-design): Business logic extracted to pure functions. Impure code isolated behind adapters. Fixture parametrization applies only to adapter layer.
-- **CM-E** (Mandate 8 — layered-mechanics): Every step-method at layers 1-3 uses `assert_state_delta(before, after, universe, expected)` with port-exposed universe entries
+- **CM-E** (Universe-bound assertion — layered-mechanics): State-mutating observations declare changed and preserved public state using native assertions or sufficient incumbent helpers; no compulsory matcher API.
 - **CM-F** (Mandate 9 — layered-mechanics): the representative layer 3+ wiring/sad-path test is example-only; for every declared broad-input/state/failure law (e.g. `BROAD_INPUT_DOMAIN`), the smallest sufficient set of separate, budgeted semantic-PBT tests exists instead — normally one property per distinct law, combined only when one generated observation honestly falsifies all combined laws — each sited at a deterministic, replayable, law-bearing surface (real I/O not required, but the generated observation carries an explicit preservation map to the promised real-port observation), proving the SAME promised observation as the representative example — never a proxy, never a replacement for it. When no such surface exists, the result is `EVIDENCE_GAP` back to DESIGN before authoring — DESIGN names the surface and preservation map or corrects the law; the obligation is never silently downgraded to example-only
-- **CM-G** (Mandate 10 — layered-mechanics): If journey is ≥3 chained scenarios with rich input space → Tier B `test_<feature>_state_machine.py` exists alongside Tier A `.feature`; Tier B's optionality is independent of the CM-F carve-out
+- **CM-G** (Two-tier acceptance — layered-mechanics): An identifiable feature journey through production composition exists in native layout; broad state/sequence laws have sufficient native replayable properties with a preservation map. No suffix, Gherkin file or scenario-count threshold is required.
 - **CM-H** (Mandate 11 — layered-mechanics): Layer 3+ sad paths are named example-based tests; no PBT machinery imported into that sad-path set — the CM-F carve-out's semantic-PBT test(s) live in their own file(s), never merged into these examples
 
-Evidence: import listings, grep for technical terms, walking skeleton identification, focused scenario count, pure function extraction inventory, universe-entry audit (grep for `_` prefix in universe names → flag internal-field leakage), tier-B file presence check.
+Evidence is the obligation → business stimulus → public response/state → falsifier relation and actual native execution. Names, import scans, decorator counts, file presence and technical-word greps are not substitutes for semantic review or observed properties.

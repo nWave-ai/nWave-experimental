@@ -147,3 +147,36 @@ def test_missing_coverage_xml_degrades_loud_indeterminate(
     event = json.loads(capsys.readouterr().out.splitlines()[0])
     assert event["event"] == "ExecutionReachIndeterminate"
     assert all(k in event for k in ("what", "why", "how"))
+
+
+def test_native_reach_without_compatible_report_is_indeterminate(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write_repo(tmp_path, {"reservation.ml": "let reserve = ()\n"})
+    assert main(["--repo", str(tmp_path), "--src-dir", "src", "--ext", ".ml"]) == 2
+    event = json.loads(capsys.readouterr().out.splitlines()[0])
+    assert event["event"] == "ExecutionReachIndeterminate"
+    assert "unreached" not in event
+
+
+def test_genuine_compatible_report_can_observe_declared_native_files(
+    tmp_path: Path,
+) -> None:
+    _write_repo(tmp_path, {"reservation.ml": "let reserve = ()\n"})
+    xml = tmp_path / "native-coverage.xml"
+    xml.write_text(_cobertura(tmp_path / "src", _cls("reservation.ml", hits=1)))
+    assert (
+        main(
+            [
+                "--repo",
+                str(tmp_path),
+                "--src-dir",
+                "src",
+                "--ext",
+                ".ml",
+                "--coverage-xml",
+                str(xml),
+            ]
+        )
+        == 0
+    )

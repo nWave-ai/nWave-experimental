@@ -2,7 +2,7 @@
 
 Scope: select the changed, extant, tracked Python files under the configured
 source scopes since the last successful same-workflow run; validate that run
-is a real ancestor of HEAD; score a mutmut 3.6 `export-cicd-stats` result
+is a real ancestor of HEAD; score a mutmut 3.8 `export-cicd-stats` result
 conservatively (unresolved mutant statuses never inflate the score); and
 render a compact report plus a bounded GitHub issue summary.
 
@@ -14,11 +14,13 @@ access. No function shells out, writes files, or mutates the checkout.
 from __future__ import annotations
 
 import dataclasses
+import math
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Sequence
 
 
 DEFAULT_SOURCE_SCOPES: tuple[str, ...] = (
@@ -28,7 +30,7 @@ DEFAULT_SOURCE_SCOPES: tuple[str, ...] = (
 )
 DEFAULT_THRESHOLD = 80.0
 
-# mutmut 3.6 status categories that are conclusive, killed-or-survived:
+# mutmut status categories that are conclusive, killed-or-survived:
 STATUS_KILLED = "killed"
 STATUS_SURVIVED = "survived"
 
@@ -189,37 +191,36 @@ def select_changed_python_files(
 
 
 # ---------------------------------------------------------------------------
-# mutmut 3.6 `export-cicd-stats` parsing — conservative scoring
+# mutmut `export-cicd-stats` parsing — conservative scoring
 # ---------------------------------------------------------------------------
 
 
 def parse_cicd_stats(stats: Mapping[str, object]) -> dict[str, int]:
     """Map a `mutants/mutmut-cicd-stats.json` payload to this module's vocabulary.
 
-    mutmut.__main__.save_cicd_stats writes exactly
-    {killed, survived, total, no_tests, skipped, suspicious, timeout,
-    check_was_interrupted_by_user, segfault}. Every recognized non-zero key is
-    passed through as-is; `total` minus the sum of all recognized keys present
-    is added to "not_checked" (never negative) — a conservative catch-all so
-    an unrecognized/future mutmut status can never silently vanish into the
-    denominator as an implicit kill.
+    Counts must be nonnegative integers within an explicit total. Future
+    status keys are retained as incomplete, not dropped or scored as kills.
+    Any unaccounted remainder becomes ``not_checked``. Attribution to real
+    per-mutant execution is the driver's responsibility before policy scoring.
     """
-    total = int(stats.get("total", 0) or 0)
-    known_keys = (
-        STATUS_KILLED,
-        STATUS_SURVIVED,
-        *sorted(INCOMPLETE_STATUSES - {"not_checked"}),
-    )
+    if not isinstance(stats, Mapping):
+        raise ValueError("mutation stats must be an object")
+    total = stats.get("total")
+    if type(total) is not int or total < 0:
+        raise ValueError("mutation stats require a nonnegative integer total")
     counts: dict[str, int] = {}
-    known_sum = 0
-    for key in known_keys:
-        value = stats.get(key)
+    for key, value in stats.items():
+        if key == "total":
+            continue
+        if type(value) is not int or value < 0:
+            raise ValueError(f"invalid mutation count for {key!r}: {value!r}")
         if value:
-            counts[key] = int(value)
-            known_sum += int(value)
-    unaccounted = total - known_sum
-    if unaccounted > 0:
-        counts["not_checked"] = counts.get("not_checked", 0) + unaccounted
+            counts[key] = value
+    known_sum = sum(counts.values())
+    if known_sum > total:
+        raise ValueError("mutation status counts exceed the reported total")
+    if total > known_sum:
+        counts["not_checked"] = counts.get("not_checked", 0) + total - known_sum
     return counts
 
 
@@ -260,6 +261,10 @@ def compute_score(
     caller must fail loudly on (infrastructure failure), independent of
     whether the conclusive subset clears `threshold`.
     """
+    if not math.isfinite(threshold) or not 0 <= threshold <= 100:
+        raise ValueError("mutation threshold must be finite and between 0 and 100")
+    if any(type(count) is not int or count < 0 for count in status_counts.values()):
+        raise ValueError("mutation counts must be nonnegative integers")
     killed = status_counts.get(STATUS_KILLED, 0)
     survived = status_counts.get(STATUS_SURVIVED, 0)
     incomplete = {
@@ -280,7 +285,7 @@ def compute_score(
 
     scored_total = killed + survived
     score_pct = (100.0 * killed / scored_total) if scored_total else None
-    passed = score_pct is not None and score_pct >= threshold
+    passed = score_pct is not None and score_pct >= threshold and not incomplete
     return ScoreResult(
         killed=killed,
         survived=survived,
@@ -301,10 +306,9 @@ def compute_score(
 class RunReport:
     """Full outcome of one nightly-delta invocation, ready to render.
 
-    Exactly one of (noop_reason, infrastructure_error, score) is set:
-      - noop_reason set          -> successful bounded no-op (exit 0).
-      - infrastructure_error set -> infra failure (mutmut/query/stats broke).
-      - score set                -> a real conclusive delta run completed.
+    No-op means not-applicable, never a valid mutation score. An invalid
+    attempt can retain partial counts alongside its infrastructure error.
+    Provenance and results belong to this invocation, never shared files.
     """
 
     decision: BaselineDecision
@@ -312,6 +316,8 @@ class RunReport:
     score: ScoreResult | None = None
     noop_reason: str | None = None
     infrastructure_error: str | None = None
+    provenance: Mapping[str, object] | None = None
+    results_text: str = ""
 
 
 def build_noop_report(decision: BaselineDecision) -> RunReport:
@@ -340,6 +346,7 @@ def build_infrastructure_report(
     decision: BaselineDecision,
     changed_files: Sequence[str],
     reason: str,
+    score: ScoreResult | None = None,
 ) -> RunReport:
     """A run that could not reach a trustworthy score: query/mutmut/stats broke.
 
@@ -351,6 +358,7 @@ def build_infrastructure_report(
         decision=decision,
         changed_files=tuple(changed_files),
         infrastructure_error=reason,
+        score=score,
     )
 
 
@@ -362,12 +370,19 @@ def render_report(report: RunReport) -> str:
         f"- baseline status: `{report.decision.status}`",
         f"- baseline sha: `{report.decision.baseline_sha or 'n/a'}`",
     ]
+    if report.provenance:
+        lines += [
+            f"- invocation: `{report.provenance.get('invocation_id')}`",
+            f"- head sha: `{report.provenance.get('head_sha')}`",
+            f"- source tree: `{report.provenance.get('tree_sha')}`",
+        ]
     if report.infrastructure_error is not None:
         lines += [
             f"- outcome: infrastructure failure (`{report.infrastructure_error}`)",
             f"- changed eligible files: {len(report.changed_files)}",
         ]
-        return "\n".join(lines) + "\n"
+        if report.score is None:
+            return "\n".join(lines) + "\n"
     if report.score is None:
         lines += [
             f"- outcome: no-op (`{report.noop_reason}`)",
@@ -382,8 +397,9 @@ def render_report(report: RunReport) -> str:
         *[f"  - `{f}`" for f in report.changed_files],
         f"- killed: {score.killed}",
         f"- survived: {score.survived}",
-        f"- score: {score_str} (threshold {score.threshold:.0f}%)",
-        f"- threshold met: {score.passed}",
+        f"- conclusive-subset score: {score_str} (threshold {score.threshold:.0f}%)",
+        f"- valid completed score: {classify_failure(report) != 'infrastructure'}",
+        f"- threshold met: {score.passed and report.infrastructure_error is None}",
         f"- incomplete mutants: {score.incomplete_total}",
     ]
     if score.incomplete:
@@ -405,7 +421,8 @@ def bounded_issue_summary(report: RunReport, max_files: int = 10) -> str:
             shown = list(report.changed_files[:max_files])
             lines.append(f"Changed files ({len(report.changed_files)}):")
             lines += [f"- `{f}`" for f in shown]
-        return "\n".join(lines)
+        if report.score is None:
+            return "\n".join(lines)
     if report.score is None:
         lines.append(f"No-op run: {report.noop_reason}")
         return "\n".join(lines)
@@ -463,6 +480,8 @@ def classify_failure(report: RunReport) -> str | None:
         return "infrastructure"
     if report.score is None:
         return None
+    if report.score.scored_total == 0:
+        return "infrastructure"
     if report.score.has_incomplete:
         return "infrastructure"
     if not report.score.passed:

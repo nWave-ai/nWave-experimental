@@ -36,13 +36,17 @@ class TestPlatformFlagResolution:
         """Copilot CLI must be selectable explicitly, not only via auto-detect."""
         assert _resolve_platform_override("copilot") == {"copilot"}
 
+    def test_omp_returns_singleton(self):
+        """OMP must be selectable explicitly, not only via auto-detect."""
+        assert _resolve_platform_override("omp") == {"omp"}
+
     def test_all_includes_every_explicit_platform(self):
         """``--platform all`` must include every explicit platform target —
         otherwise users requesting "all" silently miss the absent target.
         """
         explicit = {
             _resolve_platform_override(flag).pop()
-            for flag in ("claude-code", "opencode", "codex", "copilot")
+            for flag in ("claude-code", "opencode", "codex", "copilot", "omp")
         }
         assert _resolve_platform_override("all") == explicit
 

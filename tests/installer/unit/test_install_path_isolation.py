@@ -6,7 +6,12 @@ import json
 from pathlib import Path
 
 import pytest
-from nwave_ai.cli import _get_config_dir, _handle_mode, _handle_status
+from nwave_ai.cli import (
+    _get_config_dir,
+    _handle_mode,
+    _handle_status,
+    main_with_argv,
+)
 
 from scripts.install.install_nwave import NWaveInstaller
 from scripts.shared.install_paths import (
@@ -50,6 +55,57 @@ def test_agents_home_override_unifies_mode_write_and_status_read(
     assert _handle_status([]) == 0
     out = capsys.readouterr().out
     assert "Global activation mode: all" in out
+
+
+def test_mode_change_preserves_legacy_preferences_and_backup(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("NWAVE_AGENTS_HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    legacy = tmp_path / ".nwave" / "global-config.json"
+    legacy.parent.mkdir()
+    preferences = {
+        "documentation": {"density": "full", "expansion_prompt": "always-skip"},
+        "attribution": {"enabled": False},
+        "model_runtime": {"default": {"provider": "openai", "model": "gpt-4"}},
+        "custom": {"preserved": True},
+    }
+    legacy.write_text(json.dumps(preferences), encoding="utf-8")
+    original = legacy.read_bytes()
+
+    assert main_with_argv(["mode", "all"]) == 0
+
+    canonical = legacy.with_name("config.json")
+    migrated = json.loads(canonical.read_text(encoding="utf-8"))
+    assert {key: migrated.get(key) for key in preferences} == preferences
+    assert migrated["activation"]["mode"] == "all"
+    assert not legacy.exists()
+    backup = legacy.with_name("global-config.json.unified-config.bak")
+    assert backup.read_bytes() == original
+
+    before = canonical.read_bytes()
+    assert main_with_argv(["mode", "all"]) == 0
+    assert canonical.read_bytes() == before
+    assert backup.read_bytes() == original
+
+
+def test_mode_refuses_malformed_legacy_config_without_writing(
+    tmp_path: Path, monkeypatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("NWAVE_AGENTS_HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    legacy = tmp_path / ".nwave" / "global-config.json"
+    legacy.parent.mkdir()
+    legacy.write_text("{broken", encoding="utf-8")
+    before = {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
+
+    assert main_with_argv(["mode", "all"]) == 1
+
+    error = capsys.readouterr().err
+    assert str(legacy) in error
+    assert "invalid legacy config JSON" in error
+    after = {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
+    assert after == before
 
 
 @pytest.mark.parametrize(

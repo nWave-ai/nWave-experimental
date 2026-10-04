@@ -1,4 +1,4 @@
-"""Run the three source-blind evidence fixtures through the native role adapter."""
+"""Run source-blind fixtures through an explicitly eval-owned native Claude role."""
 
 from __future__ import annotations
 
@@ -7,12 +7,9 @@ import csv
 import hashlib
 import json
 import time
-from dataclasses import asdict
 from pathlib import Path
 
-from des.adapters.driven.task_invocation.claude_code_task_adapter import (
-    ClaudeCodeTaskAdapter,
-)
+from tests.evals.delivery_convergence.run_probe import invoke_native_role
 
 
 ROLE = "nw-user-examiner"
@@ -52,20 +49,27 @@ def main() -> int:
             }
         )
         (root / "prompt.json").write_text(prompt + "\n")
-        adapter = ClaudeCodeTaskAdapter(
-            model=args.model, record_root=root, framework_root=args.framework_root
-        )
         started = time.monotonic()
         try:
-            run = adapter.invoke(role_id=ROLE, prompt=prompt, cwd=root)
+            run, envelope, exit_status = invoke_native_role(
+                role=ROLE,
+                prompt=prompt,
+                run_root=root,
+                framework_root=args.framework_root,
+                model=args.model,
+            )
             result = {
                 "case": case["id"],
                 "expected": case["expected_outcome"],
                 "outcome": run.outcome.value,
-                "issued": run.issued,
-                "exit_status": run.exit_status,
+                "issued": True,
+                "exit_status": exit_status,
                 "diagnostic": run.diagnostic,
-                "accounting": asdict(run.accounting) if run.accounting else None,
+                "run_id": envelope.get("session_id"),
+                "accounting": {
+                    key: envelope.get(key)
+                    for key in ("total_cost_usd", "usage", "modelUsage", "duration_ms")
+                },
             }
         except Exception as error:
             result = {
@@ -73,7 +77,7 @@ def main() -> int:
                 "error": type(error).__name__,
                 "detail": str(error),
             }
-        result.update(seconds=time.monotonic() - started, run_id=adapter.run_id)
+        result.update(seconds=time.monotonic() - started)
         results.append(result)
         (args.output_root / "results.json").write_text(
             json.dumps(

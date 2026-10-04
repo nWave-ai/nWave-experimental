@@ -8,14 +8,24 @@ verifies or invents content: Quint evidence is recorded, never claimed proven.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
+from typing import TYPE_CHECKING, TypeVar
+
+from des.domain.input_defects import Defects, InputDefects
 
 
-class SectionInvalid(ValueError):
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
+T = TypeVar("T")
+
+
+class SectionInvalid(InputDefects):
     pass
 
 
 STATUSES = ("proposed", "confirmed", "open")
-SECTION_KEYS = ("jtbd", "journey", "gherkin", "quint_scenarios")
 NOT_EXPLORED = "_Not explored._"
 NOT_RUN = "_Not run: no Quint model was executed for this brief._"
 
@@ -41,15 +51,40 @@ def _step(value: object, name: str) -> str:
     return text
 
 
-def _closed(value: object, name: str, required: set[str], optional: set[str]) -> dict:
+def _line(value: object, name: str) -> str:
+    return _text(value, name, single_line=True)
+
+
+def _same(value: object, name: str) -> object:
+    return value
+
+
+def _keys_defect(name: str, required: set[str], optional: set[str]) -> str:
+    return (
+        f"{name} must contain {sorted(required)} and only optionally {sorted(optional)}"
+    )
+
+
+def _record(
+    value: object,
+    name: str,
+    decoders: dict[str, Callable[[object, str], object]],
+    optional: frozenset[str] = frozenset(),
+) -> dict[str, object]:
+    """A closed object: its key-set defect and each present field's, together."""
     if not isinstance(value, dict):
         raise SectionInvalid(f"{name} must be an object")
-    keys = set(value)
-    if not required <= keys <= required | optional:
-        raise SectionInvalid(
-            f"{name} must contain {sorted(required)} and only optionally {sorted(optional)}"
-        )
-    return value
+    required = set(decoders) - optional
+    defects = Defects(SectionInvalid)
+    if not required <= set(value) <= set(decoders):
+        defects.add(_keys_defect(name, required, set(optional)))
+    decoded = {
+        key: defects.take(partial(decode, value[key], f"{name}.{key}"))
+        for key, decode in decoders.items()
+        if key in value
+    }
+    defects.close()
+    return decoded
 
 
 def _status(value: object, name: str) -> str:
@@ -61,6 +96,25 @@ def _status(value: object, name: str) -> str:
 def _list(value: object, name: str) -> list:
     if not isinstance(value, list) or not value:
         raise SectionInvalid(f"{name} must be a non-empty array when present")
+    return value
+
+
+def _items(
+    value: object, name: str, decode: Callable[[object, str], T]
+) -> tuple[T, ...]:
+    """A non-empty list whose every item is decoded, its defects refused together."""
+    defects = Defects(SectionInvalid)
+    items = tuple(
+        defects.take(partial(decode, item, f"{name}[{index}]"))
+        for index, item in enumerate(_list(value, name))
+    )
+    defects.close()
+    return items  # type: ignore[return-value]
+
+
+def _trace_index(value: object, name: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise SectionInvalid(f"{name} must be a non-negative integer")
     return value
 
 
@@ -140,32 +194,55 @@ class DiscussSections:
         """Parse the section keys of a DISCUSS payload; refuse anything malformed.
 
         v1 (legacy): each section key is optional and holds the typed data directly.
-        v2 (current): every section key is required and tagged
-        ``{"status": "not_explored"}`` or ``{"status": "provided", ...typed data}``.
+        v2 (current): each section key holds ``{"status": "not_explored"}`` or
+        ``{"status": "provided", ...typed data}``; the DISCUSS key set, which
+        the caller refuses, requires every one.  The sections are independent:
+        every present one is parsed and all their defects are refused together.
         """
+        defects = Defects(SectionInvalid)
+
+        def section(key: str, parse: Callable[[object], T], absent: T) -> T:
+            if key not in payload:
+                return absent
+            return defects.take(partial(parse, payload[key]))  # type: ignore[return-value]
+
         if version == 1:
-            return cls(
-                *cls._jtbd(payload["jtbd"]) if "jtbd" in payload else ((), ()),
-                cls._journey(payload["journey"]) if "journey" in payload else (),
-                cls._gherkin(payload["gherkin"]) if "gherkin" in payload else (),
-                cls._quint(payload["quint_scenarios"])
-                if "quint_scenarios" in payload
-                else None,
+            jtbd = section("jtbd", cls._jtbd, ((), ()))
+            journey = section("journey", cls._journey, ())
+            gherkin = section("gherkin", cls._gherkin, ())
+        else:
+            jtbd = section(
+                "jtbd",
+                partial(
+                    cls._tagged, name="jtbd", parse=cls._jtbd, keys={"human", "llm"}
+                ),
+                ((), ()),
             )
-        missing = [k for k in SECTION_KEYS if k not in payload]
-        if missing:
-            raise SectionInvalid(
-                f"schema_version 2 requires an explicit entry for {missing}; "
-                'use {"status": "not_explored"} for an unexpanded section'
+            journey = section(
+                "journey",
+                partial(
+                    cls._tagged,
+                    name="journey",
+                    parse=cls._journey,
+                    keys={"steps"},
+                    only="steps",
+                ),
+                (),
             )
-        human, llm = cls._tagged(payload["jtbd"], "jtbd", cls._jtbd, {"human", "llm"})
-        journey = cls._tagged(
-            payload["journey"], "journey", cls._journey, {"steps"}, "steps"
-        )
-        gherkin = cls._tagged(
-            payload["gherkin"], "gherkin", cls._gherkin, {"scenarios"}, "scenarios"
-        )
-        return cls(human, llm, journey, gherkin, cls._quint(payload["quint_scenarios"]))
+            gherkin = section(
+                "gherkin",
+                partial(
+                    cls._tagged,
+                    name="gherkin",
+                    parse=cls._gherkin,
+                    keys={"scenarios"},
+                    only="scenarios",
+                ),
+                (),
+            )
+        quint = section("quint_scenarios", cls._quint, None)
+        defects.close()
+        return cls(*jtbd, journey, gherkin, quint)  # type: ignore[misc]
 
     @staticmethod
     def _tagged(
@@ -179,73 +256,76 @@ class DiscussSections:
         ):
             raise SectionInvalid(f"{name}.status must be not_explored or provided")
         if value["status"] == "not_explored":
-            _closed(value, name, {"status"}, set())
+            _record(value, name, {"status": _same})
             return empty
-        _closed(value, name, {"status"}, keys)
         data = {k: v for k, v in value.items() if k != "status"}
         if not data:
             raise SectionInvalid(
                 f"{name} with status provided must carry {sorted(keys)}"
             )
-        return parse(data[only] if only else data)
+        defects = Defects(SectionInvalid)
+        if not set(data) <= keys:
+            defects.add(_keys_defect(name, {"status"}, keys))
+        known = {k: v for k, v in data.items() if k in keys}
+        parsed = (
+            defects.take(partial(parse, known[only] if only else known))
+            if known
+            else None
+        )
+        defects.close()
+        return parsed
 
     @classmethod
     def _jtbd(cls, jobs: object) -> tuple[tuple[Job, ...], tuple[Job, ...]]:
-        jobs = _closed(jobs, "jtbd", set(), {"human", "llm"})
+        decoded = _record(
+            jobs,
+            "jtbd",
+            {"human": cls._jobs, "llm": cls._jobs},
+            frozenset({"human", "llm"}),
+        )
         if not jobs:
             raise SectionInvalid("jtbd must contain human and/or llm when present")
-        return (
-            cls._jobs(jobs["human"], "jtbd.human") if "human" in jobs else (),
-            cls._jobs(jobs["llm"], "jtbd.llm") if "llm" in jobs else (),
-        )
+        return decoded.get("human", ()), decoded.get("llm", ())  # type: ignore[return-value]
 
     @staticmethod
     def _journey(value: object) -> tuple[JourneyStep, ...]:
-        steps = []
-        for i, raw in enumerate(_list(value, "journey")):
-            name = f"journey[{i}]"
-            raw = _closed(raw, name, {"step", "status"}, {"human_emotion"})
-            steps.append(
-                JourneyStep(
-                    _text(raw["step"], f"{name}.step"),
-                    _text(raw["human_emotion"], f"{name}.human_emotion")
-                    if "human_emotion" in raw
-                    else None,
-                    _status(raw["status"], f"{name}.status"),
-                )
+        def step(raw: object, name: str) -> JourneyStep:
+            decoded = _record(
+                raw,
+                name,
+                {"step": _text, "human_emotion": _text, "status": _status},
+                frozenset({"human_emotion"}),
             )
-        return tuple(steps)
+            return JourneyStep(
+                decoded["step"],  # type: ignore[arg-type]
+                decoded.get("human_emotion"),  # type: ignore[arg-type]
+                decoded["status"],  # type: ignore[arg-type]
+            )
+
+        return _items(value, "journey", step)
 
     @staticmethod
     def _gherkin(value: object) -> tuple[GherkinScenario, ...]:
-        scenarios = []
-        for i, raw in enumerate(_list(value, "gherkin")):
-            name = f"gherkin[{i}]"
-            raw = _closed(raw, name, {"scenario", "steps", "status"}, set())
-            scenarios.append(
-                GherkinScenario(
-                    _text(raw["scenario"], f"{name}.scenario", single_line=True),
-                    tuple(
-                        _step(s, f"{name}.steps[{j}]")
-                        for j, s in enumerate(_list(raw["steps"], f"{name}.steps"))
-                    ),
-                    _status(raw["status"], f"{name}.status"),
-                )
+        def scenario(raw: object, name: str) -> GherkinScenario:
+            decoded = _record(
+                raw,
+                name,
+                {
+                    "scenario": _line,
+                    "steps": lambda steps, label: _items(steps, label, _step),
+                    "status": _status,
+                },
             )
-        return tuple(scenarios)
+            return GherkinScenario(**decoded)  # type: ignore[arg-type]
+
+        return _items(value, "gherkin", scenario)
 
     @staticmethod
     def _jobs(value: object, name: str) -> tuple[Job, ...]:
-        jobs = []
-        for i, raw in enumerate(_list(value, name)):
-            raw = _closed(raw, f"{name}[{i}]", {"job", "status"}, set())
-            jobs.append(
-                Job(
-                    _text(raw["job"], f"{name}[{i}].job"),
-                    _status(raw["status"], f"{name}[{i}].status"),
-                )
-            )
-        return tuple(jobs)
+        def job(raw: object, label: str) -> Job:
+            return Job(**_record(raw, label, {"job": _text, "status": _status}))  # type: ignore[arg-type]
+
+        return _items(value, name, job)
 
     @staticmethod
     def _quint(value: object) -> QuintEvidence | None:
@@ -256,55 +336,48 @@ class DiscussSections:
         ):
             raise SectionInvalid(f"{name}.status must be not_run or generated")
         if value["status"] == "not_run":
-            _closed(value, name, {"status"}, set())
+            _record(value, name, {"status": _same})
             return None
-        raw = _closed(
+
+        def event(raw: object, label: str) -> tuple[int, str]:
+            decoded = _record(raw, label, {"trace_index": _trace_index, "text": _line})
+            return decoded["trace_index"], decoded["text"]  # type: ignore[return-value]
+
+        def scenario(raw: object, label: str) -> QuintScenario:
+            decoded = _record(
+                raw,
+                label,
+                {
+                    "title": _line,
+                    "events": lambda events, at: _items(events, at, event),
+                },
+            )
+            return QuintScenario(decoded["title"], decoded["events"])  # type: ignore[arg-type]
+
+        decoded = _record(
             value,
             name,
-            {"status", "model", "tool", "trace", "scenarios"},
-            set(),
+            {
+                "status": _same,
+                "model": lambda raw, at: _record(
+                    raw, at, {"path": _line, "identity": _line}
+                ),
+                "tool": lambda raw, at: _record(
+                    raw, at, {"name": _line, "version": _line, "command": _line}
+                ),
+                "trace": lambda raw, at: _record(raw, at, {"path": _line}),
+                "scenarios": lambda raw, at: _items(raw, at, scenario),
+            },
         )
-        model = _closed(raw["model"], f"{name}.model", {"path", "identity"}, set())
-        tool = _closed(
-            raw["tool"], f"{name}.tool", {"name", "version", "command"}, set()
-        )
-        trace = _closed(raw["trace"], f"{name}.trace", {"path"}, set())
-        scenarios = []
-        for i, item in enumerate(_list(raw["scenarios"], f"{name}.scenarios")):
-            label = f"{name}.scenarios[{i}]"
-            item = _closed(item, label, {"title", "events"}, set())
-            events = []
-            for j, event in enumerate(_list(item["events"], f"{label}.events")):
-                event = _closed(
-                    event, f"{label}.events[{j}]", {"trace_index", "text"}, set()
-                )
-                index = event["trace_index"]
-                if not isinstance(index, int) or isinstance(index, bool) or index < 0:
-                    raise SectionInvalid(
-                        f"{label}.events[{j}].trace_index must be a non-negative integer"
-                    )
-                events.append(
-                    (
-                        index,
-                        _text(
-                            event["text"], f"{label}.events[{j}].text", single_line=True
-                        ),
-                    )
-                )
-            scenarios.append(
-                QuintScenario(
-                    _text(item["title"], f"{label}.title", single_line=True),
-                    tuple(events),
-                )
-            )
+        model, tool, trace = decoded["model"], decoded["tool"], decoded["trace"]
         return QuintEvidence(
-            _text(model["path"], f"{name}.model.path", single_line=True),
-            _text(model["identity"], f"{name}.model.identity", single_line=True),
-            _text(tool["name"], f"{name}.tool.name", single_line=True),
-            _text(tool["version"], f"{name}.tool.version", single_line=True),
-            _text(tool["command"], f"{name}.tool.command", single_line=True),
-            _text(trace["path"], f"{name}.trace.path", single_line=True),
-            tuple(scenarios),
+            model["path"],  # type: ignore[index]
+            model["identity"],  # type: ignore[index]
+            tool["name"],  # type: ignore[index]
+            tool["version"],  # type: ignore[index]
+            tool["command"],  # type: ignore[index]
+            trace["path"],  # type: ignore[index]
+            decoded["scenarios"],  # type: ignore[arg-type]
         )
 
     def markdown(self) -> list[str]:

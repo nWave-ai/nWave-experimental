@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from des.domain.nwave_locations import NWaveLocations
 from scripts.install.plugins.agents_plugin import AgentsPlugin
 from scripts.install.plugins.base import InstallContext
 from scripts.install.plugins.commands_plugin import CommandsPlugin
@@ -55,8 +56,14 @@ def installed_plugin_state(tmp_path_factory) -> tuple:
     logger = logging.getLogger("test.user-journey")
     logger.setLevel(logging.DEBUG)
 
-    claude_dir = tmp_path_factory.mktemp("user_journey") / ".claude"
+    sandbox = tmp_path_factory.mktemp("user_journey")
+    claude_dir = sandbox / ".claude"
     claude_dir.mkdir(parents=True, exist_ok=True)
+    # The DES plugin bootstraps the unified configuration into the installer's
+    # locations and a consumer project; both stay inside this sandbox so the
+    # source checkout is never a write target.
+    user_project_root = sandbox / "project"
+    user_project_root.mkdir()
 
     context = InstallContext(
         claude_dir=claude_dir,
@@ -64,6 +71,12 @@ def installed_plugin_state(tmp_path_factory) -> tuple:
         templates_dir=project_root / "nWave" / "templates",
         logger=logger,
         project_root=project_root,
+        user_project_root=user_project_root,
+        locations=NWaveLocations(
+            agents_home=sandbox,
+            claude_config_dir=claude_dir,
+            codex_config_dir=sandbox / ".codex",
+        ),
         framework_source=project_root / "nWave",
         dry_run=False,
     )

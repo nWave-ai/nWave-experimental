@@ -15,10 +15,11 @@ requires attention; it does not alone authorize an independent repair.
 Select the reviewer that owns the artifact class. Give it the actual
 repository-relative artifact or actual diff, not copied prose.
 
-Read `~/.claude/skills/nw-role-invocation/SKILL.md`. Invoke the exact installed
-reviewer/examiner role natively, or `des prepare-role` then `des invoke-role`
-(exact flags from `--help`). A tools-empty role cannot read paths: put the
-actual evidence bytes in its prompt.
+Read `~/.claude/skills/nw-role-invocation/SKILL.md`. Prepare candidate-bound
+evidence with `des prepare-role`, invoke the exact installed reviewer/examiner
+through the native host, then persist its envelope with `des record-role-result`.
+A tools-empty role needs actual permitted evidence bytes, not paths; use the
+supported native CLI when Agent cannot preserve that ceiling.
 
 Reviews are read-only and adversarial. Every finding cites a file/line,
 terminal command or exhibited counterexample. `APPROVE` requires the artifact

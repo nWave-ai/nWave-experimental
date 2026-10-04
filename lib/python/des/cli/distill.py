@@ -73,4 +73,6 @@ def main(argv: list[str] | None = None) -> int:
             invocation,
             facts=list(outcome.facts),
         )
-    return succeed(list(outcome.facts), "des craft --repo-root <root> --value 1")
+    return succeed(
+        list(outcome.facts), f"des craft --repo-root {root} --value 1 --input -"
+    )

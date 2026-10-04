@@ -19,6 +19,14 @@ def _document() -> DesignDocument:
             {
                 "schema_version": 1,
                 "authority": {"heading": "Widget"},
+                "architectural_tests": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture has no structural boundary change.",
+                },
+                "contract_tests": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture changes no shared contract.",
+                },
                 "purpose": "Expose Widget.",
                 "constraints": ["Preserve callers."],
                 "targets": [
@@ -27,11 +35,17 @@ def _document() -> DesignDocument:
                 "paradigm": "object_oriented",
                 "decisions": ["Keep ownership."],
                 "reuse_analysis": {"candidates": []},
+                "impact_closure": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                },
                 "prefactoring": {
                     "applicability": "applicable",
                     "existing_oracle": "tests/test_widget.py",
                     "move": "Extract lookup.",
                     "preserved_observation": "Widget remains visible.",
+                    "verification": [["pytest", "-q", "tests/test_widget.py"]],
+                    "acceptance_supports": [],
                 },
                 "agreement_analysis": {
                     "applicability": "not_applicable",

@@ -86,9 +86,26 @@ def render_status(cwd: Path) -> str:
             f"Retired update_check: ignored ({origins}); no automatic update prompt."
         )
     documentation = config._global_config_data.get("documentation")
-    if isinstance(documentation, dict) and "density" in documentation:
+    density_config = dict(config._global_config_data)
+    if isinstance(documentation, dict):
+        density_config["documentation"] = {
+            key: value
+            for key, value in documentation.items()
+            if key != "expansion_prompt"
+        }
+    try:
+        density = resolve_density(density_config)
+    except ValueError as error:
+        lines.append(f"Documentation density: invalid ({error}); check global config.")
+    else:
+        reading = (
+            "local HTML from the completed wave's DES document"
+            if density.mode == "full"
+            else "authoritative documents and handoffs"
+        )
         lines.append(
-            "Documentation density: diagnostic-only (global); does not reshape waves."
+            f"Documentation density: {density.mode} ({density.provenance}; "
+            f"after an applicable completed wave: {reading})."
         )
     preference = {}
     if isinstance(documentation, dict) and "expansion_prompt" in documentation:

@@ -64,7 +64,7 @@ __all__ = [
 # marker that a user has since modified and now owns. Removing it would breach
 # the preserve-foreign contract.
 FOREIGN_SESSION_START_COMMANDS = (
-    "python3 -m lyra.session_start",
+    "python3 -m external.session_start",
     "# des-hook:orchestrator-affordance-refresh-standalone\n"
     "python3 /opt/operator/session_start.py --keep",
 )

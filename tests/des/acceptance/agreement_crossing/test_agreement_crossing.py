@@ -24,8 +24,10 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
+import pytest
 from tests.common.in_process_cli import run_cli_in_process
 
 
@@ -34,6 +36,27 @@ from tests.common.in_process_cli import run_cli_in_process
 #: repository's own `des verify-test-runner`, and the target it runs is a real
 #: committed unit corpus. A synthesised tree would measure a stand-in.
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
+
+
+@pytest.fixture(autouse=True)
+def _declared_programs_resolve_to_the_interpreter_under_test(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every declaration names `des` and `python3`, which the checker resolves on PATH.
+
+    Measured on a developer shell whose PATH reaches an installed `des` first
+    (``~/.local/bin/des``): the producer then ran THAT installation's
+    interpreter, which cannot even load this repository's conftest, and every
+    crossing became indeterminate. That run measured a foreign copy, not this
+    repository's producer and consumers. The interpreter running this corpus
+    carries both programs in its own bin directory, so it is put first on PATH;
+    resolution is still the checker's own, unchanged.
+    """
+    interpreter_bin = str(Path(sys.executable).parent)
+    monkeypatch.setenv(
+        "PATH", os.pathsep.join((interpreter_bin, os.environ.get("PATH", "")))
+    )
+
 
 #: The declaration the crossing is driven from -- repository-relative, exactly
 #: as an operator names it on the command line. This corpus only READS it: the

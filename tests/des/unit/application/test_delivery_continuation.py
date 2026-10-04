@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import stat
 import subprocess
+from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,23 +15,28 @@ from des.application.delivery_continuation import (
     DeliveryContinuationRunner,
     DeliveryOutcome,
     Disposition,
-    FrozenHandover,
-    RoleTurn,
     ScopeWindow,
     _status_paths,
 )
 from des.application.handover import (
     Blocked,
     HandoverValue,
-    StoredHandover,
+    SharedDesign,
     create_handover,
+    design_facts_defect,
     handover_path,
 )
 from des.ports.driven_ports.task_invocation_port import (
+    AgreementParty,
+    ApplicableADR,
+    ApplicableAgreementAnalysis,
+    ApplicableImpactClosure,
     DesignFacts,
     DesignTarget,
-    ModelOutcome,
-    ModelRun,
+    ImpactItem,
+    NotApplicable,
+    ReuseAnalysis,
+    ReuseCandidate,
 )
 
 
@@ -173,6 +180,16 @@ def _typed(supports: tuple[str, ...]) -> DesignFacts:
         acceptance_supports=supports,
         verification=(("python3", "-m", "pytest", "tests/acceptance/test_value.py"),),
         oracle_verification_index=0,
+        architectural_tests=NotApplicable(
+            "The fixture has no structural boundary change."
+        ),
+        contract_tests=NotApplicable("The fixture changes no shared contract."),
+        prefactoring=NotApplicable("The fixture requires no preservation move."),
+        agreement_analysis=NotApplicable("The fixture has no affected agreement."),
+        reuse_analysis=ReuseAnalysis(()),
+        impact_closure=NotApplicable(
+            "The fixture reaches no public surface, consumer or build metadata."
+        ),
     )
 
 
@@ -272,132 +289,6 @@ def test_a_resumed_handover_that_already_bound_an_ignored_support_is_refused(
     assert generated.read_text() == "{}"
 
 
-def test_a_provider_that_never_started_is_not_reported_as_an_envelope_defect(
-    tmp_path,
-) -> None:
-    """Measured 2026-09-05, run 12: `[Errno 7] Argument list too long` was
-    reported as `ModelEnvelopeUnavailable`, HOW "observe the provider result" --
-    a HOW nobody can execute, because no provider process ever existed."""
-
-    class RefusingPort:
-        def invoke(self, **_kwargs):
-            raise OSError(7, "Argument list too long", "/usr/bin/claude")
-
-    outcome = DeliveryContinuationRunner()._invoke(
-        RefusingPort(),
-        tmp_path,
-        RoleTurn(role="nw-product-owner", prompt="classify"),
-        FrozenHandover(raw=None),
-    )
-
-    assert isinstance(outcome, DeliveryOutcome)
-    assert outcome.failure is not None
-    assert outcome.failure.what == "ProviderSpawnFailed"
-    assert "no provider process existed" in outcome.failure.how
-
-
-def test_preissue_refusal_does_not_increment_turns_bought(tmp_path) -> None:
-    class PreissuePort:
-        def invoke(self, **_kwargs):
-            return ModelRun(
-                ModelOutcome.Indeterminate,
-                "selected provider profile is unavailable",
-                0,
-                True,
-                issued=False,
-            )
-
-    runner = DeliveryContinuationRunner()
-    outcome = runner._invoke(
-        PreissuePort(),
-        tmp_path,
-        RoleTurn(role="nw-product-owner", prompt="classify"),
-        FrozenHandover(raw=None),
-    )
-
-    assert isinstance(outcome, DeliveryOutcome)
-    assert outcome.failure is not None
-    assert outcome.failure.what == "ModelNotIssued"
-    assert runner.turns_bought == 0
-
-
-def test_selected_revision_recovery_never_repeats_an_issued_retry_safe_turn(
-    tmp_path,
-) -> None:
-    """Recovery is one explicit ATD turn even when the provider says retry-safe.
-
-    The caller owns a later retry.  Repeating it here would spend a second turn
-    behind an explicit `des invoke-role` request, which contradicts the
-    recovery contract and hides the cost from the orchestrator.
-    """
-
-    class RetrySafePort:
-        def __init__(self) -> None:
-            self.calls = 0
-
-        def invoke(self, **kwargs):
-            self.calls += 1
-            assert kwargs["semantic_task"] == "selected-revision-recovery"
-            return ModelRun(
-                ModelOutcome.Indeterminate,
-                "provider session is unavailable",
-                1,
-                True,
-            )
-
-    port = RetrySafePort()
-    runner = DeliveryContinuationRunner()
-    outcome = runner._invoke(
-        port,
-        tmp_path,
-        RoleTurn(
-            role="nw-acceptance-designer",
-            prompt="recover the selected revision",
-            semantic_task="selected-revision-recovery",
-        ),
-        FrozenHandover(raw=None),
-    )
-
-    assert isinstance(outcome, DeliveryOutcome)
-    assert outcome.failure is not None
-    assert outcome.failure.what == "ProviderRetry"
-    assert port.calls == 1
-    assert runner.turns_bought == 1
-
-
-def test_generic_retry_safe_turn_keeps_its_existing_second_attempt(tmp_path) -> None:
-    """The recovery exception does not change the generic retry contract."""
-
-    class RetrySafePort:
-        def __init__(self) -> None:
-            self.calls = 0
-
-        def invoke(self, **kwargs):
-            self.calls += 1
-            assert "semantic_task" not in kwargs
-            return ModelRun(
-                ModelOutcome.Indeterminate,
-                "provider session is unavailable",
-                1,
-                True,
-            )
-
-    port = RetrySafePort()
-    runner = DeliveryContinuationRunner()
-    outcome = runner._invoke(
-        port,
-        tmp_path,
-        RoleTurn(role="nw-product-owner", prompt="classify"),
-        FrozenHandover(raw=None),
-    )
-
-    assert isinstance(outcome, DeliveryOutcome)
-    assert outcome.failure is not None
-    assert outcome.failure.what == "ProviderRetry"
-    assert port.calls == 2
-    assert runner.turns_bought == 2
-
-
 def test_the_runners_own_state_directory_is_not_workspace_drift(tmp_path) -> None:
     """Measured 2026-09-05: turn records made the runner accuse itself.
 
@@ -456,31 +347,56 @@ def _typed_targets(
         acceptance_supports=supports,
         verification=(("python3", "-m", "pytest", "tests/acceptance/test_value.py"),),
         oracle_verification_index=0,
+        architectural_tests=NotApplicable(
+            "The fixture has no structural boundary change."
+        ),
+        contract_tests=NotApplicable("The fixture changes no shared contract."),
+        prefactoring=NotApplicable("The fixture requires no preservation move."),
+        agreement_analysis=NotApplicable("The fixture has no affected agreement."),
+        reuse_analysis=ReuseAnalysis(()),
+        impact_closure=NotApplicable(
+            "The fixture reaches no public surface, consumer or build metadata."
+        ),
     )
 
 
-def test_a_declared_target_that_is_also_an_acceptance_support_stays_mutable(
+def test_an_extend_target_required_as_acceptance_support_is_refused_before_binding(
     tmp_path,
 ) -> None:
-    """Measured 2026-09-05, run 15 turn 04: the crafter was handed nothing.
+    """A support's bytes are pinned by the oracle witness before craft.
 
-    The architect named `graphify_code_fact_adapter.py` both as the EXTEND
-    target and as a support the oracle's reviewer must read -- legitimate in
-    meaning: read this file to judge the oracle, change it to deliver.  The
-    runner subtracted the whole acceptance set from the targets, so
-    `mutable_targets` reached the paid crafter turn EMPTY while
-    `target_decisions` authorized an EXTEND, and the crafter answered
-    `indeterminate` on the contradiction instead of working.  A target
-    declaration is the model's decision about what the delivery changes; being
-    read as evidence never withdraws it.
+    Codex retest 2026-10-01 (local-bug): DESIGN listed the EXTEND target
+    `pagination.py` as a support; binding succeeded, craft was then refused
+    twice with OracleRecordMoved and the host reverted its own fix to re-measure.
+    Refusing at binding names the contradiction where it costs one turn.
     """
+    root = repo(tmp_path, "notes/any.md")
+
+    outcome = DeliveryContinuationRunner._derive(
+        root,
+        _typed_targets(
+            (DesignTarget("src/value.py", "EXTEND"),),
+            ("src/value.py", "tests/acceptance/support.py"),
+        ),
+    )
+
+    assert isinstance(outcome, DeliveryOutcome)
+    assert outcome.failure is not None
+    assert outcome.failure.what == "DesignFactsMalformed"
+    assert "src/value.py" in outcome.failure.why
+    assert "tests/acceptance/support.py" not in outcome.failure.why
+
+
+def test_an_acceptance_owned_fixture_beside_an_extend_target_stays_admitted(
+    tmp_path,
+) -> None:
     root = repo(tmp_path, "notes/any.md")
 
     facts = DeliveryContinuationRunner._derive(
         root,
         _typed_targets(
             (DesignTarget("src/value.py", "EXTEND"),),
-            ("src/value.py", "tests/acceptance/support.py"),
+            ("tests/acceptance/support.py",),
         ),
     )
 
@@ -527,49 +443,7 @@ def test_typed_facts_refuse_a_new_non_oracle_target_required_as_acceptance_suppo
     assert isinstance(outcome, DeliveryOutcome)
     assert outcome.failure is not None
     assert outcome.failure.what == "DesignFactsMalformed"
-    assert (
-        "CREATE_NEW target is also a required acceptance support" in outcome.failure.why
-    )
-
-
-def test_inherited_authority_projects_its_explicit_oracle_command_binding(
-    tmp_path,
-) -> None:
-    bound = DesignFacts(
-        (DesignTarget("src/value.py", "EXTEND"),),
-        "object_oriented",
-        ("reuse the existing port",),
-        "tests/acceptance/test_value.py",
-        (),
-        (
-            ("python3", "-m", "pytest", "tests/acceptance"),
-            ("python3", "-m", "pytest", "tests/acceptance/test_value.py"),
-        ),
-        1,
-    )
-    from des.domain.document_scope import Project
-
-    stored = StoredHandover(
-        "deliver",
-        (
-            HandoverValue("first", (), bound),
-            HandoverValue("second", ("first",), None),
-        ),
-        b"",
-        Project(),
-    )
-
-    inherited = DeliveryContinuationRunner._inherited(
-        tmp_path, stored, stored.values[1]
-    )
-
-    assert inherited[0]["oracle_verification_index"] == 1
-    assert inherited[0]["verification"][1] == [
-        "python3",
-        "-m",
-        "pytest",
-        "tests/acceptance/test_value.py",
-    ]
+    assert "tests/support/new_helper.py" in outcome.failure.why
 
 
 def test_the_oracle_is_never_a_mutable_target(tmp_path) -> None:
@@ -633,6 +507,16 @@ def _verification_facts(
         acceptance_supports=supports,
         verification=verification,
         oracle_verification_index=0,
+        architectural_tests=NotApplicable(
+            "The fixture has no structural boundary change."
+        ),
+        contract_tests=NotApplicable("The fixture changes no shared contract."),
+        prefactoring=NotApplicable("The fixture requires no preservation move."),
+        agreement_analysis=NotApplicable("The fixture has no affected agreement."),
+        reuse_analysis=ReuseAnalysis(()),
+        impact_closure=NotApplicable(
+            "The fixture reaches no public surface, consumer or build metadata."
+        ),
     )
 
 
@@ -853,3 +737,117 @@ def test_a_resumed_handover_bound_to_an_oracle_only_table_is_refused(tmp_path) -
     assert ".nwave/des/handover.json" in outcome.failure.how
     handover_path(root).unlink()
     assert not handover_path(root).exists()
+
+
+def _reasoned(**overrides) -> DesignFacts:
+    return replace(
+        _typed(()),
+        reuse_analysis=ReuseAnalysis(
+            (
+                ReuseCandidate(
+                    "Value.render",
+                    "src/value.py:10",
+                    "CREATE_NEW",
+                    "No existing renderer fits the contract.",
+                ),
+            )
+        ),
+        impact_closure=ApplicableImpactClosure(
+            (
+                ImpactItem(
+                    "runtime", "src/value.py", "CHANGED", "The target is rewritten."
+                ),
+            )
+        ),
+        adr=ApplicableADR(
+            "context", "decision", ("alternative",), ("consequence",), "accepted"
+        ),
+        **overrides,
+    )
+
+
+def test_derived_authority_exposes_reuse_adr_and_impact_closure(tmp_path) -> None:
+    root = repo(tmp_path, "notes/any.md")
+    design = _reasoned()
+
+    facts = DeliveryContinuationRunner._derive(root, design)
+
+    assert isinstance(facts, AuthorityFacts)
+    assert facts.reuse_analysis == design.reuse_analysis
+    assert facts.adr == design.adr
+    assert facts.impact_closure == design.impact_closure
+
+
+def test_selected_revision_identity_moves_with_each_reuse_adr_and_closure(
+    tmp_path,
+) -> None:
+    root = repo(tmp_path, "notes/any.md")
+    facts = DeliveryContinuationRunner._derive(root, _reasoned())
+    assert isinstance(facts, AuthorityFacts)
+    variants = {
+        "reuse_analysis": ReuseAnalysis(()),
+        "adr": NotApplicable("The fixture needs no decision record."),
+        "impact_closure": ApplicableImpactClosure(
+            (
+                ImpactItem(
+                    "runtime", "src/value.py", "MIGRATED", "The target is migrated."
+                ),
+            )
+        ),
+    }
+
+    for name, value in variants.items():
+        changed = replace(facts, **{name: value})
+        assert changed.selected_revision_sha256 != facts.selected_revision_sha256, name
+
+
+def test_typed_and_shared_projections_carry_reuse_closure_and_adr_when_present(
+    tmp_path,
+) -> None:
+    root = repo(tmp_path, "notes/any.md")
+    with_adr = _reasoned()
+    derived = DeliveryContinuationRunner._derive(root, with_adr)
+    assert isinstance(derived, AuthorityFacts)
+
+    typed = DeliveryContinuationRunner._typed_facts(derived)
+    assert typed["reuse_analysis"]["candidates"][0]["decision"] == "CREATE_NEW"
+    assert typed["impact_closure"]["applicability"] == "applicable"
+    assert typed["impact_closure"]["items"][0]["locator"] == "src/value.py"
+    assert typed["adr"]["decision"] == "decision"
+    assert "adr" not in DeliveryContinuationRunner._typed_facts(
+        replace(derived, adr=None)
+    )
+
+    def shared_of(design: DesignFacts) -> dict:
+        stored = SimpleNamespace(
+            shared_design=SharedDesign("notes/any.md#Value", "a" * 64, "b" * 64, design)
+        )
+        return DeliveryContinuationRunner._shared(stored)["shared_design"]
+
+    shared = shared_of(with_adr)
+    assert shared["reuse_analysis"]["candidates"][0]["locator"] == "src/value.py:10"
+    assert shared["impact_closure"]["items"][0]["decision"] == "CHANGED"
+    assert shared["adr"]["decision"] == "decision"
+    assert "adr" not in shared_of(replace(with_adr, adr=None))
+
+
+def test_facts_whose_impact_closure_omits_a_declared_consumer_are_refused() -> None:
+    design = replace(
+        _reasoned(),
+        agreement_analysis=ApplicableAgreementAnalysis(
+            (
+                AgreementParty(
+                    "answer-protocol",
+                    "consumer",
+                    "bin/main.ml:1",
+                    "UNCHANGED_COMPATIBLE",
+                    "Protocol v1 remains unchanged.",
+                ),
+            )
+        ),
+    )
+
+    defect = design_facts_defect(design)
+
+    assert defect is not None
+    assert "bin/main.ml:1" in defect

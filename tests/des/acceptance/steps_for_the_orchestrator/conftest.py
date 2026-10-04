@@ -1,18 +1,4 @@
-"""One real repository and one fake provider, shared by every step scenario.
-
-The provider stand-in is `tests.des.acceptance.fake_provider`, the SAME one the
-composed-run corpus drives: a real executable named `claude` first on `PATH`,
-answering one recorded turn per invocation.  It is shared rather than copied
-because two fakes are two spellings of one provider contract, and this corpus
-was once written with a Product Owner envelope that omitted `values` -- which
-the real boundary refuses -- so the scenario measured the schema instead of the
-law it was written for.  Nothing in production is changed to make a step
-testable: the step resolves its launcher exactly as it does in a real delivery.
-
-The turn LOG is what makes «no step executes what its own NEXT names» a
-measurable property rather than a claim: a step that ran a second role would
-leave a second row in it.
-"""
+"""Real DES commands with explicit test-host facts and a forbidden-provider trap."""
 
 from __future__ import annotations
 
@@ -24,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from tests.common.in_process_cli import run_cli_in_process
+from tests.des._helpers.host_facts import supplied_arguments
 from tests.des.acceptance import fake_provider
 
 
@@ -130,8 +117,9 @@ def stepper(root: Path, workspace: Path, turns: Path):
             ),
             claude_dir,
         )
+        command, stdin = supplied_arguments(root, argv, answers, stdin)
         return run_cli_in_process(
-            list(argv),
+            command,
             cwd=root,
             env=environment,
             stdin_text=stdin,

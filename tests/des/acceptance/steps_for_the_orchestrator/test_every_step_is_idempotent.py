@@ -29,7 +29,6 @@ from pathlib import Path
 
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     accepted_values,
-    asked,
     block,
     git,
 )
@@ -60,6 +59,27 @@ def design_facts(target: str = TARGET) -> dict:
                 "acceptance_supports": [SUPPORT],
                 "verification": [[sys.executable, "-m", "pytest", ORACLE]],
                 "oracle_verification_index": 0,
+                "architectural_tests": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture has no structural boundary change.",
+                },
+                "contract_tests": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture changes no shared contract.",
+                },
+                "prefactoring": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture requires no preservation move.",
+                },
+                "agreement_analysis": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture has no affected agreement.",
+                },
+                "reuse_analysis": {"candidates": []},
+                "impact_closure": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                },
             },
         }
     }
@@ -148,64 +168,57 @@ def verified(root: Path, step) -> str:
     return block(out, err)["CANDIDATE"]
 
 
-def test_l1_design_twice_is_free_and_replaces_nothing(
-    root: Path, step, turns: Path
-) -> None:
-    bound(root, step)
-    facts = authority(root)
-    spent = len(asked(turns))
-
-    code, out, err = step(
-        "design",
-        "--repo-root",
-        str(root),
-        "--value",
-        "1",
-        answers=[design_facts(target="src/somewhere/else.py")],
-    )
-
-    assert code == 0, out + err
-    assert block(out, err)["TURNS-BOUGHT"] == "0"
-    assert "RECORDED" in block(out, err)
-    assert authority(root) == facts
-    assert len(asked(turns)) == spent
-
-
-def test_re_binding_is_spelled_with_a_finding_and_nothing_else(
-    root: Path, step, turns: Path
-) -> None:
-    """L1 does not close the door: it names the one form that opens it."""
-    bound(root, step)
-    spent = len(asked(turns))
-    code, out, err = step(
-        "design",
-        "--repo-root",
-        str(root),
-        "--value",
-        "1",
-        "--finding",
-        "-",
-        answers=[design_facts(target="src/somewhere/else.py")],
-        stdin="the declared target does not exist",
-    )
-    assert code == 0, out + err
-    assert authority(root)["targets"][0]["path"] == "src/somewhere/else.py"
-    assert len(asked(turns)) == spent + 1
-
-
 def test_l1_verify_twice_buys_no_judgement_and_rebuilds_nothing(
     root: Path, step, turns: Path
 ) -> None:
     candidate = verified(root, step)
-    spent = len(asked(turns))
 
     code, out, err = step("verify", "--repo-root", str(root))
 
     assert code == 0, out + err
     assert block(out, err)["CANDIDATE"] == candidate
-    assert block(out, err)["TURNS-BOUGHT"] == "0"
-    assert "RECORDED" in block(out, err)
-    assert len(asked(turns)) == spent
+
+
+def test_changed_handover_gets_a_new_candidate_even_with_identical_source_and_clock(
+    root: Path, step, monkeypatch
+) -> None:
+    from des.application.handover import (
+        StoredHandover,
+        _canonical_bytes,
+        _CanonicalProjection,
+        read_handover,
+    )
+
+    monkeypatch.setenv("GIT_AUTHOR_DATE", "2000-01-01T00:00:00+0000")
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "2000-01-01T00:00:00+0000")
+    candidate = verified(root, step)
+    handover = root / HANDOVER
+    original = handover.read_bytes()
+    stored = read_handover(original)
+    assert isinstance(stored, StoredHandover)
+    revised_raw = _canonical_bytes(
+        stored.request,
+        stored.values,
+        feature_id=stored.feature_id,
+        shared=stored.shared_design,
+        product_authority=stored.product_authority,
+        projection=_CanonicalProjection(include_scope=False),
+    )
+    assert revised_raw != original
+    assert isinstance(read_handover(revised_raw), StoredHandover)
+    handover.write_bytes(revised_raw)
+
+    code, out, err = step("verify", "--repo-root", str(root))
+
+    assert code == 0, out + err
+    revised = block(out, err)["CANDIDATE"]
+    assert revised != candidate
+    assert git(root, "rev-parse", f"{candidate}^{{tree}}") == git(
+        root, "rev-parse", f"{revised}^{{tree}}"
+    )
+    snapshots = root / ".nwave/des/candidates"
+    assert (snapshots / candidate / "handover.json").read_bytes() == original
+    assert (snapshots / revised / "handover.json").read_bytes() == revised_raw
 
 
 def test_the_verified_candidate_is_recorded_and_named_as_the_next_step(
@@ -227,12 +240,11 @@ def test_integrate_refuses_a_candidate_no_verify_record_covers(
 ) -> None:
     verified(root, step)
     other = git(root, "rev-parse", "HEAD")
-    spent = len(asked(turns))
 
     code, out, err = step("integrate", "--repo-root", str(root), "--candidate", other)
 
     assert code == 1
     lines = block(out, err)
     assert lines["WHAT"] == "CandidateUnverified"
-    assert len(asked(turns)) == spent
+
     assert (root / HANDOVER).exists()

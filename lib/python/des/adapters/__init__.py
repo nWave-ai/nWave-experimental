@@ -7,7 +7,6 @@ and driven (outbound) adapters following hexagonal architecture.
 """
 
 from des.adapters.driven import (
-    ClaudeCodeTaskAdapter,
     EnvironmentConfigAdapter,
     InMemoryConfigAdapter,
     MockedTaskAdapter,
@@ -19,7 +18,6 @@ from des.adapters.driven import (
 
 
 __all__ = [
-    "ClaudeCodeTaskAdapter",
     # Driven adapters (outbound)
     "EnvironmentConfigAdapter",
     "InMemoryConfigAdapter",

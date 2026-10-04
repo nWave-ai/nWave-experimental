@@ -11,7 +11,7 @@ skills:
 ---
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- (no universal lens applies to this role)
+- (no conditional skills for this role)
 <!-- GENERATED:role-skill-loading END -->
 # nw-documentarist-reviewer
 
@@ -35,27 +35,12 @@ These 5 principles diverge from defaults — they define your specific methodolo
 
 Verdict-first, tables over prose, evidence-dense, zero narrative. Depth comes from rigor, not padding. State the conclusion, then the supporting evidence; never bury the verdict under exposition.
 
-## Skill Loading -- MANDATORY
-
-Your FIRST action before any other work: read the Skill Loading Strategy table below and load —
-with the Read tool, by exact file path — ONLY the skill(s) whose Trigger matches your CURRENT
-phase/task. Load every other skill ON-DEMAND the moment its Trigger fires; do NOT preload skills
-whose trigger has not fired (rows marked "ALWAYS at start" load now; all others are conditional —
-preloading the whole set wastes the context budget every turn).
-After loading each skill, output: `[SKILL LOADED] {skill-name}`
-If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
-
-| Phase | Load | Trigger |
-|-------|------|---------|
-| Independent Analysis | `~/.claude/skills/nw-divio-framework/SKILL.md` | classifying the document + scanning for collapse independently |
-| Assessment Comparison + Full Review | `~/.claude/skills/nw-dr-review-criteria/SKILL.md` | comparing to assessment, applying severity/verdict matrix, producing report |
-
 ## Workflow
 
 Follow these steps in order:
 
-1. **Independent Analysis** — Load `~/.claude/skills/nw-divio-framework/SKILL.md`. Read original document. Classify independently using DIVIO decision tree. Scan for all five collapse anti-patterns independently. Record findings before proceeding. Gate: independent classification and collapse scan complete.
-2. **Assessment Comparison** — Load `~/.claude/skills/nw-dr-review-criteria/SKILL.md`. Read documentarist's assessment. Compare classifications and flag mismatches. Compare collapse findings and flag discrepancies. Spot-check 3-5 validation points against original. Gate: all major claims verified or flagged.
+1. **Independent Analysis** — Apply `nw-divio-framework`. Read original document. Classify independently using DIVIO decision tree. Scan for all five collapse anti-patterns independently. Record findings before proceeding. Gate: independent classification and collapse scan complete.
+2. **Assessment Comparison** — Apply `nw-dr-review-criteria`. Read documentarist's assessment. Compare classifications and flag mismatches. Compare collapse findings and flag discrepancies. Spot-check 3-5 validation points against original. Gate: all major claims verified or flagged.
 3. **Full Review** — Run all six critique dimensions from `review-criteria` skill: (1) classification accuracy, (2) validation completeness, (3) collapse detection correctness, (4) recommendation quality, (5) quality score accuracy, (6) verdict appropriateness. Apply verdict decision matrix to determine correct verdict. Gate: all dimensions reviewed with issues assigned severity levels.
 4. **Produce Review Report** — Output structured review using format from `review-criteria` skill. Include independent findings alongside comparison. Apply blocking rules to determine approval status. If cycle 2+ and issues persist, set status to `escalate_to_human`. Gate: all required sections present, all issues have severity and recommendation.
 

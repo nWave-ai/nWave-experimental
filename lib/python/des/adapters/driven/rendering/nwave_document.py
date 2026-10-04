@@ -51,7 +51,7 @@ from des.runtime.packaged_asset import resolve_packaged_asset
 
 
 _BRAND_DIRECTORY = "nWave/data/brand"
-_LOGO_ASSET = "scripts/docs_site/static/logo.svg"
+_LOGO_ASSET = "nWave/data/brand/logo.svg"
 _BRAND_IDENTITY = "nwave-oss-neutral-v1"
 _MANIFEST_KEYS = frozenset({"schema-version", "identity", "stylesheet", "font-stack"})
 _FONT_STACK = re.compile(r"[A-Za-z0-9 _,.'\"-]+")
@@ -146,7 +146,7 @@ def load_brand() -> Brand:
 
 
 def load_logo_data_uri() -> str:
-    """The canonical nWave logo as an offline ``data:`` URI (one SVG, no copy)."""
+    """Embed the packaged copy of the canonical logo as an offline ``data:`` URI."""
     resolution = resolve_packaged_asset(_LOGO_ASSET)
     if not resolution.is_usable or resolution.path is None:
         raise BrandAssetError(f"brand logo is unavailable: {resolution.detail}")

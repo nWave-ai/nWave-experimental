@@ -31,7 +31,7 @@ Integration tests for adapters (real filesystem, real subprocess) are naturally 
 
 ## Mandate 5: Walking Skeleton Real-I/O Treatment
 
-The DISTILL acceptance designer classifies each port per the Architecture of Reference (`nw-distill-port-treatment-policy`): driving ports run in-process; driven-internal/local-resource ports default to real I/O; driven-external/costly ports default to a fake with output capture. Treatment follows port CLASS — it is structural, not a per-feature choice, and is auto-detected with user confirmation, not a question to the user.
+The DISTILL acceptance designer classifies each port per the Architecture of Reference (`nw-distill-port-treatment-policy`): driving ports run in-process; driven-internal ports default to an in-memory fake with a config-switched prod-like leg; driven-external/costly ports default to a fake with output capture. The ONE `@walking_skeleton` scenario is the exception that proves wiring: inside it, driven-internal/local-resource ports run real I/O per the table below. Every other scenario keeps the Architecture of Reference default. Treatment follows port CLASS — it is structural, not a per-feature choice, and is auto-detected with user confirmation, not a question to the user.
 
 ### Resource Classification Table
 
@@ -47,7 +47,7 @@ The DISTILL acceptance designer classifies each port per the Architecture of Ref
 
 ### Walking Skeleton Adapter Rule
 
-The WS uses real adapters for driven-internal/local resources by default. InMemory is ONLY for costly external resources that have a separate contract test.
+Inside the `@walking_skeleton` scenario, real adapters serve driven-internal/local resources by default. InMemory there is ONLY for costly external resources that have a separate contract test.
 
 ### Determinism Contract
 
@@ -60,6 +60,8 @@ If a driven-internal/local-resource port's real adapter fails for infrastructure
 ## Mandate 6: Adapter Integration Tests Are Real I/O
 
 Every driven adapter has at least ONE integration test with real I/O. This is not optional regardless of WS strategy.
+
+A source-blind reviewer judges only its supplied packet: a driven-adapter real-I/O test absent from that packet is reported as an evidence gap routed to its owner — neither an in-packet rejection nor a satisfied mandate.
 
 ### Adapter Type Minimum Real I/O Test
 

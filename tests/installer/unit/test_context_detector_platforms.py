@@ -138,6 +138,8 @@ class TestDetectNothingReturnsEmpty:
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.delenv("CLAUDE_CODE", raising=False)
         monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+        monkeypatch.delenv("NWAVE_AGENTS_HOME", raising=False)
+        monkeypatch.delenv("PI_CONFIG_DIR", raising=False)
         monkeypatch.setattr(
             "scripts.install.context_detector.shutil.which",
             lambda _cmd: None,
@@ -146,6 +148,59 @@ class TestDetectNothingReturnsEmpty:
         platforms = detect_target_platforms()
 
         assert platforms == set()
+
+
+class TestDetectOmp:
+    """Verify OMP (oh-my-pi) detection via binary or native agent dir."""
+
+    def test_detect_omp_via_binary(self, monkeypatch, tmp_path):
+        """detect_target_platforms() includes omp when the omp binary is found."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("NWAVE_AGENTS_HOME", raising=False)
+        monkeypatch.delenv("PI_CONFIG_DIR", raising=False)
+        monkeypatch.setattr(
+            "scripts.install.context_detector.shutil.which",
+            lambda cmd: "/usr/local/bin/omp" if cmd == "omp" else None,
+        )
+
+        platforms = detect_target_platforms()
+
+        assert TargetPlatform.OMP in platforms
+
+    def test_detect_omp_via_native_agent_dir(self, monkeypatch, tmp_path):
+        """detect_target_platforms() includes omp when $HOME/.omp/agent exists.
+
+        The detector resolves through the SAME helper the omp installer
+        plugins write through, so a PI_CONFIG_DIR-renamed config root is
+        detected where the install would land -- never a hardcoded ~/.omp.
+        """
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("NWAVE_AGENTS_HOME", raising=False)
+        monkeypatch.delenv("PI_CONFIG_DIR", raising=False)
+        (tmp_path / ".omp" / "agent").mkdir(parents=True)
+        monkeypatch.setattr(
+            "scripts.install.context_detector.shutil.which",
+            lambda _cmd: None,
+        )
+
+        platforms = detect_target_platforms()
+
+        assert TargetPlatform.OMP in platforms
+
+    def test_detect_omp_honors_pi_config_dir(self, monkeypatch, tmp_path):
+        """PI_CONFIG_DIR renames the config root the omp detector resolves."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("NWAVE_AGENTS_HOME", raising=False)
+        monkeypatch.setenv("PI_CONFIG_DIR", ".omp-profiled")
+        (tmp_path / ".omp-profiled" / "agent").mkdir(parents=True)
+        monkeypatch.setattr(
+            "scripts.install.context_detector.shutil.which",
+            lambda _cmd: None,
+        )
+
+        platforms = detect_target_platforms()
+
+        assert TargetPlatform.OMP in platforms
 
 
 class TestTargetPlatformEnum:
@@ -158,3 +213,46 @@ class TestTargetPlatformEnum:
     def test_opencode_value(self):
         """TargetPlatform.OPENCODE has value 'opencode'."""
         assert TargetPlatform.OPENCODE.value == "opencode"
+
+    def test_omp_value(self):
+        """TargetPlatform.OMP has value 'omp'."""
+        assert TargetPlatform.OMP.value == "omp"
+
+
+class TestOmpTwoRootSplit:
+    """OMP 18.5 resolves skills and agents from DIFFERENT roots."""
+
+    def test_skills_root_follows_pi_coding_agent_dir(self, monkeypatch, tmp_path):
+        """A non-empty PI_CODING_AGENT_DIR relocates ONLY the skills root."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("NWAVE_AGENTS_HOME", raising=False)
+        monkeypatch.delenv("PI_CONFIG_DIR", raising=False)
+        monkeypatch.setenv("PI_CODING_AGENT_DIR", "/data/omp-agent")
+
+        from scripts.shared.install_paths import omp_agents_dir, omp_skills_dir
+
+        assert omp_skills_dir() == Path("/data/omp-agent/skills")
+        assert omp_agents_dir() == tmp_path / ".omp" / "agent" / "agents"
+
+    def test_agents_root_ignores_pi_coding_agent_dir(self, monkeypatch, tmp_path):
+        """Task-agent files under $PI_CODING_AGENT_DIR/agents are never read."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("NWAVE_AGENTS_HOME", raising=False)
+        monkeypatch.setenv("PI_CONFIG_DIR", "custom-omp")
+        monkeypatch.setenv("PI_CODING_AGENT_DIR", "/data/omp-agent")
+
+        from scripts.shared.install_paths import omp_agent_dir, omp_agents_dir
+
+        assert omp_agent_dir() == tmp_path / "custom-omp" / "agent"
+        assert omp_agents_dir() == tmp_path / "custom-omp" / "agent" / "agents"
+
+    def test_skills_root_default_under_config_root(self, monkeypatch, tmp_path):
+        """Without the override, skills live under the config-root agent dir."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("NWAVE_AGENTS_HOME", raising=False)
+        monkeypatch.delenv("PI_CONFIG_DIR", raising=False)
+        monkeypatch.delenv("PI_CODING_AGENT_DIR", raising=False)
+
+        from scripts.shared.install_paths import omp_agent_dir, omp_skills_dir
+
+        assert omp_skills_dir() == omp_agent_dir() / "skills"

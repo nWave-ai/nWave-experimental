@@ -12,8 +12,8 @@ user-invocable: false
 
 Run these steps in order:
 
-1. **CLASSIFY** — Load `~/.claude/skills/nw-command-design-patterns/SKILL.md`. Classify dispatcher | orchestrator. Gate: classification chosen.
-2. **MEASURE + FLAG** — Load `~/.claude/skills/nw-command-optimization-workflow/SKILL.md`. `wc -l`; flag reducible content (the duplication triangle: command-to-command, command-to-agent, command-to-self). Gate: before-count + reducible-list recorded.
+1. **CLASSIFY** — Apply `nw-command-design-patterns`, supplied by the selected command route's generated trigger under the canonical Skill addressing procedure. Classify dispatcher | orchestrator. Gate: classification chosen.
+2. **MEASURE + FLAG** — Apply `nw-command-optimization-workflow` supplied through that same generated route, without a second load directive. `wc -l`; flag reducible content (the duplication triangle: command-to-command, command-to-agent, command-to-self). Gate: before-count + reducible-list recorded.
 3. **EXTRACT** — Remove boilerplate, move domain knowledge to the owning agent/skill, delete dead/deprecated references. Gate: extractions listed.
 4. **RESTRUCTURE** — Rewrite as a declarative dispatcher/orchestrator (forge.md 40-line gold standard for dispatchers). Gate: declarative structure, size within target.
 5. **VALIDATE** — Confirm the command keeps its invocation contract + success criteria; numbered-task-list workflow, checkbox success criteria. Gate: structure confirmed.

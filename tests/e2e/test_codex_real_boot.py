@@ -162,9 +162,9 @@ class TestCodexRealBoot:
         #    harness session cwd must be a real, activated directory.
         session_cwd = install_context.project_root
         session_cwd.mkdir(parents=True, exist_ok=True)
-        marker = session_cwd / ".nwave" / "local-config.json"
+        marker = session_cwd / ".nwave" / "config.json"
         marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text(json.dumps({"enabled_for_repo": True}))
+        marker.write_text(json.dumps({"enabled": True}))
 
         repo_src = Path(__file__).resolve().parents[2] / "src"
         harness = FakeCodexHarness(

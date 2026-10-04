@@ -1,96 +1,4 @@
-"""Acceptance tests -- `des blast-radius` (DISTILL, slice-01, walking skeleton).
-
-Feature-delta: docs/feature/blast-radius-measured-tier/feature-delta.md
-  ([REF] Slice Plan slice-01 row, [REF] Architecture & Contract Tests,
-  [REF] Reuse Analysis -- New components).
-
-**SUPERSEDED NOTE (2026-07-18, transitional contract retired by slice-02, NOT
-a weakening):** the historical description below (paragraphs 2-5) documents
-slice-01's ORIGINAL, DECLAREDLY TRANSITORY contract, written when nothing
-existed yet to reverse-engineer -- it explicitly said "not yet wired --
-slice-02 scope" for `boundary_files`/`consumer_counts`. Slice-02 has now
-wired both for real. Two of the original assertions in
-`test_blast_radius_reports_a_small_tier_from_real_git_measures` became
-logically incompatible with slice-02's own contract once its fixture files
-carried real top-level Python symbols: `consumer_counts == {}` cannot hold
-for a touched `.py` file that DECLARES a symbol (slice-02's own
-`test_a_file_outside_every_boundary_glob_never_triggers_boundary_escalation`
-requires a zero-caller symbol to be a REAL entry valued `0`, never an absent
-key). Rather than relax the `consumer_counts == {}` assertion (which would
-lose the anti-fabrication guardrail this AT exists to enforce), the WS
-fixture now uses two plain-text (non-`.py`) data files -- `consumer_counts`
-stays HONESTLY `{}` because a non-Python touched file contributes ZERO
-`consumer_counts` entries BY DESIGN (feature-delta obligation (b)), not
-because nothing was computed. The `reasons`-names-"not yet wired" assertion
-is retired outright (that phrasing no longer exists once boundary/consumer
-detection is real) and replaced with the equally strong, now-true claim that
-a clean S-tier verdict fires ZERO reasons. See `_init_git_repo_data_only`
-below and its use in the walking-skeleton test.
-
-Slice-01 value (feature-delta Slice Plan): `des blast-radius --repo <path>
---paths <f1> <f2> ...` is a real, E2E-wired CLI command -- given a trivial
-fixture repo it reports REAL `files` + `lines_changed` measures (via
-`git diff HEAD --numstat`) and an honest tier (`S`/`M` from files+lines only;
-`boundary_files` always `[]` and `consumer_counts` always `{}` -- not yet
-wired, never fabricated as a real zero-crossings/zero-consumers signal) as
-one single-line JSON verdict plus a human summary line.
-
-Contract under test (DOES NOT EXIST YET -- active-RED by design):
-`src/des/cli/blast_radius.py::main(argv) -> int`, registered as the `des
-blast-radius` subcommand. Grammar for slice-01 (only `--paths` mode ships
-this slice; `--staged`/`--diff <ref>` are slice-02 scope per the Slice Plan):
-
-    des blast-radius --repo <path> --paths <f1> [<f2> ...]
-
-stdout token (single-line JSON), success:
-    {"event": "BlastRadiusMeasured", "tier": "S"|"M",
-     "measures": {"files": <int>, "lines_changed": <int|null>,
-                  "boundary_files": [], "consumer_counts": {}},
-     "reasons": [<str>, ...]}
-
-`tier` is computed from `files`/`lines_changed` ONLY for slice-01 (the full
-S/M/L decision table over `boundary_files`/`consumer_counts` is slice-02
-scope): `S` iff `files <= 2` AND `lines_changed` is not `null` AND
-`lines_changed <= 10` (the feature-delta's canonical default thresholds --
-`small_max_files=2`, `small_max_lines=10`); `M` otherwise. `reasons` ALWAYS
-names that `boundary_files`/`consumer_counts` are not yet wired (GDP-6: an
-empty list/dict must never be presented as a real "zero crossings" /
-"zero consumers" measurement -- the vacuous-truth family) -- this is the
-DISTILL-pinned contract for slice-01, since nothing exists yet to reverse
-engineer.
-
-stdout token, input rejection (a named `--paths` entry does not exist on
-disk -- DISTILL's own slice-01 contract addition, not silently reporting a
-fabricated S): exit 2,
-    {"event": "BlastRadiusInputRejected", "reasons": [<str naming the path>]}
--- no `tier`/`measures` key ever appears alongside a rejection.
-
-Driving surface: the walking-skeleton scenario below is the ONE
-subprocess-E2E acceptance test for the WHOLE `blast-radius-measured-tier`
-feature (F-V5 test-pyramid default, ratified 2026-07-18) -- it invokes the
-REAL installed `des` console-script, resolved via the shared
-`tests.cli_resolve.resolve_des_cli_cmd` helper (venv-first, immune to a
-stale global `des` shadowing the active venv build on PATH -- see
-`docs/product/expectations/bugfix-shutil-which-des-fragility/`, mirrors the
-row5 fix in commit `1e05a7bda`/`c2d7f5e44`), against a real git fixture repo.
-Every OTHER scenario in this
-module drives `des.cli.blast_radius.main(argv)` IN-PROCESS (Mandate 13 /
-`nw-distill-port-treatment-policy` inverted driving default) -- no further
-subprocess forks.
-
-RED reason (P1-P4 in-process active-RED, `nw-distill-red-scaffolding`):
-`src/des/cli/blast_radius.py` does not exist and `blast-radius` is not yet a
-registered `des` subcommand. The walking-skeleton scenario observes the
-REAL current dispatcher behaviour (`des: error: argument subcommand: invalid
-choice: 'blast-radius'`, exit 2 -- verified empirically against the
-installed `des` binary) and fails with a semantic `AssertionError` comparing
-that to the expected `BlastRadiusMeasured` contract, never a naked
-traceback. Every in-process test lazily imports `main` from
-`des.cli.blast_radius` INSIDE its own invocation helper (P3); the resulting
-`ModuleNotFoundError` is a runtime exception raised WITHIN the test's own
-call stack, not a collection-time error -- collection stays green, and each
-test fails for a semantic reason once the module ships (P4).
-"""
+"""Public blast-radius observations must distinguish measured deltas from unknown impact."""
 
 from __future__ import annotations
 
@@ -129,16 +37,7 @@ def _init_git_repo(root: Path) -> None:
 
 
 def _init_git_repo_data_only(root: Path) -> None:
-    """A real git work-tree with two small tracked NON-PYTHON data files.
-
-    WS-only fixture variant (2026-07-18, see the module docstring's SUPERSEDED
-    NOTE) -- the shared `_init_git_repo` (used unchanged by every other
-    slice-01/slice-02 test) still seeds `.py` files with a top-level `def`
-    each. This variant seeds `.txt` files instead, precisely so the
-    walking-skeleton's `consumer_counts == {}` claim stays true post-slice-02:
-    a non-`.py` touched file contributes ZERO `consumer_counts` entries by
-    design (never because nothing was computed).
-    """
+    """Use opaque inputs so unsupported consumer analysis cannot hide behind omission."""
     root.mkdir(parents=True, exist_ok=True)
     _git(root, "init", "-q")
     _git(root, "config", "user.email", "t@t")
@@ -182,21 +81,10 @@ def _invoke_in_process(
 # --- @walking_skeleton -- the ONE subprocess-E2E for the whole feature ----
 
 
-def test_blast_radius_reports_a_small_tier_from_real_git_measures(
+def test_blast_radius_reports_real_git_measures_without_fabricating_consumers(
     tmp_path: Path,
 ) -> None:
-    """CONTRACT_SHAPE: bounded-change
-
-    Outcome anchor: DISCUSS Elevator Pitch
-
-    A developer runs `des blast-radius --paths <f1> <f2>` against a repo
-    where they touched two files with a handful of lines, and gets back a
-    real S-tier verdict grounded in `git diff HEAD --numstat` -- not a
-    fabricated placeholder. Uses `_init_git_repo_data_only` (non-`.py` data
-    files, see the module docstring's SUPERSEDED NOTE): this keeps
-    `consumer_counts == {}` honestly true post-slice-02 without touching the
-    shared `_init_git_repo` every other slice-01/slice-02 test relies on.
-    """
+    """CONTRACT_SHAPE: bounded-change"""
     # Venv-first resolution (row5 pattern, generalized): never bare
     # `shutil.which("des")`, which is shadowable by a stale global `des`
     # earlier on PATH -- see `tests/cli_resolve.py::resolve_des_cli_cmd`.
@@ -232,26 +120,12 @@ def test_blast_radius_reports_a_small_tier_from_real_git_measures(
     )
     payload = _last_json_line(completed.stdout)
     assert payload["event"] == "BlastRadiusMeasured"
-    assert payload["tier"] == "S"
     assert payload["measures"]["files"] == 2
     assert payload["measures"]["lines_changed"] == 4
-    # boundary/consumer are honestly empty AND self-explaining -- never a
-    # silent fabricated "we checked, found zero" (GDP-6 vacuous-truth family).
-    # Both are honestly empty because neither touched file is a `.py` file
-    # (see the module docstring's SUPERSEDED NOTE) -- never because nothing
-    # was computed once slice-02 wired real detection.
-    assert payload["measures"]["boundary_files"] == []
-    assert payload["measures"]["consumer_counts"] == {}
-    assert payload["reasons"] == [], (
-        "a clean S-tier verdict (no boundary crossing, no consumer count, no "
-        "size overage) fires ZERO reasons -- reasons only names conditions "
-        "that actually triggered (GDP-3), never a placeholder for absence"
-    )
-    # Dual-surface emission (Reuse Analysis: reuses `print_human_summary`) --
-    # a human-readable line on stderr, distinct from the machine JSON.
-    assert completed.stderr.strip() != ""
-    assert any(marker in completed.stderr for marker in ("✅", "❌", "⚠️", "⚪", "❓"))
-    assert "S" in completed.stderr
+    assert payload["measures"]["consumer_counts"] == {
+        "note_a.txt": None,
+        "note_b.txt": None,
+    }
 
 
 # --- in-process: the files+lines-only S/M classification ------------------

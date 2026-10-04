@@ -31,11 +31,11 @@ Combined recursively, these express virtually any domain structure.
 
 [STARTER]
 
-Never use primitives directly in the domain model. Each domain concept gets its own wrapper type.
+Wrap a primitive when a demonstrated invalid state or a mixing risk exists that no native type and no existing invariant owner already excludes. Keep the native type when it suffices (`nw-code-craftsmanship` owns this sufficiency rule).
 
-**What**: Wrap primitives so the compiler distinguishes CustomerId from OrderId.
-**When**: Every primitive with domain meaning.
-**Why**: Prevents accidental mixing (compiler rejects comparing CustomerId with OrderId). Each wrapper carries its own validation rules. The type name IS the documentation.
+**What**: A wrapper lets the compiler distinguish CustomerId from OrderId.
+**When**: Two same-typed domain values can be confused at a real call site, or the value carries a validation rule with no existing owner. Never for template conformance alone.
+**Why**: Prevents accidental mixing (compiler rejects comparing CustomerId with OrderId). Each such wrapper carries its own validation rules. The type name IS the documentation.
 
 ---
 
@@ -230,7 +230,9 @@ Each context has its own dialect of domain language. Contexts communicate only t
 
 ```
 Is it a simple value with validation rules?
-  YES --> Domain Wrapper + Smart Constructor
+  YES --> Does a native type plus an existing invariant owner already exclude the invalid value or mixing risk?
+            YES --> Keep the native type; call the existing owner (section 2)
+            NO  --> Domain Wrapper + Smart Constructor
   NO -->
     Does it represent one of several alternatives?
       YES --> Choice Type (sum type)

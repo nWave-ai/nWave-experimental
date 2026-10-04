@@ -39,7 +39,7 @@ Independent review to catch biases and blind spots in agent design.
 
 **Test**: Definition follows validation checklist? | Redundant Claude default instructions? | Over/under-specified? | Could simpler agent achieve same results?
 
-**How**: `@nw-agent-builder` validates via 11-point checklist or `@agent-builder-reviewer` runs structured review.
+**How**: `@nw-agent-builder` validates via `nw-ab-validate-spec` (the `nw-ab-validation-checklist` items) or `@nw-agent-builder-reviewer` runs structured review.
 
 ### Layer 5: Security Validation
 
@@ -80,5 +80,5 @@ permissionMode: default            # User approves dangerous actions
 2. **Layer 1**: Invoke with 2-3 representative inputs, check outputs
 3. **Layer 2**: Run in workflow chain if applicable
 4. **Fix** failures observed
-5. **Validate**: Run 11-point checklist
+5. **Validate**: Run `nw-ab-validate-spec`
 6. **Iterate**: Add instructions only for observed failure modes

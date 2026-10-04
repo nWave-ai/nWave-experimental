@@ -75,7 +75,7 @@ main()
 
 @pytest.fixture(scope="module")
 def plugin_marketplace_container():
-    """Build plugin via build_plugin.py, copy to Claude-Code cache layout."""
+    """Build an isolated plugin fixture and copy it to Claude Code's cache."""
     from tests.e2e.conftest import _is_docker_available
 
     if not _is_docker_available():
@@ -105,10 +105,11 @@ def plugin_marketplace_container():
             "mv /build/build_plugin.py /build/scripts/build_plugin.py && "
             "mv /build/shared /build/scripts/shared && "
             "cd /build && "
-            "python scripts/build_plugin.py --output-dir /tmp/plugin 2>&1 | tail -20"
+            "PYTHONPATH=/build:/build/src python scripts/build_plugin.py "
+            "--output-dir /tmp/plugin 2>&1"
         )
         code, out = exec_in_container(container, ["bash", "-c", setup])
-        assert code == 0, f"Plugin build failed (exit {code}).\nOutput:\n{out[-800:]}"
+        assert code == 0, f"Plugin build failed (exit {code}).\nOutput:\n{out}"
 
         install = (
             f"set -e && mkdir -p {_PLUGIN_ROOT} && cp -r /tmp/plugin/. {_PLUGIN_ROOT}/"

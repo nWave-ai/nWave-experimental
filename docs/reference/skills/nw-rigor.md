@@ -1,6 +1,6 @@
 # nw-rigor
 
-Configure explicit Codex or Claude model selections for nWave DES defaults or published roles. Use when choosing provider/model defaults or project overrides; it never derives a model from a competence label.
+Configure explicit Codex or Claude model facts for nWave defaults or published roles, consumed by the native host where supported. Never derives a model from a competence label.
 
 **Used by:** [nw-nwave-buddy](../agents/nw-nwave-buddy.md)
 

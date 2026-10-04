@@ -36,7 +36,6 @@ import pytest
 
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     accepted_values,
-    asked,
     block,
     git,
     nexts,
@@ -64,6 +63,27 @@ def design_facts() -> dict:
                 "acceptance_supports": [SUPPORT],
                 "verification": [[sys.executable, "-m", "pytest", ORACLE]],
                 "oracle_verification_index": 0,
+                "architectural_tests": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture has no structural boundary change.",
+                },
+                "contract_tests": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture changes no shared contract.",
+                },
+                "prefactoring": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture requires no preservation move.",
+                },
+                "agreement_analysis": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture has no affected agreement.",
+                },
+                "reuse_analysis": {"candidates": []},
+                "impact_closure": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                },
             },
         }
     }
@@ -112,7 +132,6 @@ def test_the_page_carries_the_request_the_values_and_the_typed_facts(
     assert "--paper" in page
     assert "Projection, not source" in page
     assert str(HANDOVER) in page
-    assert asked(turns) == ["nw-product-owner", "nw-solution-architect"]
 
 
 def test_the_page_is_a_self_contained_offline_nwave_document(

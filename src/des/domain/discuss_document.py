@@ -4,16 +4,23 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from functools import partial
+from typing import TYPE_CHECKING
 
 from des.domain.discuss_contract import (
     CURRENT_VERSION,
     LEGACY_VERSIONS,
     SECTION_NAMES,
 )
-from des.domain.discuss_sections import DiscussSections, SectionInvalid
+from des.domain.discuss_sections import DiscussSections
+from des.domain.input_defects import Defects, InputDefects
 
 
-class DiscussDocumentInvalid(ValueError):
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
+class DiscussDocumentInvalid(InputDefects):
     pass
 
 
@@ -33,7 +40,149 @@ def _text(value: object, name: str) -> str:
 def _texts(value: object, name: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not value:
         raise DiscussDocumentInvalid(f"{name} must be a non-empty array")
-    return tuple(_text(item, f"{name}[{index}]") for index, item in enumerate(value))
+    defects = Defects(DiscussDocumentInvalid)
+    texts = tuple(
+        defects.take(partial(_text, item, f"{name}[{index}]"))
+        for index, item in enumerate(value)
+    )
+    defects.close()
+    return texts  # type: ignore[return-value]
+
+
+def _out_of_scope(out: object) -> tuple[str, str, tuple[str, ...]]:
+    keys = "scope.out_of_scope must contain exactly applicability, reason, items"
+    if not isinstance(out, dict):
+        raise DiscussDocumentInvalid(keys)
+    defects = Defects(DiscussDocumentInvalid)
+    if set(out) != {"applicability", "reason", "items"}:
+        defects.add(keys)
+    applicability = (
+        defects.take(
+            partial(_text, out["applicability"], "scope.out_of_scope.applicability")
+        )
+        if "applicability" in out
+        else None
+    )
+    reason = (
+        defects.take(partial(_text, out["reason"], "scope.out_of_scope.reason"))
+        if "reason" in out
+        else None
+    )
+    items = out.get("items")
+    supported = applicability in {"applicable", "not_applicable"}
+    if (applicability is not None and not supported) or (
+        "items" in out and not isinstance(items, list)
+    ):
+        defects.add("scope.out_of_scope has unsupported applicability or items")
+    out_items: tuple[str | None, ...] = ()
+    if isinstance(items, list):
+        out_items = tuple(
+            defects.take(partial(_text, item, f"scope.out_of_scope.items[{index}]"))
+            for index, item in enumerate(items)
+        )
+        if supported and (applicability == "applicable") != bool(items):
+            defects.add(
+                "scope.out_of_scope.items must be non-empty exactly when applicable"
+            )
+    defects.close()
+    return applicability, reason, out_items  # type: ignore[return-value]
+
+
+def _scope(scope: object) -> tuple[tuple[str, ...], tuple[str, str, tuple[str, ...]]]:
+    keys = "scope must contain exactly in_scope and out_of_scope"
+    if not isinstance(scope, dict):
+        raise DiscussDocumentInvalid(keys)
+    defects = Defects(DiscussDocumentInvalid)
+    if set(scope) != {"in_scope", "out_of_scope"}:
+        defects.add(keys)
+    in_scope = (
+        defects.take(partial(_texts, scope["in_scope"], "scope.in_scope"))
+        if "in_scope" in scope
+        else None
+    )
+    out_of_scope = (
+        defects.take(partial(_out_of_scope, scope["out_of_scope"]))
+        if "out_of_scope" in scope
+        else None
+    )
+    defects.close()
+    return in_scope, out_of_scope  # type: ignore[return-value]
+
+
+def _dependencies(value: object, name: str) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise DiscussDocumentInvalid(f"{name}.dependencies must be an array")
+    defects = Defects(DiscussDocumentInvalid)
+    dependencies = tuple(
+        defects.take(partial(_text, dependency, f"{name}.dependencies[{position}]"))
+        for position, dependency in enumerate(value)
+    )
+    defects.close()
+    return dependencies  # type: ignore[return-value]
+
+
+def _values(raw_values: object) -> tuple[DiscussValue, ...]:
+    if not isinstance(raw_values, list) or not raw_values:
+        raise DiscussDocumentInvalid("values must be a non-empty array")
+    defects = Defects(DiscussDocumentInvalid)
+    declared_observations = {
+        raw.strip()
+        for item in raw_values
+        if isinstance(item, dict)
+        and isinstance(raw := item.get("observation"), str)
+        and raw.strip()
+    }
+    values: list[DiscussValue] = []
+    # Every earlier observation as compared; ``None`` where it cannot be known.
+    # A refused observation whose raw value is text still counts as seen, so
+    # a later dependency on it is not refused only because its text failed.
+    seen: list[str | None] = []
+    for index, item in enumerate(raw_values):
+        name = f"values[{index}]"
+        if not isinstance(item, dict) or set(item) != {"observation", "dependencies"}:
+            defects.add(f"{name} must contain exactly observation, dependencies")
+        if not isinstance(item, dict):
+            seen.append(None)
+            continue
+        raw_observation = item.get("observation")
+        observation = (
+            defects.take(partial(_text, raw_observation, f"{name}.observation"))
+            if "observation" in item
+            else None
+        )
+        dependencies = (
+            defects.take(partial(_dependencies, item["dependencies"], name))
+            if "dependencies" in item
+            else None
+        )
+        if (observation is not None and observation in seen) or (
+            dependencies is not None and len(set(dependencies)) != len(dependencies)
+        ):
+            defects.add(f"{name}.dependencies must be unique earlier observations")
+        if dependencies is not None:
+            # Unknown earlier text could resolve an unknown dependency when
+            # repaired. But a known current/later value cannot become an earlier
+            # value too without violating uniqueness; report that defect now.
+            unresolved = any(
+                dep not in seen and (None not in seen or dep in declared_observations)
+                for dep in dependencies
+            )
+            positions = [seen.index(dep) for dep in dependencies if dep in seen]
+            if unresolved or positions != sorted(positions):
+                defects.add(
+                    f"{name}.dependencies must be ordered preceding observations"
+                )
+        if observation is not None and dependencies is not None:
+            values.append(DiscussValue(observation, dependencies))
+        seen.append(
+            observation
+            if observation is not None
+            else raw_observation.strip()
+            if isinstance(raw_observation, str)
+            else None
+        )
+    defects.close()
+    return tuple(values)
 
 
 def _markdown_content(value: str) -> str:
@@ -91,92 +240,36 @@ class DiscussDocument:
         sections = set(SECTION_NAMES)
         allowed = core | sections
         required = core | (sections if version == CURRENT_VERSION else set())
+        defects = Defects(DiscussDocumentInvalid)
         if not required <= set(payload) <= allowed:
-            raise DiscussDocumentInvalid(
+            defects.add(
                 f"schema_version {version} input must contain {sorted(required)}"
                 f" and no key outside {sorted(allowed)}"
             )
-        try:
-            parsed_sections = DiscussSections.from_payload(payload, version)
-        except SectionInvalid as error:
-            raise DiscussDocumentInvalid(str(error)) from error
-        scope = payload["scope"]
-        if not isinstance(scope, dict) or set(scope) != {"in_scope", "out_of_scope"}:
-            raise DiscussDocumentInvalid(
-                "scope must contain exactly in_scope and out_of_scope"
+
+        def member(key: str, decode: Callable[[object], object]) -> object:
+            return (
+                defects.take(partial(decode, payload[key])) if key in payload else None
             )
-        out = scope["out_of_scope"]
-        if not isinstance(out, dict) or set(out) != {
-            "applicability",
-            "reason",
-            "items",
-        }:
-            raise DiscussDocumentInvalid(
-                "scope.out_of_scope must contain exactly applicability, reason, items"
-            )
-        applicability = _text(out["applicability"], "scope.out_of_scope.applicability")
-        reason = _text(out["reason"], "scope.out_of_scope.reason")
-        if applicability not in {"applicable", "not_applicable"} or not isinstance(
-            out["items"], list
-        ):
-            raise DiscussDocumentInvalid(
-                "scope.out_of_scope has unsupported applicability or items"
-            )
-        out_items = tuple(
-            _text(item, f"scope.out_of_scope.items[{index}]")
-            for index, item in enumerate(out["items"])
+
+        parsed_sections = defects.take(
+            partial(DiscussSections.from_payload, payload, version)
         )
-        if (applicability == "applicable") != bool(out_items):
-            raise DiscussDocumentInvalid(
-                "scope.out_of_scope.items must be non-empty exactly when applicable"
-            )
-        raw_values = payload["values"]
-        if not isinstance(raw_values, list) or not raw_values:
-            raise DiscussDocumentInvalid("values must be a non-empty array")
-        values: list[DiscussValue] = []
-        seen: list[str] = []
-        for index, item in enumerate(raw_values):
-            if not isinstance(item, dict) or set(item) != {
-                "observation",
-                "dependencies",
-            }:
-                raise DiscussDocumentInvalid(
-                    f"values[{index}] must contain exactly observation, dependencies"
-                )
-            observation = _text(item["observation"], f"values[{index}].observation")
-            dependencies = item["dependencies"]
-            if not isinstance(dependencies, list):
-                raise DiscussDocumentInvalid(
-                    f"values[{index}].dependencies must be an array"
-                )
-            normalized_dependencies = tuple(
-                _text(dep, f"values[{index}].dependencies[{position}]")
-                for position, dep in enumerate(dependencies)
-            )
-            positions = [
-                seen.index(dep) if dep in seen else -1
-                for dep in normalized_dependencies
-            ]
-            if observation in seen or len(set(normalized_dependencies)) != len(
-                normalized_dependencies
-            ):
-                raise DiscussDocumentInvalid(
-                    f"values[{index}].dependencies must be unique earlier observations"
-                )
-            if -1 in positions or positions != sorted(positions):
-                raise DiscussDocumentInvalid(
-                    f"values[{index}].dependencies must be ordered preceding observations"
-                )
-            values.append(DiscussValue(observation, normalized_dependencies))
-            seen.append(observation)
+        scope = member("scope", _scope)
+        values = member("values", _values)
+        request = member("request", partial(_text, name="request"))
+        outcomes = member("outcomes", partial(_texts, name="outcomes"))
+        decisions = member("decisions", partial(_texts, name="decisions"))
+        defects.close()
+        in_scope, out_of_scope = scope  # type: ignore[misc]
         return cls(
-            _text(payload["request"], "request"),
-            _texts(payload["outcomes"], "outcomes"),
-            _texts(scope["in_scope"], "scope.in_scope"),
-            (applicability, reason, out_items),
-            _texts(payload["decisions"], "decisions"),
-            tuple(values),
-            parsed_sections,
+            request,  # type: ignore[arg-type]
+            outcomes,  # type: ignore[arg-type]
+            in_scope,
+            out_of_scope,
+            decisions,  # type: ignore[arg-type]
+            values,  # type: ignore[arg-type]
+            parsed_sections,  # type: ignore[arg-type]
         )
 
     def markdown(self) -> str:

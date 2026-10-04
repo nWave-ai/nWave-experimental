@@ -27,6 +27,19 @@ TURN_REF_ROOT = "refs/nwave/turns"
 ORACLE_TURN = "oracle"
 CRAFT_TURN = "craft"
 
+#: The verdict history of every measurement that bound this value's oracle
+#: record. The oracle record keeps only the measured bytes and the revision
+#: identity, and a pre-craft verdict of `green` does not refuse (see
+#: `DeliveryContinuationRunner._ORACLE_REFUSING`), so without this record a
+#: value whose oracle was never observed RED was indistinguishable from one
+#: that was. Its readers are the reviewer and examiner packets; no step decides
+#: on it.
+ORACLE_WITNESS_TURN = "oracle-witness"
+
+#: Every record keyed on one value. A rewrite re-keys exactly these, a dropped
+#: value loses exactly these, and an integrated Request releases exactly these.
+VALUE_TURN_ROLES = (ORACLE_TURN, CRAFT_TURN, ORACLE_WITNESS_TURN)
+
 #: The third record, added by ADR-DES-003 §5. It is keyed on the REQUEST rather
 #: than on a value, because the candidate is whole-Request: `turn_ref(request,
 #: request, VERIFY_TURN)`. Two things need it and neither had a substrate. `des
@@ -76,17 +89,6 @@ def turn_ref(request: str, observation: str, role: str) -> str:
 #: a ref points at an object and the outcome is text: the same reason a turn
 #: record is a commit here rather than a file.
 VERIFY_OUTCOME_TURN = "verify-outcome"
-
-#: Where an integration the ORCHESTRATOR decided is written down. Outside the
-#: turn namespace because integration releases the turn records, and a decision
-#: whose evidence disappears with the graph it decided about is no evidence.
-DECISION_REF_ROOT = "refs/nwave/decisions"
-
-
-def decision_ref(request: str, candidate: str) -> str:
-    """Where one orchestrator integration decision is found again."""
-    return f"{DECISION_REF_ROOT}/{digest(request)}/{candidate}"
-
 
 #: The verify record's UPSTREAM key: the graph the verification was measured
 #: against. A candidate is verified against ONE Request graph, and an

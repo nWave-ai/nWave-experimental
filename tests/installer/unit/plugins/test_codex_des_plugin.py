@@ -761,7 +761,7 @@ class TestSessionStartReinstallReconciliation:
 
         The legacy command is the public pre-provenance form: interpreter,
         canonical launcher, then ``session-start``.  A lookalike with an extra
-        argument is user-owned and must survive just like the Lyra hook.
+        argument is user-owned and must survive just like the External hook.
         """
         context = _make_context(tmp_path)
         codex_dir = tmp_path / ".codex"
@@ -814,7 +814,7 @@ class TestSessionStartReinstallReconciliation:
                 "--user-extension",
             )
 
-        lyra_command = "python3 /developer/lyra/session_start.py session-start"
+        external_command = "python3 /developer/external/session_start.py session-start"
         hooks_path = codex_dir / "hooks.json"
         hooks_path.write_text(
             json.dumps(
@@ -835,7 +835,9 @@ class TestSessionStartReinstallReconciliation:
                             },
                             {
                                 "matcher": "startup",
-                                "hooks": [{"type": "command", "command": lyra_command}],
+                                "hooks": [
+                                    {"type": "command", "command": external_command}
+                                ],
                             },
                             {
                                 "matcher": "startup",
@@ -860,7 +862,7 @@ class TestSessionStartReinstallReconciliation:
             return {
                 "session_start.current_nwave_count": commands.count(current_command),
                 "session_start.legacy_nwave_present": legacy_command in commands,
-                "session_start.lyra_present": lyra_command in commands,
+                "session_start.external_present": external_command in commands,
                 "session_start.near_miss_present": near_miss_command in commands,
             }
 
@@ -882,8 +884,8 @@ class TestSessionStartReinstallReconciliation:
                 "session_start.legacy_nwave_present": set_to(False),
             },
         )
-        assert after["session_start.lyra_present"] is True, (
-            "WHAT: the Lyra SessionStart hook disappeared. WHY: reinstall must preserve "
+        assert after["session_start.external_present"] is True, (
+            "WHAT: the External SessionStart hook disappeared. WHY: reinstall must preserve "
             "independent developer customisation. HOW: remove only exact nWave commands."
         )
         assert after["session_start.near_miss_present"] is True, (

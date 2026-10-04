@@ -15,15 +15,19 @@ visible-baseline rule. A broken setup is not an intentional feature RED.
 
 
 Interactive, one step at a time:
+First invoke the native installed Product Owner with the Request; use its
+complete DISCUSS v2 manifest below, not raw Request prose.
+
 ```bash
-printf '%s' "$REQUEST" | des po --repo-root ROOT --feature FEATURE_ID
+printf '%s' "$DISCUSS_MANIFEST" | des po --repo-root ROOT --feature FEATURE_ID --input -
 ```
 For this feature Request, the LLM evaluates and revises an evidence-based S/M/L assessment, decides applicable waves or an upstream authority correction, and chooses each supported operation. `NEXT` is advisory and may be ignored; DES never maps size to a route or invokes it. Each step owns one thing — the Product Owner decomposition, design facts, public oracle, change, candidate/native evidence, separately selected reviewer and source-blind examiner, and integration — and returns. The sequence is yours; no command composes it. Role outcomes are observations, never admission. `nw-auto` owns that guidance. Public results are `Success`, `Refusal`, `Retry`, and `Indeterminate`.
 
-Read `~/.claude/skills/nw-role-invocation/SKILL.md` for role forms: `des po`,
-`des design --value N`, `des oracle --value N`, `des craft --value N`, and
-`des prepare-role` then `des invoke-role` for reviewer/examiner only. Native
-delegation selects the exact installed role; never a generic fallback.
+Read `~/.claude/skills/nw-role-invocation/SKILL.md` for exact native role
+invocation, mandatory skills, source-blind packets and recording contracts.
+The native host runs specialists; `des po|design ... --input -` constructs their
+manifests, `des oracle|craft ... --input -` measures and records their work, and
+`des prepare-role` / `des record-role-result` bind independent assessments.
 
 Where an uncertain boundary remains, use those existing operations to exercise
 an early concrete producer-to-consumer connection: semantic input, DES
@@ -52,7 +56,39 @@ already resolved at this entry.
 Say nothing about expansion before your final response for this wave, and only
 after the whole wave has really completed. The `WAVE-END-OFFER-INTERNAL-NOT-NOW`
 rows decide which situations carry no offer — a single DES step terminal of any
-outcome among them. Invoke no wave-end step: none exists.
+outcome among them. Invoke no wave-end expansion step; the local view has a
+separate completion port.
 
 If `des wave-entry` refuses or returns `Indeterminate`, make no offer and do not
 invent one; report its WHAT/WHY/HOW to the human.
+
+## Completed-wave local view
+
+Read `nw-doc-as-artifact` and retain `WAVE-DOCUMENTATION-DENSITY` from wave
+entry. After this whole wave succeeds, invoke `des wave-entry --complete` with
+the captured entry and successful constructor terminals as that skill directs.
+For full density, the port renders each distinct successful DES Markdown
+`DOCUMENT:` authority after its path checks and reports the local HTML path. DELIVER
+does not create a separate wave document; if no such DES authority was produced,
+there is no applicable HTML view to claim. Lean retains the authority and
+handoff. Never render for a lone DES step, stopped wave or partial outcome.
+This choice does not alter optional explanation, provider/model selection or
+required checks.
+
+## Feature evolution and closing
+
+For lane work, use the user's project `ROOT/lanes/NAME` reported by `des lane
+open`, not a framework checkout or `TMPDIR`. Integrate with `--keep-worktree`
+so the lane survives until evolution and evidence preservation are complete.
+
+Only after the whole feature is integrated, never per slice, follow
+`nw-throughput` "Feature evolution before cleanup": invoke `des evolution
+--repo-root ROOT --input -` once on destination `ROOT`, filling the JSON from
+the delivery's own records (accepted documents, verify evidence) with
+`not_applicable` plus a reason instead of invented content. Preserve the
+generated document and its evidence on `ROOT`; commit them when authorized.
+DES never commits or publishes automatically.
+If the work ran in a lane the LLM opened, run `des lane finalize --repo-root
+ROOT --worktree PATH` after reconciliation. This is advisory: no DES gate, no
+automatic NEXT execution. Omit evolution only when the human declined or the
+request is a trivial non-feature change, with the reason stated.

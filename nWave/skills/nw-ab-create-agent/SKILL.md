@@ -12,10 +12,10 @@ user-invocable: false
 
 Run these steps in order:
 
-1. **ANALYZE** — Load `~/.claude/skills/nw-agent-creation-workflow/SKILL.md`. Identify single clear responsibility. Check overlap with existing agents (Glob `nWave/agents/`). Classify specialist | reviewer | orchestrator. Determine minimum tools. Gate: responsibility defined, no overlap, classification chosen.
-2. **DESIGN** — Load `~/.claude/skills/nw-design-patterns/SKILL.md`. Select design pattern. Define role, goal, divergent principles. Plan skills extraction. Draft frontmatter. Gate: pattern selected, principles drafted, frontmatter ready.
-3. **CREATE** — Load `~/.claude/skills/nw-ab-agent-template/SKILL.md` + `~/.claude/skills/nw-ab-house-style/SKILL.md`. Write agent `.md` from the template, caveman-curated. Inject the Reasoning Mandate verbatim. Extract skills if domain knowledge >50 lines. Gate: file written and identity metadata present.
-4. **VALIDATE** — compose ▶ `nw-ab-validate-spec` (the 19-item checklist + anti-pattern scan). Gate: all 19 pass, zero anti-patterns.
+1. **ANALYZE** — Apply the resident `nw-agent-creation-workflow`, including its source-aware Skill addressing procedure. Identify single clear responsibility. Check overlap with existing agents (Glob `nWave/agents/`). Classify specialist | reviewer | orchestrator. Determine minimum tools. Gate: responsibility defined, no overlap, classification chosen.
+2. **DESIGN** — Apply the resident `nw-design-patterns`. Select design pattern. Define role, goal, divergent principles. Plan skills extraction. Draft frontmatter. Gate: pattern selected, principles drafted, frontmatter ready.
+3. **CREATE** — Apply the resident `nw-ab-agent-template` and `nw-ab-house-style`. Write agent `.md` from the template, caveman-curated. Inject the Reasoning Mandate verbatim. Extract skills if domain knowledge >50 lines. Gate: file written and identity metadata present.
+4. **VALIDATE** — compose ▶ `nw-ab-validate-spec` (every `nw-ab-validation-checklist` item + anti-pattern scan). Gate: every checklist item passes, zero anti-patterns.
 5. **REFINE** — Address failures. Add instructions only for observed failure modes. Re-validate. Gate: all items pass.
 
 ## Composition

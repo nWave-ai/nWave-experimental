@@ -75,38 +75,37 @@ def _format_provenance_label(density: Density) -> str:
 
 
 def _format_density_message(density: Density) -> str:
-    """Render the retained preference with its non-operational scope."""
+    """Describe the reading surface selected for a completed wave."""
     label = _format_provenance_label(density)
-    return (
-        f"Documentation density: {density.mode} ({label}); diagnostic-only "
-        "(does not change wave output)"
+    reading = (
+        "local HTML after an applicable completed wave"
+        if density.mode == "full"
+        else "authoritative documents and handoffs"
     )
+    return f"Documentation density: {density.mode} ({label}); {reading}"
 
 
 class DensityCheck:
-    """Report a retained preference without claiming it controls wave output."""
+    """Validate documentation preferences used at wave entry."""
 
     name: str = "documentation_density"
-    description: str = "Legacy documentation preference (diagnostic-only)"
+    description: str = "Completed-wave documentation preference"
 
     def run(self, context: DoctorContext) -> CheckResult:
-        """Report a retained preference, without treating it as product health.
-
-        Invalid legacy values are visible, but cannot fail diagnostics for a
-        setting that no shipped wave consumes.
-        """
+        """Report invalid active preferences before the next wave refuses them."""
         global_config = _read_global_config(context.home_dir)
         try:
             density = resolve_density(global_config)
         except ValueError as exc:
             return CheckResult(
-                passed=True,
-                error_code=None,
-                message=(
-                    f"Legacy documentation preference ignored: {exc}; "
-                    "diagnostic-only, does not change wave output"
+                passed=False,
+                error_code="DOCUMENTATION_PREFERENCE_INVALID",
+                message=f"Invalid documentation preference: {exc}",
+                remediation=(
+                    f"Correct documentation or rigor.profile in "
+                    f"{context.global_config_path} "
+                    "using the reported field and validation error, then retry."
                 ),
-                remediation=None,
             )
         return CheckResult(
             passed=True,

@@ -233,6 +233,35 @@ def check_frontmatter_completeness(nwave_dir: Path) -> list[str]:
     return sorted(drift)
 
 
+def check_preloaded_skill_directives(nwave_dir: Path) -> list[str]:
+    """Return agents whose body directs loading a skill they already preload.
+
+    Every frontmatter ``skills:`` entry is inlined once into the installed
+    role. A body ``skills/nw-X/SKILL.md`` path or ``Invoke Skill(nw-X)``
+    naming such a skill repeats it as a second, contradictory load
+    instruction. Empty == each preloaded skill reaches its role exactly once.
+    """
+    agents_dir = nwave_dir / "agents"
+    if not agents_dir.exists():
+        return []
+    duplicates: list[str] = []
+    for agent_file in sorted(agents_dir.glob("nw-*.md")):
+        text = _read_text(agent_file)
+        preloaded = {
+            skill if skill.startswith("nw-") else f"nw-{skill}"
+            for skill in _frontmatter_skills(text)
+        }
+        directed = set(_BODY_SKILL_REFERENCE.findall(text)) | set(
+            _INVOKE_SKILL_REFERENCE.findall(text)
+        )
+        duplicates.extend(
+            f"agent {agent_file.name} directs loading {skill}, which its "
+            "frontmatter skills: already preloads; remove the body directive"
+            for skill in sorted(directed & preloaded)
+        )
+    return duplicates
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         print(f"Usage: {sys.argv[0]} <nwave-dir>", file=sys.stderr)
@@ -243,7 +272,11 @@ def main() -> None:
         print(f"ERROR: not a directory: {nwave_dir}", file=sys.stderr)
         sys.exit(1)
 
-    failures = check_references(nwave_dir) + check_frontmatter_completeness(nwave_dir)
+    failures = (
+        check_references(nwave_dir)
+        + check_frontmatter_completeness(nwave_dir)
+        + check_preloaded_skill_directives(nwave_dir)
+    )
     if failures:
         print(f"FAIL: {len(failures)} skill-reference issue(s):")
         for entry in failures:
@@ -251,9 +284,9 @@ def main() -> None:
         sys.exit(1)
 
     print(
-        "PASS: every public-artifact skill reference survives the strip AND "
+        "PASS: every public-artifact skill reference survives the strip, "
         "every loaded skill is owned via frontmatter or the role-skill "
-        "registry"
+        "registry, and no agent body re-directs a preloaded skill"
     )
 
 

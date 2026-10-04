@@ -10,6 +10,7 @@ needed.
 from __future__ import annotations
 
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -17,18 +18,20 @@ import pytest
 from des.application.delivery_continuation import (
     DeliveryContinuationRunner,
     DeliveryOutcome,
-    DesignOptions,
 )
 from des.application.handover import StoredHandover
+from des.domain.turn_record_ref import ORACLE_WITNESS_TURN, turn_ref
 from des.ports.driven_ports.task_invocation_port import (
     DesignFacts,
     DesignTarget,
     ModelOutcome,
     ModelRun,
+    NotApplicable,
     ProductValue,
+    ReuseAnalysis,
     TaskInvocationPort,
 )
-from tests.des._helpers.step_stimulus import decomposed, designed, oracled
+from tests.des._helpers.step_stimulus import crafted, decomposed, designed, oracled
 
 
 OBSERVATION = "the installed answer module answers 42 through its public entry point"
@@ -56,6 +59,16 @@ def _design(decision: str) -> DesignFacts:
         acceptance_supports=(),
         verification=(("python", "-m", "pytest", ORACLE, "-q"),),
         oracle_verification_index=0,
+        architectural_tests=NotApplicable(
+            "The fixture has no structural boundary change."
+        ),
+        contract_tests=NotApplicable("The fixture changes no shared contract."),
+        prefactoring=NotApplicable("The fixture requires no preservation move."),
+        agreement_analysis=NotApplicable("The fixture has no affected agreement."),
+        reuse_analysis=ReuseAnalysis(()),
+        impact_closure=NotApplicable(
+            "The fixture reaches no public surface, consumer or build metadata."
+        ),
     )
 
 
@@ -127,12 +140,12 @@ def _authored_and_crafted(
     subject: Path, port: RedesigningPort
 ) -> tuple[DeliveryContinuationRunner, StoredHandover, object]:
     """Reach D1 authored (RED, recorded) and crafted (GREEN bytes, recorded)."""
-    runner = DeliveryContinuationRunner(port)
+    runner = DeliveryContinuationRunner()
     stored = decomposed(runner, port, subject, REQUEST)
     stored, d1 = designed(runner, port, subject, stored)
     first = oracled(runner, port, subject, stored, d1)
     assert first.refusal is None, first.refusal
-    outcome = runner.craft_value(subject, port, stored, stored.values[0], d1)
+    outcome = crafted(runner, port, subject, stored, d1)
     assert not isinstance(outcome, DeliveryOutcome), outcome
     assert runner.oracle_turn_complete(subject, stored, stored.values[0], d1), (
         "the probe requires D1's oracle turn to already be a recorded fact"
@@ -157,13 +170,7 @@ def test_changed_design_invalidates_old_author_and_craft_completion(
     port = RedesigningPort(subject)
     runner, stored, d1 = _authored_and_crafted(subject, port)
 
-    corrected = runner.design_value(
-        subject,
-        port,
-        stored,
-        stored.values[0],
-        options=DesignOptions(finding="change the decision"),
-    )
+    corrected = designed(runner, port, subject, stored)
     assert not isinstance(corrected, DeliveryOutcome), corrected
     stored, d2 = corrected
     assert d1.decisions != d2.decisions, "the probe requires a genuine design change"
@@ -199,13 +206,7 @@ def test_identical_design_correction_keeps_completion_and_cheap_resume(
     runner, stored, d1 = _authored_and_crafted(subject, port)
     port.next_design = _design("D1")  # byte-identical replacement
 
-    corrected = runner.design_value(
-        subject,
-        port,
-        stored,
-        stored.values[0],
-        options=DesignOptions(finding="repeat the same facts"),
-    )
+    corrected = designed(runner, port, subject, stored)
     assert not isinstance(corrected, DeliveryOutcome), corrected
     stored, d1_again = corrected
     assert d1_again == d1, "the probe requires a byte-identical replacement"
@@ -238,16 +239,66 @@ def test_changed_design_preserves_records_as_historical_without_ref_deletion(
         return real_git(root, *args, env=env)
 
     runner._git = deletion_hostile_git  # type: ignore[method-assign]
-    corrected = runner.design_value(
-        subject,
-        port,
-        stored,
-        stored.values[0],
-        options=DesignOptions(finding="change the decision"),
-    )
+    corrected = designed(runner, port, subject, stored)
 
     assert not isinstance(corrected, DeliveryOutcome), corrected
     reread, d2 = corrected
     assert d2.decisions == ("D2",)
     assert not runner.oracle_turn_complete(subject, reread, reread.values[0], d2)
     assert not runner.craft_turn_complete(subject, reread, reread.values[0], d2)
+
+
+def test_witness_history_tracks_authority_and_byte_currentness_without_losing_red(
+    subject: Path,
+) -> None:
+    port = RedesigningPort(subject)
+    runner, stored, d1 = _authored_and_crafted(subject, port)
+    first = runner.oracle_witness(subject, stored, OBSERVATION, d1)
+    assert first and first[0]["current"] is True
+    assert first[0]["oracles"][0]["verdict"] == "red"
+
+    corrected, d2 = designed(runner, port, subject, stored)
+    historical = runner.oracle_witness(subject, corrected, OBSERVATION, d2)
+    assert historical and historical[0]["current"] is False
+    assert historical[0]["oracles"] == first[0]["oracles"]
+
+    port.next_design = _design("D1")
+    restored, original = designed(runner, port, subject, corrected)
+    assert runner.oracle_witness(subject, restored, OBSERVATION, original) == first
+    (subject / ORACLE).write_text(RED_ON_ITS_ASSERTION + "\n# changed acceptance\n")
+    moved = runner.oracle_witness(subject, restored, OBSERVATION, original)
+    assert moved and moved[0]["current"] is False
+
+
+def test_a_first_green_witness_is_durable_and_follows_value_record_lifecycle(
+    subject: Path,
+) -> None:
+    port = RedesigningPort(subject)
+    runner = DeliveryContinuationRunner()
+    stored = decomposed(runner, port, subject, REQUEST)
+    stored, design = designed(runner, port, subject, stored)
+    (subject / PRODUCTION).parent.mkdir(parents=True, exist_ok=True)
+    (subject / PRODUCTION).write_text("ANSWER = 42\n")
+    outcome = oracled(runner, port, subject, stored, design)
+    assert outcome.refusal is None
+    witness = runner.oracle_witness(subject, stored, OBSERVATION, design)
+    assert witness and witness[0]["oracles"][0]["verdict"] == "green"
+    assert witness[0]["current"] is True
+
+    new_request = REQUEST + " with an amended scope"
+    runner._rekey_turn_records(subject, REQUEST, new_request, (OBSERVATION,))
+    assert runner.oracle_witness(subject, stored, OBSERVATION, design) == ()
+    rewritten = replace(stored, request=new_request)
+    assert runner.oracle_witness(subject, rewritten, OBSERVATION, design) == witness
+    runner._drop_records_for(subject, new_request, (OBSERVATION,))
+    assert runner.oracle_witness(subject, rewritten, OBSERVATION, design) == ()
+    assert (
+        runner._git(
+            subject,
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            turn_ref(new_request, OBSERVATION, ORACLE_WITNESS_TURN),
+        ).returncode
+        != 0
+    )

@@ -188,6 +188,8 @@ try:
     from scripts.install.plugins.commands_plugin import CommandsPlugin
     from scripts.install.plugins.copilot_des_plugin import CopilotDESPlugin
     from scripts.install.plugins.des_plugin import DESPlugin
+    from scripts.install.plugins.omp_agents_plugin import OmpAgentsPlugin
+    from scripts.install.plugins.omp_skills_plugin import OmpSkillsPlugin
     from scripts.install.plugins.opencode_agents_plugin import OpenCodeAgentsPlugin
     from scripts.install.plugins.opencode_commands_plugin import OpenCodeCommandsPlugin
     from scripts.install.plugins.opencode_des_plugin import OpenCodeDESPlugin
@@ -237,6 +239,8 @@ except ImportError:
     from plugins.commands_plugin import CommandsPlugin
     from plugins.copilot_des_plugin import CopilotDESPlugin
     from plugins.des_plugin import DESPlugin
+    from plugins.omp_agents_plugin import OmpAgentsPlugin
+    from plugins.omp_skills_plugin import OmpSkillsPlugin
     from plugins.opencode_agents_plugin import OpenCodeAgentsPlugin
     from plugins.opencode_commands_plugin import OpenCodeCommandsPlugin
     from plugins.opencode_des_plugin import OpenCodeDESPlugin
@@ -302,21 +306,25 @@ def _detect_installed_version() -> str | None:
         return None
 
 
+class InstallProvenance(NamedTuple):
+    """The selected hosts, mode, and destinations of one validated install."""
+
+    target_platforms: frozenset[str]
+    dev_mode: bool
+    host_paths: dict[str, str]
+
+
 def record_install_metadata(
     global_config_path: Path,
-    installed_version: str,
+    installed_version: str | None,
     *,
     repo_root: Path | None = None,
+    provenance: InstallProvenance | None = None,
 ) -> None:
     """Record install provenance through the sole atomic config writer.
 
-    Writes ``install.installed_version`` — the anchor the doctor
-    ``VersionSyncCheck`` compares against the live package version to flag a
-    package upgraded without re-running install — and, when known,
-    All unrelated keys are preserved.
-
-    Best-effort: any failure is swallowed. A metadata write must never fail the
-    install itself.
+    Version metadata is diagnostic. The selected hosts, mode, and destinations
+    are update safety provenance and must persist after a validated install.
     """
     try:
         from des.adapters.driven.config.config_writer import ConfigWriter
@@ -331,12 +339,23 @@ def record_install_metadata(
             install_block = (
                 dict(existing_install) if isinstance(existing_install, dict) else {}
             )
-            install_block["installed_version"] = installed_version
+            if installed_version is not None:
+                install_block["installed_version"] = installed_version
+            elif provenance is not None and provenance.dev_mode:
+                install_block.pop("installed_version", None)
+            if provenance is not None:
+                install_block["target_platforms"] = sorted(provenance.target_platforms)
+                install_block["dev_mode"] = provenance.dev_mode
+                install_block["host_paths"] = dict(provenance.host_paths)
             document["install"] = install_block
 
         writer.update_global(record)
     except Exception:
-        pass
+        # Existing version-only callers retain their best-effort diagnostic
+        # metadata contract. A selected host/mode is safety-critical update
+        # provenance: an install cannot report success if it failed to record it.
+        if provenance is not None:
+            raise
 
 
 def _component_synced(matched: int, expected: int) -> bool:
@@ -1449,6 +1468,16 @@ class NWaveInstaller:
             copilot_des = CopilotDESPlugin()
             copilot_des.set_dependencies(["des"])
             registry.register(copilot_des)
+        # OMP plugins (registered when omp detected). No OMP DES hook exists:
+        # OMP extension events differ from Claude Code hooks, and this
+        # installer does not fake enforcement -- the agents plugin reports
+        # the unsupported hook surface explicitly instead.
+        if target_platforms and "omp" in target_platforms:
+            omp_skills = OmpSkillsPlugin()
+            registry.register(omp_skills)
+            omp_agents = OmpAgentsPlugin()
+            omp_agents.set_dependencies(["omp-skills"])
+            registry.register(omp_agents)
         return registry
 
     def install_framework(self) -> bool:
@@ -1515,27 +1544,93 @@ class NWaveInstaller:
                     f"{_codex_config_dir() / 'hooks.json'}"
                 )
                 return True
-            self.logger.info(
-                f"  🚨 [DRY RUN] Would install nWave framework to: {self.claude_config_dir}"
-            )
-            self.logger.info(
-                f"  🚨 [DRY RUN] Would create target directory: {self.claude_config_dir}"
-            )
+            # A non-Claude target must not have a Claude directory announced as
+            # the install destination -- naming a path the run will never touch
+            # is a silent-wrong (the user reads a location and finds it bare).
+            if "claude_code" in target_platforms:
+                self.logger.info(
+                    f"  🚨 [DRY RUN] Would install nWave framework to: {self.claude_config_dir}"
+                )
+                self.logger.info(
+                    f"  🚨 [DRY RUN] Would create target directory: {self.claude_config_dir}"
+                )
 
             # Show what would be installed from nWave/ source
             agents_dir = self.project_root / "nWave" / "agents"
             commands_dir = self.project_root / "nWave" / "tasks" / "nw"
 
-            if agents_dir.exists():
+            if agents_dir.exists() and "claude_code" in target_platforms:
                 agent_count = PathUtils.count_files(agents_dir, "nw-*.md")
                 self.logger.info(
                     f"  🚨 [DRY RUN] Would install {agent_count} agent files"
                 )
 
-            if commands_dir.exists():
+            if commands_dir.exists() and "claude_code" in target_platforms:
                 command_count = PathUtils.count_files(commands_dir, "*.md")
                 self.logger.info(
                     f"  🚨 [DRY RUN] Would install {command_count} command files"
+                )
+
+            if "omp" in target_platforms:
+                from scripts.install.plugins.omp_agents_plugin import (
+                    _find_agents_source,
+                )
+                from scripts.install.plugins.omp_skills_plugin import (
+                    _find_skills_source,
+                )
+                from scripts.shared.agent_catalog import (
+                    build_ownership_map,
+                    detect_command_skills,
+                )
+                from scripts.shared.install_paths import omp_agents_dir, omp_skills_dir
+                from scripts.shared.skill_distribution import (
+                    enumerate_skills,
+                    filter_public_skills,
+                )
+
+                omp_context = InstallContext(
+                    claude_dir=self.claude_config_dir,
+                    scripts_dir=self.project_root / "scripts" / "install",
+                    templates_dir=self.framework_source / "templates",
+                    logger=self.logger,
+                    project_root=self.project_root,
+                    framework_source=self.framework_source,
+                )
+                omp_public_agents = (
+                    set()
+                    if self.dev_mode
+                    else load_public_agents(self.project_root / "nWave")
+                )
+                omp_agents_source = _find_agents_source(omp_context)
+                omp_agent_count = 0
+                if omp_agents_source is not None:
+                    omp_agent_count = sum(
+                        is_public_agent(f.name, omp_public_agents)
+                        for f in omp_agents_source.glob("nw-*.md")
+                    )
+                omp_skills_source = _find_skills_source(omp_context)
+                omp_skill_count = 0
+                if omp_skills_source is not None:
+                    omp_entries = enumerate_skills(omp_skills_source)
+                    if not self.dev_mode:
+                        omp_entries = filter_public_skills(
+                            omp_entries,
+                            omp_public_agents,
+                            build_ownership_map(self.project_root / "nWave" / "agents"),
+                            detect_command_skills(omp_skills_source),
+                        )
+                    omp_skill_count = len(omp_entries)
+                self.logger.info(
+                    f"  🚨 [DRY RUN] Would install {omp_skill_count} OMP skills to "
+                    f"{omp_skills_dir()}"
+                )
+                self.logger.info(
+                    f"  🚨 [DRY RUN] Would install {omp_agent_count} OMP agents to "
+                    f"{omp_agents_dir()}"
+                )
+                self.logger.info(
+                    "  🚨 [DRY RUN] OMP gets no DES hook: OMP extension events differ "
+                    "from Claude Code hooks; guard enforcement is not projected"
                 )
 
             return True
@@ -2030,24 +2125,35 @@ def show_installation_summary(
         logger.info(
             "    $nw-design       Architecture design with visual representation"
         )
-    logger.info("")
+    cli_entry = Path(sys.executable).with_name("nwave-ai")
+    project_cli = shlex.quote(str(cli_entry)) if cli_entry.is_file() else "nwave-ai"
+    logger.info(f"  💡 In the target Git project, run: {project_cli} project enable")
+    logger.info(f"  💡 Check activation: {project_cli} project status")
+    omp_selected = bool(target_platforms and "omp" in target_platforms)
     if codex_only:
         logger.info("  ⚠️  Quit and reopen Codex to load the new agents and skills.")
-        logger.info(
-            "  💡 Open Codex in any project directory and invoke the $nw-design skill."
-        )
+        logger.info("  💡 In the activated project, ask $nw-buddy what to do first.")
     elif mixed_hosts:
         logger.info(
             "  ⚠️  Quit and reopen Claude Code to load the new agents, skills, and commands."
         )
         logger.info("  ⚠️  Quit and reopen Codex to load the new agents and skills.")
-        logger.info("  💡 Start with /nw-design in Claude Code or $nw-design in Codex.")
+        logger.info(
+            "  💡 In the activated project, ask /nw-buddy in Claude Code or $nw-buddy in Codex."
+        )
     else:
         logger.info(
             "  ⚠️  Quit and reopen Claude Code to load the new agents, skills, and commands."
         )
+        logger.info("  💡 In the activated project, ask /nw-buddy what to do first.")
+    if omp_selected:
+        logger.info("  ⚠️  Quit and reopen OMP to load the new task agents and skills.")
         logger.info(
-            "  💡 Open Claude Code in any project directory and type a /nw- command."
+            "  💡 In OMP, dispatch nw-* task agents via Task, or invoke /skill:nw-<name>."
+        )
+        logger.info(
+            "  ⚠️  OMP installs no DES hooks: OMP extension events differ from "
+            "Claude Code hooks, so guard enforcement is not projected."
         )
     logger.info("  📚 Docs: https://github.com/nWave-ai/nWave")
 
@@ -2066,7 +2172,8 @@ def show_help():
 
     help_text = f"""
 {B}DESCRIPTION:{N}
-    Installs the nWave methodology framework to your global Claude config directory.
+    Installs the nWave methodology framework to your global AI coding host
+    config directory (Claude Code, OpenCode, Codex, Copilot, OMP).
     This makes all specialized agents and commands available across all projects.
 
 {B}USAGE:{N}
@@ -2102,6 +2209,10 @@ def show_help():
     ~/.claude/agents/nw/    # nWave agent specifications
     ~/.claude/commands/nw/  # nWave command integrations
     ~/.claude/templates/    # TDD cycle schema templates
+    ~/.omp/agent/agents/    # OMP: nWave task agents (native)
+    ~/.omp/agent/skills/    # OMP: nWave skills (native; PI_CONFIG_DIR renames .omp)
+    # OMP installs no hooks: OMP extension events differ from Claude Code
+    # hooks, so DES guard enforcement is not projected onto OMP.
 
 For more information: https://github.com/nWave-ai/nWave
 """
@@ -2113,7 +2224,7 @@ def _resolve_platform_override(platform_flag: str) -> set[str] | None:
 
     Args:
         platform_flag: One of "auto", "claude-code", "opencode", "codex",
-            "copilot", "all".
+            "copilot", "omp", "all".
 
     Returns:
         None for auto-detect, or a set of platform string values.
@@ -2124,7 +2235,8 @@ def _resolve_platform_override(platform_flag: str) -> set[str] | None:
         "opencode": {"opencode"},
         "codex": {"codex"},
         "copilot": {"copilot"},
-        "all": {"claude_code", "opencode", "codex", "copilot"},
+        "omp": {"omp"},
+        "all": {"claude_code", "opencode", "codex", "copilot", "omp"},
     }
     return platform_map[platform_flag]
 
@@ -2143,7 +2255,7 @@ def main():
     parser.add_argument("--help", "-h", action="store_true", help="Show help")
     parser.add_argument(
         "--platform",
-        choices=["auto", "claude-code", "opencode", "codex", "copilot", "all"],
+        choices=["auto", "claude-code", "opencode", "codex", "copilot", "omp", "all"],
         default="auto",
         help="Target platform (default: auto-detect)",
     )
@@ -2187,14 +2299,15 @@ def main():
     if not installer.effective_target_platforms:
         print(
             "No supported AI coding host was detected; rerun with "
-            "--platform claude-code, opencode, codex, copilot, or all.",
+            "--platform claude-code, opencode, codex, copilot, omp, or all.",
             file=sys.stderr,
         )
         return 2
 
-    # Codex has no Claude backup or restore surface.  Keep its explicit
-    # restore command a no-op without consulting any retired runtime state.
-    if args.restore and installer.effective_target_platforms == {"codex"}:
+    # A native-only target (no claude_code selected) has no Claude backup or
+    # restore surface -- restore must stay a no-op without consulting or
+    # naming a Claude directory it would never have written.
+    if args.restore and "claude_code" not in installer.effective_target_platforms:
         return 0
 
     # ONE install at a time, per destination (GDP-0: make the torn state
@@ -2354,12 +2467,41 @@ def _run_install(args: argparse.Namespace, installer: "NWaveInstaller") -> int:
         # venvs could surface a spurious drift warning on the target not last
         # installed. Single-target is the norm; left as-is deliberately.
         installed_version = _detect_installed_version()
-        if installed_version is not None:
+        from scripts.shared.install_paths import omp_agent_dir, omp_skills_dir
+
+        try:
             record_install_metadata(
                 installer._locations.agents_home / ".nwave" / "config.json",
                 installed_version=installed_version,
                 repo_root=installer.user_project_root,
+                provenance=InstallProvenance(
+                    target_platforms=installer.effective_target_platforms,
+                    dev_mode=args.dev,
+                    host_paths={
+                        "agents_home": str(installer._locations.agents_home),
+                        "claude_config_dir": str(
+                            installer._locations.claude_config_dir
+                        ),
+                        "codex_config_dir": str(installer._locations.codex_config_dir),
+                        **(
+                            {
+                                "omp_agent_dir": str(omp_agent_dir()),
+                                "omp_skills_dir": str(omp_skills_dir()),
+                            }
+                            if "omp" in installer.effective_target_platforms
+                            else {}
+                        ),
+                    },
+                ),
             )
+        except Exception as exc:
+            installer.logger.error(
+                "WHAT: the validated install did not persist its selected host "
+                f"and mode. WHY: {exc}. HOW: repair the global config writer "
+                "and rerun the same install command; do not attempt automatic "
+                "updates until provenance is recorded."
+            )
+            return 1
 
         installer.logger.info("")
         show_installation_summary(

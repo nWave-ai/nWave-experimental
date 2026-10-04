@@ -55,11 +55,11 @@ Which producer could make the unsafe action unrepresentable — did the spec con
 
 ## Dimension 7: Skill Loading Effectiveness
 
-Does the agent ensure skills are actually loaded during execution?
+Does each skill reach the role exactly once, at the right time?
 
-**Check**: Every frontmatter skill is an existing always-needed asset and is not reloaded by a matching directive or table row | Supported native hosts and DES adapters preload those skills once | Each intended conditional skill stays outside frontmatter and has a precise executable `Read` path or permitted `Invoke Skill` trigger | A knowledge skill with `disable-model-invocation: true` uses `Read`, never `Invoke Skill`.
+**Check**: Apply the source-aware Skill addressing procedure in `nw-agent-creation-workflow` to the actual candidate surface | Every frontmatter skill exists, is always needed and is not reloaded by the body | Each conditional skill has a precise reachable trigger in the single generated index | No handwritten loading section or duplicate directive.
 
-**Severity**: High — an orphan is a missing declared asset or genuinely intended conditional knowledge without a reachable trigger. It is not an eager frontmatter preload with no redundant directive. A directive that invokes a skill carrying `disable-model-invocation: true` stalls when the Skill tool refuses; require a Read path instead.
+**Severity**: High — a missing declared asset, intended conditional knowledge with no reachable trigger, a repeated preload, or a duplicate index. An installed project's missing build-time registry is a source-capability limit, not an orphan finding. The absence of a duplicate body Load directive for a frontmatter skill is correct.
 
 **Evidence**: Review the exact candidate under review and name its source, staged-build, or installed-artifact location. Do not attribute a finding from an unrelated or stale distribution artifact to that candidate.
 
@@ -90,4 +90,4 @@ projection is materialized by existing CLI/software, never by the reviewer.
 
 ## Failure Conditions
 
-Review is not acceptable if: any high-severity dimension fails | 3+ medium-severity fail | Agent exceeds 400 lines without Skills extraction | Zero examples provided | Agent with 3+ skills missing Skill Loading Strategy table
+Review is not acceptable if: any high-severity dimension fails | 3+ medium-severity fail | Agent exceeds 400 lines without Skills extraction | Zero examples provided

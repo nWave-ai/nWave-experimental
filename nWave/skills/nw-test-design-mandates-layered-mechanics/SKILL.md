@@ -1,173 +1,82 @@
 ---
 name: nw-test-design-mandates-layered-mechanics
-description: "Layered test-mechanics mandates for acceptance tests — Universe-bound assertion at layers 1-3 (assert_state_delta), Mandate-9-v2 three-way treatment by mock-status, layer-dependent PBT input mode, two-tier acceptance (Tier A Gojko + optional Tier B state-machine PBT), example-based integration sad paths, the Layered Test Discipline table, and the Polyglot Adapter Matrix. Consult while choosing assertion style, PBT mode, tier, and sad-path treatment for a given layer and driven-adapter realness. Canonical definitions; SSOT for these mandates."
+description: "Layered acceptance-test mechanics: public state preservation, native generative laws, real-boundary journeys and explicit failure observations."
 user-invocable: false
 disable-model-invocation: true
 ---
 
 # Test-Design Mandates — Layered Mechanics
 
-**Kind**: KNOWLEDGE (reference). No forced sequence — consulted on its trigger.
+**Kind**: KNOWLEDGE. Consult when choosing observation mechanics for a known
+boundary and driven-adapter realness. Numbering is internal to
+`nw-test-design-mandates`; its language convention frame owns native discovery.
 
-**Trigger**: you are choosing the test MECHANICS for a scenario at a known layer and driven-adapter realness — which assertion style (universe state-delta vs traditional), which PBT mode (full / example-pinned / example-only), whether to add Tier B, and how to treat sad paths. Mandates 8-11 + the Layered Test Discipline table + the Polyglot Adapter Matrix. The layer table is the union lookup for all of these.
+## Mandate 8 — Universe-bound public-state observation
 
-Numbering is an SSOT-internal index defined in the recomposing core `nw-test-design-mandates`; refer to mandates by descriptive name externally. Language-convention frame (non-Python target adaptation) lives in the core.
+For state-mutating tests, name the public state promised to change or remain
+unchanged, observe before/after, and reject undeclared changes in that observation
+universe. Use native assertions or existing project helpers; no required
+`assert_state_delta` signature, copied predicate library or `tests/common` path.
+Private struct fields and mock call counts are not consumer outcomes. A pure
+output assertion needs no invented mutable universe.
 
-## Mandate 8 — Universe-bound assertion at layers 1-3
+## Mandate 9 — Law-bearing generative testing
 
-Every test at layers 1-3 (unit, in-memory acceptance, subprocess/FS acceptance) that mutates observable state MUST assert via `assert_state_delta(before, after, universe={...}, expected={...})` (Python reference: `nwave_ai/state_delta/__init__.py`; other-language equivalents are added as the matrix grows).
+Choose treatment from the contract and actual composition, not file suffix,
+decorator density or an assumed language adapter. In-memory compositions make
+broad exploration inexpensive; a real driven dependency requires real-boundary
+observations. Neither fact alone decides whether a broad law exists.
 
-- `universe` declares the SET of port-exposed observable names the test promises to track. Names are always port-exposed (event types, public read-model fields, exit codes, captured outputs) — never internal struct fields.
-- `expected` declares which universe entries change and how (predicate per entry: `set_to`, `unchanged`, `appended_with`, `prepended_with`, `containing`, ...).
-- Anything in `universe` that changes UNEXPECTEDLY (mutates with no `expected` entry) → violation. Fail-closed.
-- Layers 4+ (integration, walking-skeleton, E2E) MAY use traditional assertions — at that layer the test cost is dominated by subprocess / network / real I/O and the universe-guard payoff is smaller.
+- Broad input/state/failure laws receive native generative properties, ordinarily
+  one per independent law. Combine only when one generated observation honestly
+  falsifies every combined law. Closed finite domains use native examples or
+  exhaustive finite checks without mandatory generation.
+- Follow `nw-property-based-testing` for constructive branch reachability,
+  independent oracles, meaningful distributions/transitions, shrinking and replay.
+  A missing shipped `nw-pbt-*` family is not an adoption barrier: use repository
+  evidence to select its native generator/shrinker. Never bridge to Python.
+- Keep properties deterministic and bounded. When real I/O is slow, choose the
+  nearest law-bearing seam with an explicit preservation map to the promised
+  real-port observation; a model without that map is a proxy. Properties never
+  replace the representative real journey or persistent storage laws.
+- No honest seam or unavailable native capability is `EVIDENCE_GAP` to DESIGN,
+  with a concrete cause. Do not silently downgrade a broad obligation to examples
+  or remove the promise to fit available tools.
 
-Bad universe entries couple the test to private mutation details (`BoardProjection._rows_cells_dict`) — a refactor rename reds the test for no functional reason. Good universe entries are port names (`events.PhaseEntered.emitted_count`, `board.rows[task_id].cells[wave].status`).
+## Mandate 10 — Journey and state-space observations
 
-## Mandate 9 v2 — three-way test treatment by mock-status (slice-01 minimal frame)
+Keep an identifiable end-to-end business journey per feature through production
+composition. Reuse the project's business helpers and installed/build lineage.
+Gherkin, `.feature`, `steps_*.py`, a particular state-machine filename and a
+three-scenario threshold are not requirements.
 
-**Status**: SCAFFOLD — slice-01 of `fix-mandate-9-v2-rollout` ships this
-minimal frame as a stub. Slice-02 ships the full skill expansion
-(rationale, examples, residuality discussion). Spike source:
-`docs/analysis/adapter-integration-slice-design-2026-05-27.md`.
+Add state-machine properties when the promised transitions/sequences have a broad
+space. Share useful business vocabulary and incumbent helpers without forcing a
+new DSL, composition class or helper library. Sequential model exploration does
+not establish crash, race or protocol timing: those need targeted synchronized
+real observations when promised. One journey does not mean one test total.
 
-Mandate 9 driver changes from **layer-driven** (v1) to **mock-status driven**
-(v2) per the empirical anchor of D4 Phase 3 dogfooding (3 of 5 ATs
-mislabeled `@real-io`). Three test treatments:
+## Mandate 11 — Distinguishable failure observations
 
-| Treatment | When (OR-reduced across driven-set) | Test framework |
-|---|---|---|
-| **PBT + universe + parametrize** | ALL driven adapters in-memory | Hypothesis `@given` + `assert_state_delta` |
-| **Example-based + `assert_state_delta`** | ≥1 driven adapter real, SUT = feature via driving port | Gherkin Scenario + production composition root |
-| **Adapter integration slice** | (Port, Adapter) classified CRITICAL, SUT = adapter itself | Adapter constructor directly + real driven dep + 10-property matrix |
-
-### OR-reduction rule
-
-Treatment is determined by the MOST-real driven adapter in the composition
-root, NOT the average. A slice with one real adapter + N in-memory adapters
-= example-based, NOT PBT.
-
-### Mandate 1 carve-out
-
-A layer-1 unit test that hits a real subprocess is forbidden by
-construction per Mandate 1 (Hexagonal Boundary Enforcement). The
-"mock-status driven" claim of Mandate 9 v2 applies WITHIN the
-Mandate-1-permitted compositions.
-
-### PBT budget note
-
-"PBT-friendly" does NOT mean "PBT-mandatory". A layer-3 in-process
-composition with all-mock driven adapters running Hypothesis at 100
-examples/property is ~10-50× wall-clock heavier than a layer-1 unit due
-to composition-root setup/teardown. Per-test budget still applies.
-
-(Full rationale, residuality discussion, and per-tier examples land in
-slice-02 expansion.)
-
----
-
-## Mandate 9 — PBT input mode is layer-dependent, with a semantic-PBT carve-out
-
-Property-based test machinery (Hypothesis `@given`, `RuleBasedStateMachine`, equivalent in other languages) is constrained by layer:
-
-- **Layers 1-2** (unit, in-memory acceptance with in-memory doubles): PBT full. Hypothesis explores the generative input space (100+ examples per property by default). Pinned `@example(...)` preserves a domain-readable canonical case for reviewers.
-- **Layers 3-6** (subprocess/FS acceptance, integration, walking-skeleton, E2E): the REPRESENTATIVE test proving wiring and sad-path coverage is example-only — sad paths are enumerated explicitly (Mandate 11), never PBT-generated. PBT runtime cost is incompatible with real-I/O tests where each example is 100ms-seconds.
-
-This layer default is NOT a blanket ban on generative testing at layer 3+. It never suppresses a separate semantic-PBT projection when a declared broad-input/state/failure law warrants one (most commonly the `BROAD_INPUT_DOMAIN` obligation — examples alone cannot discharge it, `nw-property-based-testing`). When one or more such laws fire:
-
-- Author the smallest sufficient SET of additional generative tests targeting the SAME promised observation each declared law already requires the representative example to prove — never a proxy, never a substitute oracle, never a duplicate of the representative example's assertions. Normally this is one property per distinct declared law; combine two or more laws into a single property only when one generated observation honestly falsifies all of them together — never combine merely to save authoring effort.
-- Site each property at the nearest deterministic, replayable, law-bearing surface reachable from that layer. If the layer's own driven adapter is slow or nondeterministic (subprocess/network/full real I/O), keep the representative example there unchanged and project the generated property onto the nearest honest cheap semantic model or seam that still carries the law. That seam need not perform real I/O — a fake/model is legitimate — but its generated observation must carry an explicit preservation map/equivalence to the promised real-port observation; without that map the seam is a proxy, not an honest one, and blocks.
-- If no honest law-bearing seam with such a preservation map exists at or near that layer, do not fabricate one, and never let the obligation become or remain example-only: return `EVIDENCE_GAP` back to DESIGN before authoring. DESIGN must either name a deterministic, replayable semantic surface plus its observation-preserving relationship to the promised real-port observation, or remove/correct the unsupported law. A declared broad law (e.g. `BROAD_INPUT_DOMAIN`) can never be discharged by examples alone — no seam is never a license to downgrade silently.
-- Each property keeps a bounded examples/runtime budget — never open-ended generation against a real-I/O boundary — regardless of how many properties the law set requires.
-
-Rationale: layer 3+ representative tests serve wiring proof and contract verification; broad generative coverage exploration happens at layers 1-2 where iteration is cheap, OR — when a law demands it and examples cannot discharge it — as the smallest sufficient set of budgeted semantic-PBT projections at the nearest cheap seam (one per distinct law, combined only when honestly justified), never as blanket per-scenario machinery, and never silently downgraded to example-only when no seam exists.
-
-## Mandate 10 — Two-tier acceptance for rich journeys
-
-Acceptance tests come in two tiers. Tier A is mandatory. Tier B is optional and applied only to rich journeys.
-
-- **Tier A — Gojko-style**: production composition root, real DI, example-only, 1-2 scenarios per journey. Lives in `.feature` files (Gherkin) + `steps_*.py` (or host-language equivalent) invoking the production composition root. Purpose: prove wiring end-to-end, demonstrate the feature works for the canonical example.
-- **Tier B — state-machine PBT** (optional): in-memory doubles composition root, generative inputs, `RuleBasedStateMachine` with `@rule` / `@precondition` / `@invariant`. Lives in `test_<feature>_state_machine.py` (or host-language equivalent), separate file from the `.feature`. Purpose: explore the journey state space and surface contract gaps that example tests miss.
-
-**Vocabulary shared**: the same step-methods (`Given_/When_/Then_` named in the domain language) are invoked from both tiers. Step-methods are the contract; the two tiers are two composition roots over the same vocabulary.
-
-**Composition root contract**:
-- Tier A uses real DI (e.g. `WebApplicationFactory` in C#, real installer entry-point in Python, real router in Go).
-- Tier B uses an `InMemoryComposition` class that wires the same interfaces with in-memory doubles. The `InMemoryComposition` exposes a `capture_universe()` method returning the universe snapshot used by `assert_state_delta`.
-
-**When to add Tier B**:
-- Journey has ≥3 chained scenarios (Pillar 2 active), AND
-- Input space is domain-rich (emails, dates, payloads, free-text, IDs from a large set).
-
-**When Tier B is NOT worth it**:
-- Config-shaped features (single-shot installer config, schema validation, one-off CLI).
-- Journeys with 1-2 scenarios (Tier A example covers the space).
-- Features where the only observable is "did it crash" (no state mutation to model).
-
-## Mandate 11 — Integration sad paths stay example-based
-
-Sad-path coverage at layers 3+ (subprocess / real adapter / integration / WS / E2E) uses traditional example-based tests, one example per failure mode.
-
-- No PBT explosion on slow tests. The wall-clock cost of generating sad inputs against a real adapter dwarfs the gain.
-- `assert_state_delta` is OPTIONAL at layer 3+ (universe-guard is a Mandate 8 layer 1-3 requirement; layers 4+ may use traditional assertions per Mandate 8).
-- Each sad path is named explicitly: `Bug_<symptom>` or `Sad_<scenario>` test, with explicit input that triggers the failure.
-- Coverage requirement: every failure mode enumerated in DEVOPS environment matrix and every `failure_modes` entry from `docs/product/journeys/<name>.yaml` gets at least one named sad-path test.
-- This mandate governs the enumerated sad-path SET only. It does not ban the Mandate 9 semantic-PBT carve-out: a declared broad-input/state/failure law still gets its own budgeted generative test at the nearest law-bearing surface, living in its own generative test/file, never merged into or replacing the enumerated sad-path examples.
+Observe each promised distinguishable failure/recovery mode with a concrete
+native example at the relevant real boundary, and retain broad failure laws as
+budgeted native properties where applicable. Error types/business outcomes and
+state preservation matter; arbitrary failure-name stems, imports and separate
+file requirements do not. Failure coverage follows selected authority, not a
+hardcoded environment path or invented default environment matrix.
 
 ## Layered Test Discipline
 
-The four mandates above (Universe, PBT mode, two-tier acceptance, sad-path treatment) compose into this layered discipline. The table below is the single source of truth for "what does this layer look like."
+| Surface | Evidence |
+|---|---|
+| Domain / in-memory port | Native properties for broad laws; examples for finite observations; public-state preservation |
+| Real adapter / storage | Real dependency and persistent/translation laws; targeted failure observations |
+| Protocol / crash / race | Authentic capture and synchronized promised checkpoints; model evidence is supplementary |
+| Feature E2E | Business-readable journey through production composition, built/installed artifact where consumed |
 
-| Layer | Speed | Real adapter? | Input mode | Assertion mode |
-|---|---|---|---|---|
-| Unit | <1ms | no | PBT full (`@given` 100+ examples) | state-delta + Universe |
-| In-memory acceptance | ~10ms | no (in-memory doubles) | PBT example-pinned if AC tagged `@property`; example-only otherwise | state-delta + Universe |
-| Subprocess / FS acceptance | ~100ms | yes (real adapter) | representative example-only, sad paths enumerated; + budgeted semantic-PBT projection at nearest cheap law-bearing seam when a declared law fires (Mandate 9 carve-out) | state-delta + Universe |
-| Integration | ~100ms | yes | representative example-only, sad-path coverage; + budgeted semantic-PBT projection when a declared law fires (Mandate 9 carve-out) | traditional OK; state-delta optional |
-| WS `@wiring_e2e` | 1-3s | yes (real stack) | example-only (1-2 representative) — wiring proof, never a law-bearing generative surface | traditional |
-| E2E | seconds | full real | example-only | traditional |
-
-The "budgeted semantic-PBT projection" cells are additive to, never a replacement for, the representative example on that row: the example still proves wiring through the real/composed port, the property proves the declared law at the nearest deterministic surface. See Mandate 9's carve-out for the siting and budget rules.
-
-**Polyglot note**: the Universe / state-delta and PBT laws are
-language-agnostic — the prose is the contract, and Python imports
-(`nwave_ai.state_delta`, Hypothesis) are illustrative. Author the same
-semantic property with the host language's idiomatic generator,
-shrinker/replay, assertion, and runner. Never translate syntax and silently
-weaken the quantified law.
-
-## Polyglot Adapter Matrix
-
-Contract layer (3 Pillars + Mandates 8-11) is language-agnostic. The eight
-distributed `nw-pbt-*` adapter families own the implementation bindings below;
-DISTILL selects exactly one from repository evidence. Missing toolchain
-availability makes that runtime probe `SKIP`/`INDETERMINATE`; it never selects
-Python as a substitute.
-
-| Adapter family | Languages | PBT binding | Test/step idiom |
-|---|---|---|---|
-| `nw-pbt-python` | Python | Hypothesis | pytest / pytest-bdd |
-| `nw-pbt-typescript` | TypeScript, JavaScript | fast-check | Vitest/Jest; scenario + specification modules |
-| `nw-pbt-dotnet` | C#, F# | CsCheck/FsCheck | xUnit/NUnit; partial classes or modules |
-| `nw-pbt-jvm` | Java, Kotlin, Scala | jqwik/Kotest/ScalaCheck | JUnit/Kotest/ScalaTest companion tests |
-| `nw-pbt-rust` | Rust | proptest | cargo test; scenario + specification modules |
-| `nw-pbt-go` | Go | rapid | testing; `*_scenarios_test.go` + `*_specifications_test.go` |
-| `nw-pbt-haskell` | Haskell | QuickCheck/Hedgehog | Hspec/Tasty property modules |
-| `nw-pbt-erlang-elixir` | Erlang, Elixir | PropEr/PropCheck/StreamData | EUnit/Common Test/ExUnit property modules |
-
-**State-delta port** per language lives at the project-local path
-`tests/common/state_delta.<ext>` (apply-if-absent on first DISTILL in the
-project). Python port is canonical at `nwave_ai/state_delta/`. Other-language
-ports are templated bootstraps from the per-lang Tier-2 expansion catalogs.
-
-**Universe assertion contract** is identical across languages: every
-state-mutating test at layers 1-3 calls `assert_state_delta(before, after,
-universe, expected)` (Python signature; idiomatic translations preserve the
-same four parameters). Universe declares observable port-exposed names;
-expected maps each declared key to a predicate. Anything in universe not in
-expected MUST remain unchanged — fail-closed.
-
-**Per-lang predicate library** mirrors the Python set: `set_to`, `unchanged`,
-`appended_with`, `containing`, `normalized_to`, `idempotent_after`,
-`legacy_healed`, `prepended_with`. Each language port implements all eight
-with the same semantic contract.
+Use the nearest honest boundary preserving the observation. Load matching
+`nw-pbt-*` native guidance only when needed and available; these skill families
+are examples, not a closed allowlist or compulsory nWave adapters. Native tool
+absence is explicit, never a Python fallback. Architectural and contract checks
+follow the applicability and executable selections in the generated DESIGN
+grammar (`nw-design`), and remain required through primary-oracle realignment.

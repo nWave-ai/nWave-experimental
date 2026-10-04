@@ -16,12 +16,12 @@ does not actually persist.
 
 from __future__ import annotations
 
+import shlex
 import sys
 from pathlib import Path
 
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     accepted_values,
-    asked,
     block,
     git,
     nexts,
@@ -66,6 +66,27 @@ def design_answer() -> dict:
                 "acceptance_supports": [SUPPORT],
                 "verification": [[sys.executable, "-m", "pytest", ORACLE]],
                 "oracle_verification_index": 0,
+                "architectural_tests": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture has no structural boundary change.",
+                },
+                "contract_tests": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture changes no shared contract.",
+                },
+                "prefactoring": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture requires no preservation move.",
+                },
+                "agreement_analysis": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture has no affected agreement.",
+                },
+                "reuse_analysis": {"candidates": []},
+                "impact_closure": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                },
             },
         }
     }
@@ -123,28 +144,22 @@ def test_the_next_step_is_derived_from_what_the_state_already_carries(
         stdin=REQUEST,
     )
     assert code == 0, out + err
-    spent = len(asked(turns))
     unbound = nexts(step("state", "--repo-root", str(root))[1])
-    assert unbound == [f"des design --repo-root {root} --value 1"]
-    assert len(asked(turns)) == spent
+    assert [shlex.split(advice)[1] for advice in unbound] == ["design"]
 
     code, out, err = step(
         "design", "--repo-root", str(root), "--value", "1", answers=[design_answer()]
     )
     assert code == 0, out + err
-    spent = len(asked(turns))
     bound = nexts(step("state", "--repo-root", str(root))[1])
-    assert bound == [f"des oracle --repo-root {root} --value 1"]
-    assert len(asked(turns)) == spent
+    assert [shlex.split(advice)[1] for advice in bound] == ["oracle"]
 
     code, out, err = step(
         "oracle", "--repo-root", str(root), "--value", "1", answers=[oracle_answer()]
     )
     assert code == 0, out + err
-    spent = len(asked(turns))
     with_oracle = nexts(step("state", "--repo-root", str(root))[1])
-    assert with_oracle == [f"des craft --repo-root {root} --value 1"]
-    assert len(asked(turns)) == spent
+    assert [shlex.split(advice)[1] for advice in with_oracle] == ["craft"]
 
 
 def test_the_projection_writes_nothing_and_runs_no_step_it_names(

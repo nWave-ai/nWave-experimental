@@ -19,28 +19,33 @@ roles:
       - nw-mutation-test
       - nw-algebraic-design-protocol
     on_demand:
+      nw-code-design-oo: the bound DESIGN paradigm is object_oriented; procedural work preserves its imperative script without it
       nw-refactor: changing existing responsibilities or removing a demonstrated code smell while preserving behavior
       nw-code-analysis-port: resolving repository symbols, dependencies, reuse or callers before changing existing code
       nw-certainty-by-construction: any rule the code enforces about data -- a range, a duration, a required pairing, a state that excludes another; decide construction vs validation BEFORE writing the check
       nw-type-level-design: API design or implementation needs a valid-state model, opaque smart constructor, evidence-preserving result, or a finite state/capability transition
+      nw-tdd-methodology-paradigm: choosing the native observation treatment for a changed behavior
+      nw-cross-cutting-invariants: an applied design rule or authority cites a cross-cutting invariant clause id the change must honor
   nw-functional-software-crafter:
     catalog_only:
       - nw-mutation-test
-      - nw-algebraic-design-protocol
     on_demand:
       nw-refactor: changing existing responsibilities or removing a demonstrated code smell while preserving behavior
       nw-code-analysis-port: resolving repository symbols, dependencies, reuse or callers before changing existing code
       nw-fp-algebra-driven-design: implementing algebraic operations or preserving a declared law
       nw-fp-domain-modeling: implementing domain state, validated construction or error and effect boundaries
+      nw-algebraic-design-protocol: a law or observation is contested or must be found before choosing constructors
       nw-certainty-by-construction: any rule the code enforces about data -- a range, a duration, a required pairing, a state that excludes another; decide construction vs validation BEFORE writing the check
       nw-type-level-design: API needs a valid-state model, opaque smart constructor, evidence-preserving result, or a finite state/capability transition; use advanced Haskell material only for a GHC target
+      nw-tdd-methodology-paradigm: choosing the native observation treatment for a changed behavior
   nw-software-crafter-reviewer:
     reviewer_of:
       - nw-software-crafter
       - nw-functional-software-crafter
     phase:
-      nw-sc-review-dimensions: review start
-      nw-at-completeness-check: AT-density review
+      nw-at-completeness-check: judging whether the immutable oracle covers the original Request and whether candidate-bound verification evidence is sufficient
+    on_demand:
+      nw-fp-algebra-driven-design: judging whether an implementation preserves its declared algebraic operations and laws
   nw-solution-architect:
     catalog_only:
       - nw-cross-cutting-context-residency
@@ -54,7 +59,6 @@ roles:
       nw-domain-driven-design: domain boundary or aggregate responsibility claim
       nw-formal-verification-tlaplus: TLA+/TLC state-machine modeling
       nw-sa-critique-dimensions: self-reviewing an architecture authority
-      nw-code-analysis-port: resolving repository structural facts
     on_demand:
       nw-po-scenario-exploration: presenting model-generated behavioral or non-functional scenarios for human architectural review
       nw-algebraic-design-protocol: every DESIGN authority before deciding public constructors, observations, or laws
@@ -67,8 +71,6 @@ roles:
   nw-solution-architect-reviewer:
     reviewer_of:
       - nw-solution-architect
-    phase:
-      nw-sar-critique-dimensions: architecture review
     on_demand:
       nw-design: judging whether feature scope, shared decisions or slice scope are adequate
   nw-ddd-architect:
@@ -82,11 +84,9 @@ roles:
   nw-ddd-architect-reviewer:
     reviewer_of:
       - nw-ddd-architect
-    phase:
-      nw-ddd-strategic: review start
-      nw-ddd-architect: review start
-      nw-ddd-tactical: aggregate review
   nw-platform-architect:
+    phase:
+      nw-devops: preparing operational DEVOPS authority about deployment, recovery, environments, observability or CI constraints
     on_demand:
       nw-algebraic-design-protocol: contested design or law
       nw-certainty-by-construction: invalid-state or preservation claim
@@ -102,10 +102,6 @@ roles:
   nw-platform-architect-reviewer:
     reviewer_of:
       - nw-platform-architect
-    phase:
-      nw-par-critique-dimensions: dimension review
-      nw-par-review-criteria: dimension review
-      nw-review-output-format: output generation
   nw-acceptance-designer:
     catalog_only:
       - nw-ad-critique-dimensions
@@ -130,14 +126,22 @@ roles:
   nw-acceptance-designer-reviewer:
     reviewer_of:
       - nw-acceptance-designer
-    phase:
-      nw-ad-critique-dimensions: review start
-      nw-at-completeness-check: review start
+    on_demand:
+      nw-tdd-methodology-walking-skeleton: the candidate contains a walking-skeleton scenario, or you judge whether a driven adapter has real-I/O coverage
+      nw-bdd-methodology: judging whether the candidate's scenarios cover each declared obligation, including its error paths
   nw-user-examiner:
     reviewer_of: []
   nw-agent-builder:
     on_demand:
-      nw-ab-optimize-skill: existing skill requested for optimization; procedure measures eligibility
+      nw-ab-create-agent: the selected builder route creates a new agent
+      nw-ab-migrate-monolith: the selected builder route migrates an existing agent monolith
+      nw-ab-validate-spec: the selected builder route validates an agent specification, either standalone or composed by create, migrate, or merge
+      nw-ab-merge-agents: the selected builder route consolidates two agents into one
+      nw-ab-optimize-command: the selected builder route optimizes an existing command definition
+      nw-command-design-patterns: the selected builder route optimizes an existing command definition
+      nw-command-optimization-workflow: the selected builder route optimizes an existing command definition
+      nw-agent-evals: the selected builder route evaluates agent or skill behavior, or an existing projection is needed to validate a create, migrate, or merge result
+      nw-ab-optimize-skill: an existing skill is requested for optimization directly or selected for optimization during agent migration; the procedure measures eligibility
   nw-agent-builder-reviewer:
     reviewer_of:
       - nw-agent-builder

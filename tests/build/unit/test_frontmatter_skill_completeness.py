@@ -11,6 +11,7 @@ from pathlib import Path
 
 from scripts.validation.validate_skill_references import (
     check_frontmatter_completeness,
+    check_preloaded_skill_directives,
     check_references,
 )
 
@@ -86,6 +87,28 @@ def test_real_nwave_tree_has_zero_frontmatter_completeness_drift():
     owns every loaded skill (regression guard for WS-11 D1)."""
     nwave_dir = Path(__file__).resolve().parents[3] / "nWave"
     assert check_frontmatter_completeness(nwave_dir) == []
+
+
+def test_body_directive_for_a_preloaded_skill_is_flagged(tmp_path):
+    """CONTRACT_SHAPE: bounded-change. Outcome: an agent that preloads nw-foo
+    through frontmatter and still tells the role to load it is reported."""
+    repo = _make_repo(tmp_path, frontmatter_skills=["nw-foo"])
+    duplicates = check_preloaded_skill_directives(repo)
+    assert any("nw-foo" in entry and "nw-bar.md" in entry for entry in duplicates)
+
+
+def test_directive_for_a_skill_not_preloaded_is_not_a_duplicate(tmp_path):
+    """CONTRACT_SHAPE: bounded-change. Outcome: a load directive for a skill
+    the role does not preload (a conditional load) is not a duplicate."""
+    repo = _make_repo(tmp_path, frontmatter_skills=["nw-other"])
+    assert check_preloaded_skill_directives(repo) == []
+
+
+def test_real_nwave_tree_directs_no_preloaded_skill_twice():
+    """CONTRACT_SHAPE: unbounded-preservation. Outcome: no shipped agent body
+    repeats a load directive for a skill its frontmatter already preloads."""
+    nwave_dir = Path(__file__).resolve().parents[3] / "nWave"
+    assert check_preloaded_skill_directives(nwave_dir) == []
 
 
 def test_real_nwave_tree_has_no_false_skill_loading_doctrine():

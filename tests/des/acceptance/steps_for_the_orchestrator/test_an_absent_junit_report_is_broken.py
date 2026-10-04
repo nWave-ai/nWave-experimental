@@ -1,10 +1,10 @@
 """Public oracle: a pytest vector ASKED for a junit report and given none is broken.
 
-THE INCIDENT THIS REFUSES. `des oracle` appends `--junitxml=<report>` to every
-vector it executes, then reads the report to tell a genuine assertion failure
-from an oracle that never reached its own assertion. When the vector names an
-interpreter that carries no pytest, the process exits `1` with `No module named
-pytest` and writes NO report -- and exit-status-only scored that `red`, the
+THE INCIDENT THIS REFUSES. `des oracle` requests `--junitxml=<report>` through
+the environment of declared Python vectors, then reads the report to tell a
+genuine assertion failure from an oracle that never reached its own assertion.
+When the vector names an interpreter that carries no pytest, the process exits
+`1` with `No module named pytest` and writes NO report -- and exit-status-only scored that `red`, the
 ADMITTED answer, so the false RED bought a craft turn against an oracle whose
 assertions were never observed (EVIDENCE.md row 6, measured against the
 unmodified product).
@@ -21,13 +21,11 @@ the value is a boundary and a boundary needs both of its sides:
    written on «no report» instead of on «a report was asked for».
 3. REPORT CONTROL -- a pytest vector that DOES produce a report keeps
    `junit-report` and its verdicts.
-4. WRAPPER CONTROL -- a vector whose argv names no pytest yet reaches pytest
-   through the inherited variable still produces a report and is still judged on
-   it. The request stays broader than the judgement, deliberately: a produced
-   report is always judged, an absent one is damning only where the runner can
-   see it asked. The wrapper narrows the inherited variable to the runner's own
-   `--junitxml=` word, so the arm measures that ask and never the options of
-   whatever outer session happens to be executing this oracle.
+4. WRAPPER CONTROL -- a declared Python vector whose argv names no pytest yet
+   reaches pytest through a wrapper still produces an authentic report and is
+   judged on it. A produced report is always judged; absence is damning where
+   pytest or an explicit report output was declared. Genuinely native vectors
+   receive no Python runtime preparation or pytest option injection.
 
 THE PYTEST-LESS INTERPRETER IS BUILT, NEVER FOUND. Depending on a host `python3`
 or on `PATH` order would measure the developer's box instead of the law.
@@ -35,6 +33,7 @@ or on `PATH` order would measure the developer's box instead of the law.
 
 from __future__ import annotations
 
+import json
 import sys
 import venv
 from pathlib import Path
@@ -48,7 +47,6 @@ if str(_REPO_ROOT) not in sys.path:
 
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     accepted_values,
-    asked,
     block,
     git,
     nexts,
@@ -58,7 +56,7 @@ from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
 REQUEST = "one Request whose single value carries an executable public oracle"
 ORACLE = "tests/acceptance/test_value.py"
 SUPPORT = "tests/acceptance/support.py"
-WRAPPER = "tests/acceptance/wrap.sh"
+WRAPPER = "tests/acceptance/wrap.py"
 TARGET = "src/product/value.py"
 
 #: An oracle that FAILS on its own assertion, which is the admitted answer before
@@ -73,34 +71,20 @@ JOURNEY_ORACLE = (
 
 
 def wrapper_body() -> str:
-    """A vector whose argv names no pytest and which nonetheless runs pytest.
+    """An explicitly Python wrapper whose argv never names pytest.
 
-    The interpreter is BAKED IN rather than read from the environment: this
-    script's whole job is to be unrecognisable to the runner's argv predicate
-    while still reaching a real pytest session, and an interpreter resolved off
-    `PATH` inside the child would make the arm measure the host instead.
-
-    THE INHERITED VARIABLE IS NARROWED TO THE ASK, and this is the arm's premise
-    rather than a convenience.  `_executed_oracle_set` CONCATENATES the runner's
-    `--junitxml=<report>` onto whatever `PYTEST_ADDOPTS` the OUTER session
-    already exported, so a wrapper that forwards the variable whole also
-    forwards the outer session's own options -- e.g. a `-p <plugin>` naming a
-    probe that is importable only under the outer interpreter.  That kills the
-    inner session before it starts and the arm would then measure the harness
-    that happens to be running it, not the law.  Keeping ONLY the
-    `--junitxml=` word preserves exactly what this control asserts -- the
-    runner's ask reaching a session whose argv names no pytest, and a report
-    produced from it -- while making the arm indifferent to who invoked it.
+    Keep only the runner's report request, not outer-session pytest plugins.
+    The inherited product import path remains intact across the real exec.
     """
     return (
-        "#!/bin/sh\n"
-        "kept=''\n"
-        "for word in $PYTEST_ADDOPTS; do\n"
-        '  case "$word" in --junitxml=*) kept="$kept $word" ;; esac\n'
-        "done\n"
-        'PYTEST_ADDOPTS="$kept"\n'
-        "export PYTEST_ADDOPTS\n"
-        f'exec "{sys.executable}" -m pytest "$@" -q\n'
+        "import os\n"
+        "import shlex\n"
+        "import sys\n"
+        "os.environ['PYTEST_ADDOPTS'] = shlex.join([\n"
+        "    word for word in shlex.split(os.environ.get('PYTEST_ADDOPTS', ''))\n"
+        "    if word.startswith('--junitxml=')\n"
+        "])\n"
+        "os.execv(sys.executable, [sys.executable, '-m', 'pytest', *sys.argv[1:], '-q'])\n"
     )
 
 
@@ -117,6 +101,27 @@ def design_facts(verification: list[list[str]]) -> dict:
                 "acceptance_supports": [SUPPORT],
                 "verification": verification,
                 "oracle_verification_index": 0,
+                "architectural_tests": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture has no structural boundary change.",
+                },
+                "contract_tests": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture changes no shared contract.",
+                },
+                "prefactoring": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture requires no preservation move.",
+                },
+                "agreement_analysis": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture has no affected agreement.",
+                },
+                "reuse_analysis": {"candidates": []},
+                "impact_closure": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                },
             },
         }
     }
@@ -201,7 +206,7 @@ def test_a_pytest_vector_that_produced_no_report_is_broken_and_refused(
     assert "run the printed vector" in lines["HOW"].lower(), lines["HOW"]
 
     # Refused BEFORE a craft turn is bought, and nothing is settled.
-    assert asked(turns)[-1] == "nw-acceptance-designer", asked(turns)
+
     assert not any(ref.endswith("/oracle") for ref in turn_refs(root)), turn_refs(root)
     assert not any("des craft" in item for item in nexts(out)), nexts(out)
 
@@ -220,7 +225,6 @@ def test_a_vector_that_asked_for_no_report_keeps_exit_status_only(
     assert "verdict=indeterminate" in lines["ORACLE-RED"], lines["ORACLE-RED"]
     assert "axis=exit-status-only" in lines["ORACLE-RED"], lines["ORACLE-RED"]
     assert "exit=1" in lines["ORACLE-RED"], lines["ORACLE-RED"]
-    assert nexts(out) == [f"des craft --repo-root {root} --value 1"], nexts(out)
 
 
 def test_a_pytest_vector_that_produced_a_report_is_still_judged_on_it(
@@ -245,19 +249,22 @@ def test_a_pytest_vector_that_produced_a_report_is_still_judged_on_it(
 def test_a_wrapper_vector_naming_no_pytest_still_earns_the_report_axis(
     root: Path, step, turns: Path
 ) -> None:
-    """CONTROL: the request stays broader than the judgement, deliberately.
-
-    This vector's argv names no pytest, so the runner cannot see it ask -- yet
-    the runner's `--junitxml=` still reaches the session through the inherited
-    variable and a report IS produced. Judging it on anything but that report
-    would demote every wrapper spelling to `exit-status-only`, the opposite of
-    this value.
-    """
+    """A declared Python wrapper preserves import lineage and its real report."""
+    module = root / "src" / "existing_answer.py"
+    module.parent.mkdir(parents=True, exist_ok=True)
+    module.write_text("ANSWER = 41\n")
+    git(root, "add", "src/existing_answer.py")
+    git(root, "commit", "-qm", "Existing product imported through the wrapper")
     code, out, err = run_oracle(
         root,
         step,
-        [["bash", WRAPPER, ORACLE]],
-        authored(RED_ORACLE, {WRAPPER: wrapper_body()}),
+        [[sys.executable, WRAPPER, ORACLE]],
+        authored(
+            "def test_value():\n"
+            "    from existing_answer import ANSWER\n"
+            "    assert ANSWER == 42\n",
+            {WRAPPER: wrapper_body()},
+        ),
     )
 
     assert code == 0, out + err
@@ -265,6 +272,16 @@ def test_a_wrapper_vector_naming_no_pytest_still_earns_the_report_axis(
     assert lines["DELIVERY-OUTCOME"] == "Success", lines
     assert "axis=junit-report" in lines["ORACLE-RED"], lines["ORACLE-RED"]
     assert "axis=junit-report-absent" not in lines["ORACLE-RED"], lines["ORACLE-RED"]
+    locator = (
+        lines["ORACLE-RED"]
+        .split(" native-evidence=", 1)[1]
+        .split(" diagnostic=", 1)[0]
+        .strip()
+    )
+    record = json.loads((root / locator).read_text())[0]
+    assert record["argv"] == [sys.executable, WRAPPER, ORACLE]
+    assert record["exit"] == 1
+    assert "assert 41 == 42" in record["stdout"], record
 
 
 if __name__ == "__main__":

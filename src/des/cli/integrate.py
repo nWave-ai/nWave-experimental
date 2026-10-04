@@ -28,16 +28,10 @@ from des.cli.step_next import after_step, moves_after_refusal
 from des.cli.step_terminal import (
     NOTHING_OWED,
     StepRefusal,
-    read_request,
     refuse,
     resolved_root,
     succeed,
 )
-
-
-#: The form that reads the orchestrator's own reason from stdin, spelled like
-#: every other reason this surface takes.
-STDIN = "-"
 
 
 #: One direction, because this step buys no turn: there is never a role's
@@ -52,7 +46,6 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="des integrate")
     add_repo_root_argument(parser, "--repo-root", type=Path, required=True)
     parser.add_argument("--candidate", required=True)
-    parser.add_argument("--on-my-evidence", default=None)
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     root = resolved_root(args.repo_root)
     if isinstance(root, StepRefusal):
@@ -61,22 +54,7 @@ def main(argv: list[str] | None = None) -> int:
             "des integrate --repo-root <root> --candidate <sha> -- after the HOW above",
         )
     own = "des integrate --repo-root {root} --candidate " + args.candidate
-    evidence = args.on_my_evidence
-    if evidence == STDIN:
-        read = read_request()
-        if isinstance(read, StepRefusal):
-            return refuse(
-                StepRefusal(
-                    "InvalidEvidence",
-                    "`--on-my-evidence -` reads your reason from stdin, and "
-                    "stdin carried no non-empty strict-UTF-8 text",
-                    "pipe an optional host rationale into this compatibility input "
-                    "on stdin",
-                ),
-                (own.format(root=root) + " --on-my-evidence - -- after the HOW above",),
-            )
-        evidence = read
-    outcome = DeliverySteps().integrate(root, args.candidate, evidence)
+    outcome = DeliverySteps().integrate(root, args.candidate)
     if not outcome.succeeded:
         return refuse(
             StepRefusal(
@@ -88,7 +66,6 @@ def main(argv: list[str] | None = None) -> int:
             moves_after_refusal(root, own, outcome.failure.what),
             facts=list(outcome.facts),
             diagnostic=outcome.diagnostic,
-            turns_bought=outcome.turns_bought,
             role=outcome.role,
         )
     return succeed(

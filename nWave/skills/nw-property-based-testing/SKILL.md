@@ -6,9 +6,9 @@ user-invocable: false
 
 # Property-Based Testing (ACTIVE)
 
-> **PBT IS ACTIVE — NOT deprecated.** Property-based testing remains a first-class technique: the
-> **acceptance-designer authors PBT during DISTILL** (max PBT + parametrize density is a standing
-> mandate). Everything below is CURRENT.
+Property-based testing is a first-class technique for declared broad laws.
+The acceptance designer authors applicable native properties during DISTILL;
+decorator density, example counts and percentages are not quality mandates.
 
 ## Property-Based Testing (PBT)
 
@@ -59,10 +59,13 @@ when one generated observation honestly falsifies every combined law.
 
 ## Shrinking
 
-When a framework supports shrinking, it may reduce a failing input to a smaller
-counterexample; retain the case and inspect generator validity before blaming
-the SUT.
-Algorithm: find failing input -> try simpler variants -> if still fails, use as new candidate -> repeat.
+Select the project's native generator with shrinking/replay capability. On a
+deliberate defect or retained failing case, observe a useful minimized reproduction,
+retain seed/case and verify validity under the same contract. If shrinking is
+unavailable, state the limitation rather than claim it ran. Record meaningful
+branch/transition distribution, including constructive rare cases; generation
+counts alone do not prove reachability. Do not change domain boundaries (for
+example integer range) just to suit a storage engine or generator.
 
 ## Cross-layer properties (ADR-SSOT-002 §6a)
 
@@ -87,12 +90,12 @@ predict a live vendor or replace real-boundary integration evidence.
 
 ## When PBT Adds Value
 HIGH value: algorithms | data structures | serialization | business rules (validation, calculations) | protocols/state machines | **unbounded input domain** with universal invariant | deterministic adapter failure-translation and recovery-model properties under a controlled fault model (see Cross-layer properties above).
-LOW value: simple CRUD | UI logic | probing live external API/vendor behavior | **closed-world finite domain** (use parametrize instead — see falsifier-gate below).
+LOW value: simple CRUD | UI logic | probing live external API/vendor behavior | **closed-world finite domain** (use the native finite-case/table facility instead — see falsifier-gate below).
 PBT complements example-based testing, doesn't replace it, and never substitutes for real-boundary integration tests against the actual external system.
 
-### Falsifier-gate: closed-world finite → parametrize, NOT PBT
+### Falsifier-gate: closed-world finite → native finite-case/table, NOT PBT
 
-For a finite enumerable domain, use parametrize/dict iteration: shrinking and
+For a finite enumerable domain, use the native finite-case/table facility or map iteration: shrinking and
 example budgets add no coverage. Reserve PBT for a broad domain and a stated
 universal law; see `nw-test-optimization` for the paradigm match.
 
@@ -103,6 +106,10 @@ and preserve it through refactoring. A failure reopens generator, observation
 and implementation rather than assigning blame by default.
 
 ## State-Delta + Hypothesis Integration
+
+This section is a Python-project example, not a product-stack requirement.
+Use native discovery and incumbent helpers per `nw-test-design-mandates`;
+the optional helper below is not an adoption prerequisite.
 
 Combines the delta-first paradigm (see `nw-tdd-methodology::Delta-First Test
 Paradigm`) with Hypothesis shrinking for production code branching on input
@@ -147,7 +154,7 @@ def test_path_injection_all_shapes(initial_path):
 
 - Production code has multiple branches over input shape.
 - Shrinking and surrounding-state verification are both needed.
-- One `@given` honestly replaces the matching parametrized cases.
+- One property honestly replaces the matching finite cases.
 
 ### Reference
 

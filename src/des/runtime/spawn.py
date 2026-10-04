@@ -56,13 +56,10 @@ import shutil
 import signal
 import subprocess
 import threading
+import time
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
+from typing import Any
 
 
 # --------------------------------------------------------------------------- #
@@ -333,12 +330,42 @@ class SpawnTimeout(subprocess.TimeoutExpired):
         )
 
 
+class SpawnQuiescenceError(subprocess.SubprocessError):
+    """An owned native process group has not been observed to exit."""
+
+    def __init__(self, pid: int, stdout: Any, stderr: Any):
+        super().__init__(
+            f"process group {pid} remains present or unobservable after termination; "
+            "establish that its writers stopped before reusing the workspace"
+        )
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def _require_process_group_exit(pid: int, stdout: Any, stderr: Any) -> None:
+    # Signal delivery and orphan reaping are asynchronous. A present group
+    # is not an exit witness; give the kernel a bounded chance to reap it.
+    deadline = time.monotonic() + 1.0
+    while True:
+        try:
+            os.killpg(pid, 0)
+        except ProcessLookupError:
+            return
+        except OSError:
+            raise SpawnQuiescenceError(pid, stdout, stderr) from None
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise SpawnQuiescenceError(pid, stdout, stderr)
+        time.sleep(min(0.01, remaining))
+
+
 def spawn(
     argv: Any,
     *,
     timeout: float | None = None,
     timeout_env: str | None = None,
     reap_process_group: bool = False,
+    quiesce_process_group: bool = False,
     **subprocess_kwargs: Any,
 ) -> subprocess.CompletedProcess[Any]:
     """Run a child process with an explicit stdin and an explicit bound.
@@ -367,6 +394,10 @@ def spawn(
     its own child. Tiers that spawn a first-party, leaf-shaped child keep the
     plain semantics; the agent tier opts in.
 
+    ``quiesce_process_group`` also requests group cleanup after normal exit,
+    for callers about to release mutable shared resources. It does not confine
+    daemons which deliberately escape the process group.
+
     Raises ``SpawnTimeout`` (a ``subprocess.TimeoutExpired``) when the bound
     fires.
     """
@@ -374,11 +405,15 @@ def spawn(
     if "stdin" not in subprocess_kwargs and "input" not in subprocess_kwargs:
         subprocess_kwargs["stdin"] = subprocess.DEVNULL
 
-    run: Callable[..., subprocess.CompletedProcess[Any]] = (
-        _run_reaped if reap_process_group else subprocess.run
-    )
     try:
-        return run(argv, timeout=bound, **subprocess_kwargs)
+        if reap_process_group or quiesce_process_group:
+            return _run_reaped(
+                argv,
+                timeout=bound,
+                quiesce_process_group=quiesce_process_group,
+                **subprocess_kwargs,
+            )
+        return subprocess.run(argv, timeout=bound, **subprocess_kwargs)
     except subprocess.TimeoutExpired as expired:
         raise SpawnTimeout(
             argv,
@@ -390,7 +425,11 @@ def spawn(
 
 
 def _run_reaped(
-    argv: Any, *, timeout: float, **subprocess_kwargs: Any
+    argv: Any,
+    *,
+    timeout: float,
+    quiesce_process_group: bool = False,
+    **subprocess_kwargs: Any,
 ) -> subprocess.CompletedProcess[Any]:
     """``subprocess.run`` semantics, plus a process-group reap on the bound.
 
@@ -431,6 +470,7 @@ def _run_reaped(
         # cannot cover (SIGTERM raises no exception here; a SIGINT in the main
         # thread never unwinds this frame when it runs in a worker thread).
         _register_active_process_group(child.pid)
+        stdout = stderr = None
         try:
             try:
                 stdout, stderr = child.communicate(stdin_input, timeout=timeout)
@@ -447,7 +487,11 @@ def _run_reaped(
                 _reap_and_drain(child)
                 raise
         finally:
+            if quiesce_process_group:
+                _reap_process_group(child.pid)
             _forget_active_process_group(child.pid)
+            if quiesce_process_group:
+                _require_process_group_exit(child.pid, stdout, stderr)
 
     completed = subprocess.CompletedProcess(argv, child.returncode, stdout, stderr)
     if check:

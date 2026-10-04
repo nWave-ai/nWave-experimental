@@ -1,33 +1,17 @@
-"""``des verify-red-green`` -- the P0.2 RED->GREEN non-vacuity seal.
+"""Optional content-bound RED->GREEN observation for JUnit-capable recipes.
 
-Expectation (evolution-plan P0.2): an AT that passes WITHOUT the
-implementation cannot count as coverage. The transition RED (observed,
-fail-for-right-reason) -> GREEN (observed, same unchanged test content) is
-mechanical proof the test actually witnesses the implementation. Kills the
-always-pass/never-red class outright; weak-but-once-red assertions are the
-negative-AT mandate's job (P0.3), stated honestly in the manifesto.
+The caller declares the project's real focused command with ``--run-cmd``;
+``{test_file}`` and ``{junit_out}`` are literal argv substitutions, not shell
+execution. There is no runner inference from filenames or packaging tools.
+Only genuine per-test JUnit outcomes can be compared by this adapter. A native
+runner that does not produce that format remains indeterminate here; ordinary
+DES delivery continues to use its already-declared native verification vectors.
 
-Two phases, one seal record per test file
-(``.nwave/telemetry/red-green/<relpath-slug>.json``):
-
-  --record-red   run the tests NOW (pre-implementation); REFUSE (exit 1) if
-                 nothing fails -- an all-passing pre-implementation AT set
-                 witnesses nothing. Store per-test outcomes + the test file's
-                 content sha256.
-  --verify-green run the tests NOW (post-implementation); REFUSE unless
-                 (a) a red record exists, (b) the test content hash is
-                 UNCHANGED (a test edited after RED voids its own evidence --
-                 the crafter-touched-the-test class), (c) every red test now
-                 passes. Report the SEALED set (red->green: real coverage)
-                 and the PINS set (green->green: regression pins, legitimate
-                 but not counted as new-behavior coverage).
-
-Outcome contract: JUnit XML (``--junitxml`` / equivalent) -- deliberately
-runner-agnostic: pytest, cargo-nextest and vitest all emit it. The run
-command is declared (``--run-cmd``, ``{test_file}`` and ``{junit_out}``
-placeholders); default is the pytest form. Degrade-LOUD: no runner / no
-record / malformed XML -> exit 2 INDETERMINATE with what/why/how, never a
-silent pass.
+An unchanged test's observed failure followed by success is non-vacuity
+evidence, not mechanical proof of a business failure's cause or completeness.
+The host/reviewer owns that interpretation. Report errors are not assertion RED.
+Missing/malformed reports, empty observations and contradictory process/report
+outcomes never create a seal.
 """
 
 from __future__ import annotations
@@ -51,24 +35,6 @@ from des.domain.telemetry_paths import TelemetrySubtree, subtree_dir
 
 
 _SEAL_DIR = subtree_dir(Path(), TelemetrySubtree.RED_GREEN)
-# Fix B (enabling change, docs/feature/fix-seal-keys-on-nodeid-not-docstring):
-# ``-p no:pspec`` isolates the seal run from pytest-pspec, whose UNGUARDED
-# ``pytest_collection_modifyitems`` rewrites ``item._nodeid`` to embed the
-# test function's docstring on every run, not only ``--pspec`` runs. This is
-# a denylist mitigation, not the fix -- it makes the shape guard below
-# (Fix A) usable on THIS repo's pytest path; it does not, by itself, protect
-# against the NEXT nodeid-mutating plugin.
-_PYTEST_PLUGIN_ISOLATION = ("-p", "no:pspec")
-_DEFAULT_RUN_CMD = (
-    sys.executable,
-    "-m",
-    "pytest",
-    *_PYTEST_PLUGIN_ISOLATION,
-    "{test_file}",
-    "--junitxml={junit_out}",
-    "-q",
-    "--tb=no",
-)
 _RUN_TIMEOUT_SECONDS = 600
 
 _EXIT_OK = 0
@@ -84,59 +50,6 @@ _EXIT_INDETERMINATE = 2
 # whether the number of raw <testcase> elements equals the number of
 # distinct classname::name identities derived from them. See the collapse-
 # refusal block in ``_run_and_collect`` below.
-
-
-def _has_tool_uv_table(pyproject: Path) -> bool:
-    """Filesystem-only, no shelling out (GDP-7): scan pyproject.toml text for
-    a ``[tool.uv]`` table header."""
-    if not pyproject.is_file():
-        return False
-    try:
-        text = pyproject.read_text()
-    except OSError:
-        return False
-    return any(line.strip() == "[tool.uv]" for line in text.splitlines())
-
-
-_NON_PYTHON_ROOT_MANIFESTS = ("Cargo.toml", "go.mod", "package.json")
-
-
-def _default_python_eligibility(repo: Path, test_file: Path) -> str | None:
-    """Return why the implicit pytest command is unsafe, else ``None``.
-
-    The default is deliberately narrow: a Python test path plus Python project
-    configuration is enough only when the root does not also declare another
-    language.  A polyglot root has no honest implicit runner after the generic
-    resolver's removal.
-    """
-    if test_file.suffix != ".py":
-        return f"the declared test path is not Python: {test_file.name}"
-    if not ((repo / "pyproject.toml").is_file() or (repo / "pytest.ini").is_file()):
-        return "the project declares neither pyproject.toml nor pytest.ini"
-    foreign = [name for name in _NON_PYTHON_ROOT_MANIFESTS if (repo / name).is_file()]
-    if foreign:
-        return (
-            "the project is ambiguous: Python configuration coexists with "
-            + ", ".join(foreign)
-        )
-    return None
-
-
-def _default_run_cmd(repo: Path) -> tuple[str, ...]:
-    """Derive the default command for an explicitly Python project only."""
-    return _pytest_default_run_cmd(repo)
-
-
-def _pytest_default_run_cmd(repo: Path) -> tuple[str, ...]:
-    """Layer the Python-env run-prefix (uv/poetry/pipenv) on the pytest tail."""
-    tail = ("{test_file}", "--junitxml={junit_out}", "-q", "--tb=no")
-    if (repo / "uv.lock").is_file() or _has_tool_uv_table(repo / "pyproject.toml"):
-        return ("uv", "run", "pytest", *_PYTEST_PLUGIN_ISOLATION, *tail)
-    if (repo / "poetry.lock").is_file():
-        return ("poetry", "run", "pytest", *_PYTEST_PLUGIN_ISOLATION, *tail)
-    if (repo / "Pipfile.lock").is_file() or (repo / "Pipfile").is_file():
-        return ("pipenv", "run", "pytest", *_PYTEST_PLUGIN_ISOLATION, *tail)
-    return _DEFAULT_RUN_CMD
 
 
 def _indeterminate(what: str, why: str, how: str, cmd: object = None) -> int:
@@ -213,7 +126,7 @@ def _run_and_collect(
             for part in run_cmd
         ]
         try:
-            subprocess.run(
+            process = subprocess.run(
                 cmd,
                 cwd=repo,
                 capture_output=True,
@@ -241,12 +154,10 @@ def _run_and_collect(
                 what="no parseable JUnit XML produced",
                 why=f"{exc} — without per-test outcomes there is nothing to seal.",
                 how=(
-                    f"ensure the run command emits JUnit XML at {junit_out} "
-                    "(pytest --junitxml / cargo-nextest / vitest all can) "
-                    "-- for a pre-implementation compile failure, configure "
-                    "the project's language adapter or run command to expose "
-                    "that failure as JUnit; an unobserved compile error cannot "
-                    "be sealed as semantic RED."
+                    "use this optional adapter only when the project's real "
+                    f"focused recipe already emits JUnit at {junit_out}; otherwise "
+                    "retain native output and let the host interpret RED/GREEN. "
+                    "Do not wrap build/setup failure as assertion evidence."
                 ),
                 cmd=cmd,
             )
@@ -257,32 +168,19 @@ def _run_and_collect(
             classname = case.get("classname", "") or ""
             name = case.get("name", "") or ""
             test_id = f"{classname}::{name}"
-            failed = any(child.tag in ("failure", "error") for child in case)
+            failed = any(child.tag == "failure" for child in case)
             skipped = any(child.tag == "skipped" for child in case)
-            # A collection-error testcase (pytest shape: empty classname,
-            # <error> child) means the file did not even collect -- that is
-            # BROKEN, not RED (ADR-025: red must be a SEMANTIC failure). A
-            # broken file yields no per-test outcomes and can seal nothing.
-            if failed and not classname:
+            if any(child.tag == "error" for child in case):
                 _emit(
                     {
                         "event": "RedGreenRefused",
                         "phase": "collect",
-                        "what": "the test file is BROKEN, not RED "
-                        "(collection/import error)",
-                        "why": (
-                            "a file that fails to collect exercises nothing; "
-                            "its redness is a syntax/import accident, not a "
-                            "witnessed missing behavior."
-                        ),
-                        "how": (
-                            "reference the not-yet-implemented names INSIDE "
-                            "test bodies (RED-not-BROKEN discipline) so the "
-                            "file collects and fails semantically."
-                        ),
+                        "what": "runner report contains an error, not assertion RED",
+                        "why": "setup/build/import errors do not establish a witnessed missing behavior.",
+                        "how": "repair the declared recipe's error and observe the real test outcome.",
                     }
                 )
-                print("✗ REFUSED — BROKEN (collection error), not RED")
+                print("REFUSED — runner error, not assertion RED")
                 return _EXIT_REFUSED
             if skipped:
                 continue
@@ -294,6 +192,15 @@ def _run_and_collect(
             # silently overwrite an earlier FAIL (GDP-6, backlog #105).
             outcomes[test_id] = (
                 "fail" if (failed or outcomes.get(test_id) == "fail") else "pass"
+            )
+        if (process.returncode == 0 and "fail" in outcomes.values()) or (
+            process.returncode != 0 and "fail" not in outcomes.values()
+        ):
+            return _indeterminate(
+                what="process exit and per-test report disagree",
+                why=f"exit {process.returncode} does not match the reported outcomes.",
+                how="inspect native diagnostics and the recipe's genuine report; do not seal contradictory evidence.",
+                cmd=cmd,
             )
         if not outcomes:
             return _indeterminate(
@@ -542,8 +449,8 @@ def main(argv: list[str] | None = None) -> int:
         "--run-cmd",
         default=None,
         help=(
-            "Declared runner command with {test_file} and {junit_out} "
-            "placeholders (default: pytest --junitxml form)."
+            "Explicit project runner argv with {test_file} and {junit_out} "
+            "placeholders; applies only to a genuine JUnit-capable recipe."
         ),
     )
     args = parser.parse_args(argv)
@@ -578,23 +485,24 @@ def main(argv: list[str] | None = None) -> int:
                 "or an absolute path under the repo root)."
             ),
         )
-    if args.run_cmd:
+    if not args.run_cmd:
+        return _indeterminate(
+            what="no declared focused test recipe",
+            why="runner/toolchain cannot be inferred from a file extension or manifest.",
+            how="pass the project's real JUnit-capable --run-cmd, or observe its native output outside this optional adapter.",
+        )
+    try:
         run_cmd = tuple(shlex.split(args.run_cmd))
-    else:
-        ineligible = _default_python_eligibility(repo, test_file)
-        if ineligible is not None:
-            return _indeterminate(
-                what="no default test command for this project",
-                why=(
-                    "verify-red-green only supplies an implicit pytest command for "
-                    f"an unambiguous Python test layout; {ineligible}."
-                ),
-                how=(
-                    "run this project's already-declared focused test command "
-                    "outside verify-red-green; this CLI will not infer pytest."
-                ),
-            )
-        run_cmd = _default_run_cmd(repo)
+    except ValueError as exc:
+        return _indeterminate(
+            "invalid --run-cmd", str(exc), "declare a correctly quoted argv recipe."
+        )
+    if not run_cmd:
+        return _indeterminate(
+            "empty --run-cmd",
+            "there is no executable.",
+            "declare the real focused recipe.",
+        )
     if args.record_red:
         return _record_red(repo, test_file, run_cmd)
     return _verify_green(repo, test_file, run_cmd)

@@ -98,10 +98,7 @@ def test_public_evolution_uses_default_global_and_project_destinations_and_retri
         and (default_root / DEFAULT).read_bytes() == before
     )
     text = (default_root / DEFAULT).read_text()
-    assert (
-        "    ## Content, not an injected heading" in text
-        and "TURNS-BOUGHT: 0" in call(default_root, raw)[1]
-    )
+    assert "    ## Content, not an injected heading" in text
 
 
 @pytest.mark.parametrize(

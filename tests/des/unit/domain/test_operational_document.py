@@ -115,6 +115,22 @@ def test_closed_v1_input_refuses_unknown_or_incoherent_section_grammar(
         OperationalDocument.from_json(json.dumps(value))
 
 
+def test_closed_v1_input_refuses_every_independent_defect_at_once() -> None:
+    value = _input()
+    value["purpose"] = "  "
+    value["recovery"]["applicability"] = "sometimes"  # type: ignore[index]
+
+    with pytest.raises(OperationalDocumentInvalid) as refused:
+        OperationalDocument.from_json(json.dumps(value))
+
+    defects = refused.value.defects
+    assert len(defects) == 2, defects
+    assert any(defect.startswith("purpose ") for defect in defects), defects
+    assert any(defect.startswith("recovery.applicability ") for defect in defects), (
+        defects
+    )
+
+
 @pytest.mark.parametrize("surrogate_codepoint", (0xD800, 0xDCFF))
 @pytest.mark.parametrize(
     "replace",

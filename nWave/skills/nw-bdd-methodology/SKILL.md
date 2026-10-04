@@ -1,6 +1,6 @@
 ---
 name: nw-bdd-methodology
-description: BDD patterns for acceptance test design - Given-When-Then structure, scenario writing rules, pytest-bdd implementation, anti-patterns, and living documentation
+description: BDD patterns for acceptance test design - Given-When-Then as a language-neutral specification style, scenario writing rules, realization in the project's incumbent native scenario syntax (Python pytest-bdd binding labelled), anti-patterns, and living documentation
 user-invocable: false
 disable-model-invocation: true
 ---
@@ -26,6 +26,8 @@ Workflow:
 
 ## Given-When-Then Structure
 
+Given/When/Then is a language-neutral specification STYLE, realized in the project's incumbent native scenario syntax (its BDD framework if it already has one) or as plain native tests named in domain language with Given/When/Then phases as comments or helper names. Gherkin/pytest-bdd are used only when the project already uses them; never introduce them or any other stack for a project that does not (see `nw-tdd-cross-language`, `nw-test-design-mandates`). The Gherkin below is illustrative notation of the structure:
+
 ```gherkin
 Scenario: [Business-focused title describing one behavior]
   Given [preconditions - system state in business terms]
@@ -48,7 +50,7 @@ Scenario: [Business-focused title describing one behavior]
 ## Scenario Categorization
 
 - **Happy path**: Primary successful workflows
-- **Error path**: Invalid inputs, failures, unauthorized access (target 40%+ of scenarios)
+- **Error path**: Invalid inputs, failures, unauthorized access (aim for 40%+ while selecting scenarios; a review judges that every declared obligation has a falsifying scenario, never the error-path proportion)
 - **Edge case**: Boundary conditions, unusual but valid behavior
 - **Integration**: Cross-component/system interactions
 
@@ -83,7 +85,9 @@ Give every Scenario/Scenario Outline Example a UNIQUE title within its feature f
 collapses two distinct outcomes into one ambiguous id, and the gate refuses rather
 than guess which one kept failing.
 
-## pytest-bdd Implementation
+## Python binding — pytest-bdd (only when the project already uses pytest-bdd)
+
+Everything in this section is a labelled Python binding; for any other stack use the incumbent native equivalent (fixtures/setup helpers, step or test-case organisation by domain concept, scope-appropriate setup).
 
 ### Step Definitions with Fixture Injection
 

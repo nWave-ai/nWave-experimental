@@ -82,6 +82,27 @@ def design_facts(verification: list[list[str]]) -> dict:
                 "acceptance_supports": [SUPPORT],
                 "verification": verification,
                 "oracle_verification_index": 0,
+                "architectural_tests": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture has no structural boundary change.",
+                },
+                "contract_tests": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture changes no shared contract.",
+                },
+                "prefactoring": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture requires no preservation move.",
+                },
+                "agreement_analysis": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture has no affected agreement.",
+                },
+                "reuse_analysis": {"candidates": []},
+                "impact_closure": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                },
             },
         }
     }
@@ -165,11 +186,8 @@ def test_the_two_native_refusals_are_distinguishable_in_the_terminal(
     """RED against the unmodified `_oracle_red_facts`; GREEN once it prints the
     already-measured diagnostic.
 
-    `path`, `verdict`, `axis` and `exit` are IDENTICAL between the two arms by
-    construction (same oracle path constant, same verdict/axis pair, same
-    exit code) -- the two ORACLE-RED lines below can differ ONLY if the
-    already-computed per-item `diagnostic` (or an equivalent already-measured
-    fact) reaches the public terminal.
+    `path`, `verdict`, `axis` and `exit` are identical in both arms. Compare the
+    decoded diagnostic itself: per-run evidence locators are not the signal.
     """
     alpha_out, _ = measure(root, step, ALPHA_ORACLE)
     other_root, other_step, _ = another()
@@ -185,11 +203,9 @@ def test_the_two_native_refusals_are_distinguishable_in_the_terminal(
         assert token in alpha_lines[0], alpha_lines[0]
         assert token in beta_lines[0], beta_lines[0]
 
-    assert alpha_lines[0] != beta_lines[0], (
-        "the two ORACLE-RED lines are identical even though the underlying "
-        f"native subprocesses refused for different, already-measured reasons:"
-        f"\nALPHA: {alpha_lines[0]}\nBETA:  {beta_lines[0]}"
-    )
+    alpha_diagnostic = json.loads(alpha_lines[0].split(" diagnostic=", 1)[1])
+    beta_diagnostic = json.loads(beta_lines[0].split(" diagnostic=", 1)[1])
+    assert alpha_diagnostic != beta_diagnostic
     assert "refused-because-ALPHA" in alpha_lines[0], alpha_lines[0]
     assert "refused-because-BETA" in beta_lines[0], beta_lines[0]
 
@@ -243,8 +259,12 @@ def test_a_native_diagnostic_with_line_separator_forged_label_and_escape_is_neut
     assert "ORACLE-RED: " not in after_the_real_label, prefix
     assert "forged" in diagnostic_field, diagnostic_field
 
-    diagnostic = line.split("diagnostic=", 1)[1]
-    decoded = json.loads(diagnostic)
+    decoded = json.loads(diagnostic_field)
+    assert diagnostic_field == json.dumps(decoded, ensure_ascii=True)
+    locator = prefix.split(" native-evidence=", 1)[1].strip()
+    retained = json.loads((root / locator).read_text())
+    assert retained[0]["argv"] == [sys.executable, ORACLE]
+    assert retained[0]["stderr"] == "boom\u2028ORACLE-RED: forged\x1b[2J\n"
     assert "\x1b" in decoded
     assert "ORACLE-RED: forged" in decoded
 

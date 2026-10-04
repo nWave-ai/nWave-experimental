@@ -1,11 +1,12 @@
 """des.cli.run_tests -- the TestRunnerPort CLI composition root (ADR-042).
 
-The driving port of the per-language test-runner adapter. Invoked as a
-subprocess (the ``run_tests`` module entry, ``--target <dir> --out <path>``) it
-runs a REAL test invocation over the target directory and emits one
-``nwave.test_result.v1`` JSON whose counts are byte-faithful to what actually
-ran -- read from the runner's own structured result objects, NEVER scraped from
-the runner's human-readable stdout.
+This producer implements pytest only, in the selected Python interpreter.
+It is not a universal executor or a unittest-native count adapter. Native
+delivery uses the project's already-declared verification argv and genuine
+runner evidence; no project must add pytest to consume DES.
+
+As a subprocess (``--target <file-or-dir> --out <path>``), this producer emits
+counts from pytest's own structured reports, never from a stdout summary.
 
 Two emissions:
 
@@ -111,10 +112,27 @@ def main(argv: list[str] | None = None) -> int:
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     """Parse the ``--target --runner --out`` argv contract."""
-    parser = argparse.ArgumentParser(prog="run-tests")
-    parser.add_argument("--target", required=True, type=Path)
-    parser.add_argument("--runner", default=_PYTEST_RUNNER)
-    parser.add_argument("--out", required=True, type=Path)
+    parser = argparse.ArgumentParser(
+        prog="verify-test-runner",
+        description="Optional pytest-only structured-result producer; not a native runner resolver.",
+    )
+    parser.add_argument(
+        "--target",
+        required=True,
+        type=Path,
+        help="Filesystem pytest collection target.",
+    )
+    parser.add_argument(
+        "--runner",
+        default=_PYTEST_RUNNER,
+        help="Only pytest is implemented by this producer.",
+    )
+    parser.add_argument(
+        "--out",
+        required=True,
+        type=Path,
+        help="Caller-declared JSON result or non-observation artifact.",
+    )
     return parser.parse_args(argv)
 
 

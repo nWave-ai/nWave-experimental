@@ -78,6 +78,12 @@ def _make_context(tmp_path):
     templates_dir = project_root / "nWave" / "templates"
     templates_dir.mkdir(parents=True)
 
+    # The fixture agents preload these skills; the installer inlines them.
+    for skill in _FIXTURE_SKILLS:
+        skill_dir = project_root / "nWave" / "skills" / skill
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(_skill_body(skill))
+
     # Create minimal framework-catalog.yaml so load_public_agents(strict=True)
     # does not raise CatalogNotFoundError. Empty agents section means all
     # agents are treated as public (backward compatibility).
@@ -113,6 +119,13 @@ def _create_agent(agents_source, agent_name, content):
         content: Full file content with frontmatter + body
     """
     (agents_source / f"{agent_name}.md").write_text(content)
+
+
+_FIXTURE_SKILLS = ("tdd-methodology", "progressive-refactoring", "review-criteria")
+
+
+def _skill_body(skill: str) -> str:
+    return f"---\nname: {skill}\n---\nKnowledge of {skill}.\n"
 
 
 _CSV_TOOLS_AGENT = (
@@ -200,16 +213,17 @@ def _agent_filesystem_state(
 def _agent_content_state(target_dir: Path, agent_name: str) -> dict[str, object]:
     """Return a flat state dict for an installed agent file's content.
 
-    Slots:
+    Slots (``has_*`` are frontmatter keys; preloaded skill bodies carry their
+    own ``name:`` lines and must not count):
       ``content.exists``         whether <agent_name>.md exists
-      ``content.has_mode``       file contains ``mode:``
-      ``content.has_steps``      file contains ``steps:``
-      ``content.has_name``       file contains ``\\nname:`` (frontmatter key)
-      ``content.has_model``      file contains ``model:``
-      ``content.has_skills``     file contains ``skills:``
-      ``content.has_maxturns``   file contains ``maxTurns:``
-      ``content.has_tools_key``  file contains ``\\ntools:``
-      ``content.has_permission`` file contains ``permission:``
+      ``content.has_mode``       frontmatter has ``mode``
+      ``content.has_steps``      frontmatter has ``steps``
+      ``content.has_name``       frontmatter has ``name``
+      ``content.has_model``      frontmatter has ``model``
+      ``content.has_skills``     frontmatter has ``skills``
+      ``content.has_maxturns``   frontmatter has ``maxTurns``
+      ``content.has_tools_key``  frontmatter has ``tools``
+      ``content.has_permission`` frontmatter has ``permission``
       ``content.body_excerpt``   first non-blank body line (None when absent)
       ``content.full``           raw file text (None when absent)
 
@@ -236,18 +250,18 @@ def _agent_content_state(target_dir: Path, agent_name: str) -> dict[str, object]
             "content.full": None,
         }
     text = agent_md.read_text(encoding="utf-8")
-    _, body = parse_frontmatter(text)
+    frontmatter, body = parse_frontmatter(text)
     body_lines = [line for line in body.splitlines() if line.strip()]
     return {
         "content.exists": True,
-        "content.has_mode": "mode:" in text,
-        "content.has_steps": "steps:" in text,
-        "content.has_name": "\nname:" in text,
-        "content.has_model": "model:" in text,
-        "content.has_skills": "skills:" in text,
-        "content.has_maxturns": "maxTurns:" in text,
-        "content.has_tools_key": "\ntools:" in text,
-        "content.has_permission": "permission:" in text,
+        "content.has_mode": "mode" in frontmatter,
+        "content.has_steps": "steps" in frontmatter,
+        "content.has_name": "name" in frontmatter,
+        "content.has_model": "model" in frontmatter,
+        "content.has_skills": "skills" in frontmatter,
+        "content.has_maxturns": "maxTurns" in frontmatter,
+        "content.has_tools_key": "tools" in frontmatter,
+        "content.has_permission": "permission" in frontmatter,
         "content.body_excerpt": body_lines[0] if body_lines else None,
         "content.full": text,
     }
@@ -464,13 +478,14 @@ class TestInstallCreatesAgentFiles:
 
 
 class TestInstallPreservesBody:
-    """Test that install() preserves source body unchanged."""
+    """Test that install() preserves the source body and preloads its skills."""
 
     def test_install_preserves_body(self, tmp_path, monkeypatch):
         """
         GIVEN: An agent file with specific body content
         WHEN: install() transforms it
-        THEN: Source body is preserved unchanged;
+        THEN: Source body is preserved unchanged and each declared skill is
+              inlined exactly once (OpenCode has no native skills preload);
               frontmatter transformation slots (mode, steps, permission) declared;
               implicit-unchanged enforces no undeclared slot mutations.
         """
@@ -493,11 +508,14 @@ class TestInstallPreservesBody:
         _, source_body = parse_frontmatter(_CSV_TOOLS_AGENT)
 
         def body_preserved(old: object, new: object) -> bool:
-            """Body portion is identical to source after transformation."""
+            """Source body kept verbatim; each declared skill inlined once."""
             if not isinstance(new, str):
                 return False
             _, installed_body = parse_frontmatter(new)
-            return installed_body == source_body
+            return installed_body.startswith(source_body) and all(
+                installed_body.count(f"Knowledge of {skill}.") == 1
+                for skill in ("tdd-methodology", "progressive-refactoring")
+            )
 
         assert_state_delta(
             before=before,

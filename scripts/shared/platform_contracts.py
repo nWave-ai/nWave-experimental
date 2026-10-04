@@ -4,7 +4,7 @@ Defines canonical path rewrite mappings, forbidden fields, and exceptions
 used by all installer plugins. Every plugin that handles platform differences
 MUST import from this module rather than hardcoding rules locally (ADR-003).
 
-Supported platforms: claude_code, opencode, codex.
+Supported platforms: claude_code, opencode, codex, omp.
 """
 
 from __future__ import annotations
@@ -119,3 +119,59 @@ CODEX_AGENT_FORBIDDEN_FIELDS: frozenset[str] = frozenset(
         "effort",
     }
 )
+
+
+# -- OMP Path Rewrite Rules (Claude Code -> OMP) ------------------------------
+#
+# OMP discovers native skills at <config-root>/agent/skills/<name>/SKILL.md
+# and native task agents at <config-root>/agent/agents/*.md, where the config
+# root is $HOME/<PI_CONFIG_DIR or ".omp">. Rules are applied in order; first
+# match wins; more specific prefixes MUST appear before more general ones.
+
+OMP_PATH_REWRITES: tuple[tuple[str, str], ...] = (
+    ("~/.claude/skills/", "~/.omp/agent/skills/"),
+    ("~/.claude/agents/nw/", "~/.omp/agent/agents/"),
+    ("~/.claude/agents/", "~/.omp/agent/agents/"),
+    ("~/.claude/nWave/skills/", "~/.omp/agent/skills/"),
+    ("~/.claude/nWave/", "~/.omp/agent/"),
+)
+
+
+# -- OMP Path Rewrite Exceptions ----------------------------------------------
+#
+# Same rule as OpenCode: the DES runtime lives under ~/.claude/lib/python and
+# is reached through the host-neutral runtime pointer, never through a
+# per-host skills/agents path. Rewriting it would point role bodies at a
+# directory the runtime scheme does not publish.
+
+OMP_PATH_REWRITE_EXCEPTIONS: tuple[str, ...] = ("~/.claude/lib/python",)
+
+
+# -- OMP Agent Frontmatter Contract -------------------------------------------
+#
+# OMP task agents are Markdown with YAML frontmatter parsed by
+# parseAgentFields(): required non-empty string ``name`` and ``description``
+# plus the body as the system prompt. Optional keys include ``tools`` (CSV or
+# array, lowercased builtin names, ``yield`` auto-added), ``spawns``,
+# ``model`` (prioritized selector list), ``output`` (opaque schema data),
+# ``autoloadSkills`` (skill names injected before the first child prompt),
+# ``thinking-level``, ``blocking``. Unknown frontmatter keys are tolerated by
+# discovery, so the fields below are OMITTED by the projection rather than
+# stripped defensively:
+#
+#   model    -- nWave roles declare Claude aliases (sonnet/haiku/opus/
+#               claude-*). OMP would treat them as model selectors and route
+#               spawned roles away from the user's configured model. Omitting
+#               the key entirely falls through to the parent session's active
+#               model, which is the intended GLM inheritance.
+#   maxTurns -- no per-agent turn cap in the OMP agent schema; the limit is a
+#               Claude-side runtime control with no honest equivalent.
+#   skills   -- replaced by ``autoloadSkills`` naming only the PUBLIC skills
+#               actually installed for OMP, so each skill is delivered once
+#               through the native autoload path instead of being inlined.
+#
+# ``StructuredOutput`` is a reply-channel token (REPLY_CHANNEL_TOOLS), never
+# an executable capability: it is excluded from ``tools`` and expressed as an
+# ``output`` schema projected from the canonical model envelope.
+
+OMP_AGENT_OMITTED_FIELDS: frozenset[str] = frozenset({"model", "maxTurns", "skills"})

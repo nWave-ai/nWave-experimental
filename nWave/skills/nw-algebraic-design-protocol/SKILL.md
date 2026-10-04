@@ -52,6 +52,13 @@ Two honest resolutions: **replace the carrier**, or **retract the law**. Never
 conceal the conflict with a special case, because a special case makes the model
 agree with the data while still being wrong about the domain.
 
+A replacement carrier is a claim until checked. Before proposing it, run the
+stated laws against an obvious reference encoding of the new carrier, over
+generated public inputs that include the refuting case, and keep that receipt
+beside the counterexample. Check that each consumed observation survives: an
+order-free carrier must still yield a deterministic order to every consumed
+ordered-listing observation.
+
 > **Worked anchor (nWave, 2026-08-06).** A census asked "is this MODULE live?"
 > when liveness was a property of the VERB the module dispatched. The three verbs
 > disagreed, so the answer came back for whichever one dominated the text.

@@ -70,8 +70,11 @@ def _fake_runner(tmp_path: Path, xml: str) -> str:
     xml_src = tmp_path / f"canned_{slug}.xml"
     xml_src.write_text(xml)
     copier = tmp_path / f"copier_{slug}.py"
-    copier.write_text("import shutil, sys\nshutil.copy(sys.argv[1], sys.argv[2])\n")
-    return f"{sys.executable} {copier} {xml_src} {{junit_out}}"
+    copier.write_text(
+        "import shutil, sys\nshutil.copy(sys.argv[1], sys.argv[2])\nsys.exit(int(sys.argv[3]))\n"
+    )
+    exit_code = int("<failure" in xml or "<error" in xml)
+    return f"{sys.executable} {copier} {xml_src} {{junit_out}} {exit_code}"
 
 
 def _repo_with_test(tmp_path: Path) -> Path:

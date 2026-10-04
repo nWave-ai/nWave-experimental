@@ -167,6 +167,7 @@ class IntegrationFacts:
     request: str
     observations: tuple[str, ...]
     authorities: tuple[str, ...]
+    handover_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -478,5 +479,7 @@ def compose_integration_message(
         for locator in facts.authorities
         if locator.strip()
     )
+    if facts.handover_sha256 is not None:
+        identity.append(f"handover-sha256 {facts.handover_sha256}")
     paragraphs.append(_body_block(identity, rule.body_max_line_length))
     return subject + "\n\n" + "\n\n".join(paragraphs)

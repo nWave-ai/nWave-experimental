@@ -11,14 +11,26 @@ branch whenever "codex" was among the effective target platforms, so a
 combined ``claude_code`` + ``codex`` selection silently skipped the Claude
 backup entirely.
 
-Isolation: CLAUDE_CONFIG_DIR is monkeypatched per test (no real HOME
-touched); NWAVE_AGENTS_HOME/CODEX_HOME are session-isolated by
-tests/conftest.py's ``_isolate_codex_and_agents_home``.
+Isolation: every test owns its Claude, Codex, and shared-agent destinations.
+Backup artifacts must not remain in session-wide homes used by later tests.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _isolate_backup_homes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for variable, directory in (
+        ("NWAVE_AGENTS_HOME", "agents-home"),
+        ("CODEX_HOME", "codex-home"),
+    ):
+        home = tmp_path / directory
+        home.mkdir()
+        monkeypatch.setenv(variable, str(home))
 
 
 def _make_claude_install(claude_dir: Path) -> Path:

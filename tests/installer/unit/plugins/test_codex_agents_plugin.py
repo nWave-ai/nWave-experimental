@@ -907,6 +907,41 @@ class TestCapabilityPreamble:
         assert "File and content search is NOT granted" in instructions
         assert "Creating or modifying files is NOT granted" in instructions
 
+    def test_bash_without_write_allows_only_disposable_probe_files(self):
+        # bypass: pure function -- a Bash role may hand a checker a disposable
+        # probe file its body authorizes; repository writes stay denied, and a
+        # role without bare Bash keeps the blanket denial.
+        bash_role = self._instructions("tools: Read, Glob, Grep, Bash\n")
+        assert "Creating or modifying repository files is NOT granted" in bash_role
+        assert "invocation-local directory outside the repository" in bash_role
+        assert "Creating or modifying files is NOT granted" not in bash_role
+        for tools_line in (
+            "tools: Read, Glob, Grep\n",
+            "tools: Read, Bash(des code-fact:*)\n",
+        ):
+            other = self._instructions(tools_line)
+            assert "Creating or modifying files is NOT granted" in other
+            assert "probe files" not in other
+        writer = self._instructions("tools: Read, Write, Bash\n")
+        assert "probe files" not in writer
+        assert "files is NOT granted" not in writer
+
+    def test_solution_architect_reviewer_reproduces_checks_outside_repository(self):
+        # A read-only reviewer re-running a recorded proof must be able to work
+        # on a disposable copy, and must not be granted repository writes.
+        source_path = (
+            Path(__file__).resolve().parents[4]
+            / "nWave/agents/nw-solution-architect-reviewer.md"
+        )
+        instructions = tomllib.loads(
+            _transform_agent(source_path.read_text(), "nw-solution-architect-reviewer")
+        )["developer_instructions"]
+        assert "Creating or modifying repository files is NOT granted" in instructions
+        assert "invocation-local directory outside the repository" in instructions
+        assert "fresh directory outside the repository" in " ".join(
+            instructions.split()
+        )
+
     def test_structured_output_reply_channel_omitted_from_declared_tools(self):
         """StructuredOutput names the ANSWER shape, not an executable tool.
 

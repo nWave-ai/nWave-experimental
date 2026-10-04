@@ -4,12 +4,11 @@ A TEST INSTRUMENT, not product: no runner, hook, schema or gate is added to nWav
 
 Two separable jobs
   1. build_fixture: construct every case's repository through the REAL des CLI
-     (des discuss/design/distill/oracle). Two labelled exceptions only:
-       - HISTORICAL_LEGACY_V1_SEED: the persisted v1 acceptance trio (the v2
-         constructor refuses v1 input, so no constructor can author it);
-       - SETUP-ONLY fake provider: the existing tests/des/acceptance/fake_provider.py
-         script answers the single acceptance-designer turn `des oracle` buys, exactly
-         as the public acceptance tests do. The evaluated host is NEVER given it.
+     (des discuss/design/distill/oracle). The labelled HISTORICAL_LEGACY_V1_SEED
+     supplies persisted v1 state the current constructor cannot author.
+     Host setup writes finite declared oracle/support bytes and supplies explicit
+     structured authoring facts; DES then measures their real native execution.
+     No fixture manufactures an observed RED/GREEN or invokes a model.
      Every step's exit/terminal is checked against cases.json; a failed step means
      fixture-status "setup-failed" and the case is never handed to a host.
   2. run the host (claude -p / codex exec) and evaluate what it ISSUED: parsed shell
@@ -702,9 +701,14 @@ def evaluate(
         reasons.append(
             "the first mutating des operation has no recorded result (never completed)"
         )
-    elif not first["terminal"].get("DELIVERY-OUTCOME"):
+    elif first["terminal"].get("DELIVERY-OUTCOME") not in {
+        "Success",
+        "Refusal",
+        "Retry",
+        "Indeterminate",
+    }:
         reasons.append(
-            "the first mutating des operation returned no DES terminal (DELIVERY-OUTCOME)"
+            "the first mutating des operation returned no closed DES terminal (DELIVERY-OUTCOME)"
         )
     elif expected.get("effect") == "terminal":
         out = result.get("output", "")
@@ -712,9 +716,9 @@ def evaluate(
             reasons.append(
                 "the terminal is an argument/usage refusal, not the step's own outcome"
             )
-        if expected.get("provider_bounded") and "EVAL-NO-PROVIDER" not in out:
+        if first["terminal"].get("WHAT") == "HostResultMalformed":
             reasons.append(
-                "bounded inner provider: EVAL-NO-PROVIDER not observed, so the step did not reach its provider turn"
+                "the terminal refuses malformed host input, not the requested measurement"
             )
     elif expected.get("effect") == "success-and-handover-changed":
         if (
@@ -875,17 +879,15 @@ def evaluate_records(
 
 
 def _semantic_refusal_without_effect(expected: dict, op: dict, record: dict) -> bool:
-    """A refused root/path attempt at the expected semantic step that bought nothing and changed nothing."""
-    out = op["result"]["output"]
+    """A deterministic root refusal with no handover change; says nothing about host spend."""
     return bool(
         re.search(expected["first_mutating"], op["normalized"])
         and not any(
             re.search(f, op["normalized"]) for f in expected.get("forbidden", [])
         )
         and record["exit"] not in (0, None)
-        and op["terminal"].get("DELIVERY-OUTCOME")
+        and op["terminal"].get("DELIVERY-OUTCOME") == "Refusal"
         and op["terminal"].get("WHAT") == "InvalidRepositoryRoot"
-        and re.search(r"^TURNS-BOUGHT[:=]\s*0\s*$", out, re.M)
         and record["handover_before"] == record["handover_after"]
     )
 
@@ -894,7 +896,7 @@ def recovered_path_retry(
     case: dict, ops: list[dict], records: list[dict]
 ) -> str | None:
     """Evaluation classification only (never DES policy). Every mutating attempt before the first Success must be
-    a zero-turn InvalidRepositoryRoot refusal of the expected step with the handover untouched, and that Success must
+    an InvalidRepositoryRoot refusal of the expected step with the handover untouched, and that Success must
     itself satisfy the case. Anything else (wrong step, forbidden, unknown outcome, side effect) is no recovery.
     Later operations are retained in the raw result and are not judged as the initial step."""
     expected = case["expected"]
@@ -919,7 +921,7 @@ def recovered_path_retry(
                 and rec["handover_before"] != rec["handover_after"]
             )
             return (
-                f"{position} zero-turn InvalidRepositoryRoot refusal(s) of the expected step preceded "
+                f"{position} InvalidRepositoryRoot refusal(s) with unchanged handover preceded "
                 f"the Success at mutating operation {position + 1}"
                 if ok
                 else None
@@ -1004,27 +1006,14 @@ def _seed_legacy_v1(repo: Path, step: dict) -> None:
     )
 
 
-def _setup_environment(lane: Path, repo: Path) -> dict[str, str]:
-    """Minimal env for setup steps: no credentials, no provider env inherited."""
-    sys.path.insert(0, str(FRAMEWORK))
-    from tests.des.acceptance import fake_provider  # existing setup-only provider seam
-
-    launcher = lane / "setup-provider-bin"
-    fake_provider.install(launcher)
-    claude_dir = lane / "setup-claude-config"
-    claude_dir.mkdir(exist_ok=True)
+def _setup_environment(lane: Path) -> dict[str, str]:
+    """Minimal deterministic setup env: no credentials or provider configuration."""
     home = lane / "setup-home"
     home.mkdir(exist_ok=True)
     return {
-        "PATH": f"{launcher}{os.pathsep}{os.environ.get('PATH', '/usr/bin:/bin')}",
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         "HOME": str(home),
         "LANG": os.environ.get("LANG", "C.UTF-8"),
-        "CLAUDE_CONFIG_DIR": str(claude_dir),
-        "NWAVE_MODEL_ROOT": str(repo),
-        "NWAVE_MODEL_LOG": str(lane / "setup-model-log.json"),
-        "NWAVE_MODEL_RESULTS": str(lane / "setup-model-results.json"),
-        "NWAVE_MODEL_COUNTER": str(lane / "setup-model-counter"),
-        "NWAVE_PYTHON": sys.executable,
     }
 
 
@@ -1041,7 +1030,7 @@ def build_fixture(case: dict, lane: Path, des_python: Path) -> dict:
     if repo.exists():
         shutil.rmtree(repo)
     base_repository(repo)
-    env = _setup_environment(lane, repo)
+    env = _setup_environment(lane)
     record: dict = {
         "provenance": case["fixture"]["provenance"],
         "steps": [],
@@ -1078,15 +1067,26 @@ def build_fixture(case: dict, lane: Path, des_python: Path) -> dict:
             Path(argv[0]).name if i == 0 else a for i, a in enumerate(argv)
         ]
         stdin = _fixture_text(step["input"], des_python) if step.get("input") else ""
-        (lane / "setup-model-counter").unlink(missing_ok=True)
-        answers = (
-            _fixture_text(step["provider_answers"], des_python)
-            if step.get("provider_answers")
-            else "[]"
-        )
-        (lane / "setup-model-results.json").write_text(answers)
-        entry["setup_only_fake_provider"] = bool(step.get("provider_answers"))
         try:
+            if step.get("host_setup"):
+                authored = json.loads(_fixture_text(step["host_setup"], des_python))
+                destinations = {}
+                for relative, text in authored["writes"].items():
+                    destination = (repo / relative).resolve()
+                    if not destination.is_relative_to(repo.resolve()):
+                        raise ValueError(
+                            f"host setup path escapes the fixture: {relative}"
+                        )
+                    destinations[relative] = (destination, text)
+                entry["host_authored_files"] = {}
+                for relative, (destination, text) in destinations.items():
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.write_text(text, encoding="utf-8")
+                    entry["host_authored_files"][relative] = hashlib.sha256(
+                        destination.read_bytes()
+                    ).hexdigest()
+                entry["host_result"] = authored["structured_output"]
+                stdin = json.dumps({"structured_output": authored["structured_output"]})
             done = subprocess.run(
                 argv,
                 input=stdin,
@@ -1096,7 +1096,13 @@ def build_fixture(case: dict, lane: Path, des_python: Path) -> dict:
                 env=env,
                 timeout=180,
             )
-        except (subprocess.TimeoutExpired, OSError) as error:
+        except (
+            subprocess.TimeoutExpired,
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+        ) as error:
             entry.update(
                 status="setup-failed", reason=f"{type(error).__name__}: {error}"
             )
@@ -1399,20 +1405,13 @@ def host_invocation(host: str, executable: str, kind: str, prompt: str, model: s
 
 
 def host_environment(
-    host: str, lane: Path, home: Path, des_python: Path, provider_bounded: bool = False
+    host: str, lane: Path, home: Path, des_python: Path
 ) -> tuple[dict, list[str]]:
     shim = lane / "host-bin"
     shim.mkdir(exist_ok=True)
     recorder = Path(__file__).resolve().with_name("des_recorder.py")
     (shim / "des").write_text(f'#!/bin/sh\nexec "{sys.executable}" "{recorder}" "$@"\n')
     (shim / "des").chmod(0o755)
-    # No provider for des-owned role turns during a host probe: a turn would be unmeasured spend.
-    # Only declared provider_bounded recovery cases get the stub; scope resolves the real installed claude.
-    if provider_bounded:
-        (shim / "claude").write_text(
-            "#!/bin/sh\necho 'EVAL-NO-PROVIDER: des role turns are refused in the host probe' >&2\nexit 1\n"
-        )
-        (shim / "claude").chmod(0o755)
     hook = lane / "host-py"
     hook.mkdir(exist_ok=True)
     (hook / "sitecustomize.py").write_text(INTERCEPT_HOOK)
@@ -1574,7 +1573,7 @@ def run_host(case: dict, a, lane: Path, res: dict) -> None:
     res["role_declared"] = frontmatter
     repo = lane / "repository"
     env, res["credential_env_names_passed"] = host_environment(
-        a.host, lane, home, a.des_python, bool(case["expected"].get("provider_bounded"))
+        a.host, lane, home, a.des_python
     )
     secrets = secret_values(env, res["credential_env_names_passed"])
     argv, stdin = host_invocation(
@@ -1970,25 +1969,18 @@ def host_controls() -> dict[str, bool]:
             )
             == []
         )
-        for pb in (False, True):
-            (tmp / f"l{pb}").mkdir()
-            e, _ = host_environment(
-                "claude", tmp / f"l{pb}", home, Path(sys.executable), pb
-            )
-            stub = (tmp / f"l{pb}" / "host-bin" / "claude").exists()
-            checks[
-                f"provider_bounded={pb}: claude stub {'present' if pb else 'absent'}"
-            ] = stub == pb
-        e, _ = host_environment(
-            "claude", tmp / "lFalse", home, Path(sys.executable), False
+        host_lane = tmp / "native-host"
+        host_lane.mkdir()
+        e, _ = host_environment("claude", host_lane, home, Path(sys.executable))
+        checks["host PATH does not replace the native Claude executable"] = not (
+            host_lane / "host-bin" / "claude"
+        ).exists() and shutil.which("claude", path=e["PATH"]) == shutil.which(
+            "claude", path=os.environ.get("PATH", "")
         )
-        checks["scope: claude on PATH is never the lane stub"] = shutil.which(
-            "claude", path=e["PATH"]
-        ) != str(tmp / "lFalse" / "host-bin" / "claude")
         codex_lane = tmp / "codex-isolation"
         codex_lane.mkdir()
         codex_environment, _ = host_environment(
-            "codex", codex_lane, home, Path(sys.executable), False
+            "codex", codex_lane, home, Path(sys.executable)
         )
         checks["codex host binds CODEX_HOME to the installed clean profile"] = (
             codex_environment["CODEX_HOME"] == str(home / ".codex")
@@ -2248,7 +2240,7 @@ def retry_controls() -> dict[str, bool]:
         }
     }
     ok_in = '{"schema_version": 2}'
-    refuse = "DELIVERY-OUTCOME: Refusal\nWHAT: InvalidRepositoryRoot\nTURNS-BOUGHT=0"
+    refuse = "DELIVERY-OUTCOME: Refusal\nWHAT: InvalidRepositoryRoot"
 
     def rec(argv, code, out, span, stdin=ok_in):
         return {
@@ -2278,11 +2270,16 @@ def retry_controls() -> dict[str, bool]:
         refuse,
         HandoverSpan(before="h0", after="h0"),
     )
-    turns = rec(d, 2, refuse.replace("=0", "=1"), HandoverSpan(before="h0", after="h0"))
+    indeterminate = rec(
+        d,
+        2,
+        refuse.replace("Refusal", "Indeterminate"),
+        HandoverSpan(before="h0", after="h0"),
+    )
     unknown = rec(
         d,
         2,
-        "WHAT: InvalidRepositoryRoot\nTURNS-BOUGHT=0",
+        "WHAT: InvalidRepositoryRoot",
         HandoverSpan(before="h0", after="h0"),
     )
     effect = rec(d, 2, refuse, HandoverSpan(before="h0", after="hX"))
@@ -2397,7 +2394,9 @@ def retry_controls() -> dict[str, bool]:
         "retry: wrong-semantic first refusal never recovers": not verdict(
             [wrong, dict(good, handover_before="h0")]
         )[1],
-        "retry: provider turn bought never recovers": not verdict([turns, good])[1],
+        "retry: indeterminate outcome never recovers": not verdict(
+            [indeterminate, good]
+        )[1],
         "retry: unknown outcome (no terminal) never recovers": not verdict(
             [unknown, good]
         )[1],
@@ -2613,27 +2612,26 @@ def self_test() -> int:
         "expected": {
             "first_mutating": r"^des oracle\b",
             "effect": "terminal",
-            "provider_bounded": True,
             "requires_support_repair": True,
         }
     }
 
-    def oracle(output, tests_before):
+    def oracle(output, tests_before, outcome="Refusal", what=None):
         return [
             {
-                "argv": ["des", "oracle"],
-                "normalized": "des oracle --value 1",
+                "argv": ["des", "oracle", "--value", "1", "--input", "-"],
+                "normalized": "des oracle --value 1 --input -",
                 "mutating": True,
                 "unclassifiable": False,
                 "command": "",
-                "stdin": None,
+                "stdin": '{"structured_output":{"outcome":"accepted","diagnostic":"host-authored oracle"}}',
                 "tests_before": tests_before,
                 "result": {"exit_code": 1, "is_error": True, "output": output},
-                "terminal": {"DELIVERY-OUTCOME": "Refusal"},
+                "terminal": {"DELIVERY-OUTCOME": outcome, "WHAT": what},
             }
         ]
 
-    stub = "DELIVERY-OUTCOME: Refusal\nEVAL-NO-PROVIDER"
+    measured = "DELIVERY-OUTCOME: Refusal\nWHAT: OracleNotRed\nWHY: verdict=broken"
     checks["usage refusal is not a terminal pass"] = (
         evaluate(
             tcase,
@@ -2647,15 +2645,27 @@ def self_test() -> int:
         )[0]
         == "fail"
     )
-    checks["missing EVAL-NO-PROVIDER fails a bounded case"] = (
-        evaluate(tcase, oracle("DELIVERY-OUTCOME: Refusal", "r"), "", False, "t0")[0]
+    checks["unknown terminal outcome fails"] = (
+        evaluate(
+            tcase, oracle("DELIVERY-OUTCOME: Maybe", "r", "Maybe"), "", False, "t0"
+        )[0]
+        == "fail"
+    )
+    checks["malformed host result is not a measurement pass"] = (
+        evaluate(
+            tcase,
+            oracle("DELIVERY-OUTCOME: Refusal", "r", what="HostResultMalformed"),
+            "",
+            False,
+            "t0",
+        )[0]
         == "fail"
     )
     checks["oracle against still-broken files fails (no support repair)"] = (
-        evaluate(tcase, oracle(stub, "t0"), "", False, "t0")[0] == "fail"
+        evaluate(tcase, oracle(measured, "t0"), "", False, "t0")[0] == "fail"
     )
-    checks["support repair before oracle plus stub terminal passes"] = (
-        evaluate(tcase, oracle(stub, "t1"), "", False, "t0")[0] == "pass"
+    checks["support repair before oracle plus measured terminal passes"] = (
+        evaluate(tcase, oracle(measured, "t1"), "", False, "t0")[0] == "pass"
     )
     checks["runtime tree drift is reported"] = (
         runtime_drift(["aaa", "bbb"]) is not None

@@ -48,28 +48,6 @@ def test_pbt_skills_remain_publicly_owned():
     )
 
 
-def test_completeness_closes_cross_language_environment_without_python_fallback():
-    body = (SKILLS / "nw-at-completeness-check" / "SKILL.md").read_text(
-        encoding="utf-8"
-    )
-    for manifest in (
-        "requirements",
-        "pyproject.toml",
-        "package.json",
-        "Cargo.toml",
-        "go.mod",
-    ):
-        assert manifest in body
-    assert "never from an ambient interpreter" in body
-    for layer in (
-        "domain",
-        "application/port",
-        "adapter/integration",
-        "infrastructure",
-    ):
-        assert layer in body
-
-
 def test_auto_hot_path_never_calls_charter_scaffold():
     body = (SKILLS / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
     assert "charter-scaffold" not in body

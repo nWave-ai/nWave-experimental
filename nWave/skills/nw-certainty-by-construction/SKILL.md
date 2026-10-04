@@ -33,6 +33,13 @@ declared `boundary`/`contract-shape`, never a hand-picked "domain-only" scope.
    `nw-stress-analysis`; triage a removed-hypothesis counterexample before a
    missing-type claim. Do not convert external, temporal or cross-system rules
    into local type claims.
+5. **Demonstrate both sides.** When implementing, add tests in the owned test
+   paths that the invalid construction is refused with its reason and that a
+   valid value is built through the public producer; a throwaway script is not
+   that test; when no test path is owned, name the uncovered refusal in the
+   diagnostic for the oracle owner. For a call the checker rejects, keep the
+   receipt of a failing run of the repository's own checker or compiler on a
+   separate probe.
 
 Before refining, ask: is the invariant stable, local and high-value; can all
 legitimate construction pass through this boundary; will the representation
@@ -82,15 +89,21 @@ or availability — those are separate claims and must be measured separately.
 
 ## Calibrate the claim to the language — say what you actually have
 
+Choose the row by the checker the repository actually runs in its verification
+command, not by the language's reputation.
+
 | Environment | Honest claim |
 |---|---|
 | Proof assistant | The property follows from checked definitions and admitted axioms |
 | Strong static language | Invalid states blocked on typed paths; casts, reflection, deserialization and foreign writers remain boundaries |
+| Gradual typing with the checker in verification (e.g. Python + mypy, TypeScript) | The checker rejects modeled invalid calls on annotated paths, so the guarded operation takes the evidence type; `Any`, casts, untyped callers and deserialization still need the runtime boundary |
 | Mainstream OO/FP | Construction is centralised and misuse reduced; the compiler does **not** prove the predicate |
-| Dynamic / boundary-heavy | Checked at controlled runtime boundaries, and every writer must preserve it |
+| Dynamic, or no checker in verification | Checked at controlled runtime boundaries, and every writer must preserve it |
 
 Do not call all type safety "proof", and do not simulate proof strength with
-nominal wrappers. Name the bypass routes and keep their checks visible.
+nominal wrappers: a wrapper, annotation or nominal type the runtime can build
+around the same invalid value is not a proof. Name the bypass routes and keep
+their checks visible.
 
 ## What construction never establishes
 

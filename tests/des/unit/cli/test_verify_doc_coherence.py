@@ -73,3 +73,29 @@ def test_no_docs_degrades_loud_indeterminate(tmp_path: Path, capsys: object) -> 
     event = json.loads(out.splitlines()[0])
     assert event["event"] == "DocCoherenceIndeterminate"
     assert all(k in event for k in ("what", "why", "how"))
+
+
+def test_native_and_extensionless_explicit_repo_claims_are_checked(
+    tmp_path: Path, capsys: object
+) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "README.md").write_text(
+        "Implementation: `src/reservation.ml`, interface: `src/reservation.mli`, "
+        "build: `./dune`. Prose: `input/output`.\n"
+    )
+    assert main(["--repo", str(tmp_path)]) == 1
+    events = [
+        json.loads(line)
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("{")
+    ]  # type: ignore[attr-defined]
+    refused = next(event for event in events if event["event"] == "DocCoherenceRefused")
+    assert {item["claim"] for item in refused["violations"]} == {
+        "src/reservation.ml",
+        "src/reservation.mli",
+        "./dune",
+    }
+    (tmp_path / "src/reservation.ml").write_text("let reserve = ()\n")
+    (tmp_path / "src/reservation.mli").write_text("val reserve : unit\n")
+    (tmp_path / "dune").write_text("(library (name reservation))\n")
+    assert main(["--repo", str(tmp_path)]) == 0

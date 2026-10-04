@@ -40,7 +40,10 @@ from typing import TYPE_CHECKING
 from des.adapters.driven.git.git_observation import observe_text
 from des.application.handover import Blocked, HandoverValue, stored_handover
 from des.domain.turn_record_ref import CRAFT_TURN, ORACLE_TURN, TURN_REF_ROOT, turn_ref
-from des.ports.driven_ports.task_invocation_port import DesignFacts
+from des.ports.driven_ports.task_invocation_port import (
+    ApplicablePrefactoring,
+    DesignFacts,
+)
 
 
 if TYPE_CHECKING:
@@ -48,6 +51,11 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from des.adapters.driven.git.git_observation import GitObservation
+    from des.application.delivery_continuation import (
+        AuthorityFacts,
+        DeliveryContinuationRunner,
+    )
+    from des.application.handover import StoredHandover
 
 
 #: What a record can be. THREE states, not two, because two readers of the same
@@ -63,6 +71,10 @@ if TYPE_CHECKING:
 #: was measured against is not. Naming `des integrate` there would send an
 #: orchestrator to bless evidence collected before the correction.
 ABSENT, RECORDED, MOVED = "absent", "recorded", "bytes moved"
+
+#: The two preservation phases of an applicable structural move, in the order
+#: they are owed. Spelled as `des craft --prefactoring-phase` accepts them.
+BEFORE_MOVE, AFTER_MOVE = "before-move", "after-move-before-behavior"
 
 #: The fourth state, shown only where the selected acceptance facts cannot be
 #: derived (a legacy partial selection, or one made over another DESIGN): the
@@ -116,6 +128,10 @@ class ValueState:
     # Internal routing fact: the oracle's own bytes/authority still match even
     # when a recorded craft moved the production bytes it judges.
     oracle_witness_current: bool = False
+    # The preservation phase this value still owes before its feature oracle,
+    # derived from the retained prefactoring receipts; ``None`` when the value
+    # carries no applicable structural move or its preservation pair is current.
+    prefactoring_phase: str | None = None
 
     @property
     def oracle_recorded(self) -> bool:
@@ -180,6 +196,9 @@ def read_state(
     from des.application.delivery_continuation import DeliveryContinuationRunner
 
     runner = DeliveryContinuationRunner()
+    defect = runner.product_authority_defect(root, stored)
+    if defect is not None:
+        return defect
     values = []
     for position, value in enumerate(stored.values, start=1):
         # ONE reader of the selected revision, the same every step asks.
@@ -228,8 +247,12 @@ def read_state(
                     uncertain,
                     None if failure is None else failure.what,
                     None if failure is None else failure.how,
+                    facts if usable else None,
                 ),
                 oracle_witness_current,
+                None
+                if not usable or uncertain or oracle_current or craft_current
+                else _owed_prefactoring_phase(runner, root, stored, value, facts),
             )
         )
     verified = runner.verification_record(root, stored)
@@ -248,6 +271,39 @@ def read_state(
     )
 
 
+def _owed_prefactoring_phase(
+    runner: DeliveryContinuationRunner,
+    root: Path,
+    stored: StoredHandover,
+    value: HandoverValue,
+    facts: AuthorityFacts,
+) -> str | None:
+    """The preservation phase an applicable structural move still owes, or ``None``.
+
+    Read from the retained prefactoring receipts -- primitive measurements the
+    runner already wrote -- and from the runner's own readiness predicate, so the
+    projection never names a phase the oracle step would not also demand.  Before
+    any current GREEN `before-move` receipt the owed phase is `before-move`; once
+    one exists for the unchanged witness it is `after-move-before-behavior`,
+    which the host runs after performing only the declared movement.
+    """
+    if not isinstance(facts.prefactoring, ApplicablePrefactoring):
+        return None
+    from des.application.delivery_continuation import SelectedValue
+
+    selected = SelectedValue(stored, value, facts)
+    if runner._prefactoring_ready(root, selected, before_behavior=True) is None:
+        return None
+    current = runner._prefactoring_identity(root, selected)
+    if current is None:
+        return BEFORE_MOVE
+    for _, record in reversed(runner._prefactoring_records(root, selected)):
+        if record.get("phase") == BEFORE_MOVE and record.get("green") is True:
+            same = runner._same_preservation(root, current, record)
+            return AFTER_MOVE if same else BEFORE_MOVE
+    return BEFORE_MOVE
+
+
 def _measured_on_current_code(root: Path, runner: object, candidate: str) -> bool:
     """A record is proof now only while its candidate sits on the code as it stands.
 
@@ -263,7 +319,11 @@ def _measured_on_current_code(root: Path, runner: object, candidate: str) -> boo
 
 
 def _selection_view(
-    value: HandoverValue, uncertain: bool, what: str | None, how: str | None
+    value: HandoverValue,
+    uncertain: bool,
+    what: str | None,
+    how: str | None,
+    selected: AuthorityFacts | None = None,
 ) -> SelectionView | None:
     """The selected tuple with its source, or ``None`` when nothing is derivable."""
     if value.acceptance_oracle is not None:
@@ -273,8 +333,12 @@ def _selection_view(
             if complete
             else "DISTILL schema_version 1 (incomplete)",
             value.acceptance_oracle,
-            value.acceptance_supports,
-            value.acceptance_verification,
+            selected.acceptance_paths[1:]
+            if selected is not None
+            else value.acceptance_supports,
+            selected.native_verification_argvs
+            if selected is not None
+            else value.acceptance_verification,
             value.acceptance_oracle_verification_index,
             UNCERTAIN if uncertain else CURRENT,
             what,
@@ -285,8 +349,12 @@ def _selection_view(
         return SelectionView(
             "DESIGN",
             facts.oracle,
-            facts.acceptance_supports,
-            facts.verification,
+            selected.acceptance_paths[1:]
+            if selected is not None
+            else facts.acceptance_supports,
+            selected.native_verification_argvs
+            if selected is not None
+            else facts.verification,
             facts.oracle_verification_index,
             CURRENT,
         )
@@ -342,6 +410,13 @@ def _record(exists: bool, current: bool, uncertain: bool = False) -> str:
     return RECORDED if current else MOVED
 
 
+def prefactoring_form(root: Path | str, position: int, phase: str) -> str:
+    """The exact invocation form of one preservation phase for one value."""
+    return (
+        f"des craft --repo-root {root} --value {position} --prefactoring-phase {phase}"
+    )
+
+
 def canonical_next(state: DeliveryState, root: Path) -> str:
     """The first step in the canonical order the state does not already hold.
 
@@ -350,10 +425,7 @@ def canonical_next(state: DeliveryState, root: Path) -> str:
     the step, never a description of it.
     """
     if state.request is None:
-        return (
-            f"des po --repo-root {root} (--project | --epic ID | --feature ID | --slice FEATURE_ID SLICE_ID) -- one Request on stdin, decomposed into "
-            "its ordered observable values"
-        )
+        return f"des po --repo-root {root} (--project | --epic ID | --feature ID | --slice FEATURE_ID SLICE_ID) --input -"
     # VALUE BY VALUE, not phase by phase.  The handover's values are already in
     # canonical topological order, so the first one that is not complete is the
     # first work the order owes, and its own three facts are checked in the
@@ -363,20 +435,15 @@ def canonical_next(state: DeliveryState, root: Path) -> str:
     # one value at a time would read as next.
     for value in state.values:
         if not value.design_bound:
-            return f"des design --repo-root {root} --value {value.position}"
+            return f"des design --repo-root {root} --value {value.position} --input -"
         if value.selection is not None and value.selection.label == UNCERTAIN:
             return f"des distill --repo-root {root} --replace-current --input -"
+        if value.prefactoring_phase is not None:
+            return prefactoring_form(root, value.position, value.prefactoring_phase)
         if not value.oracle_recorded:
-            # A moved craft makes its prior oracle historical for the state
-            # projection.  If that oracle's own bytes and authority are still
-            # current, `des craft` can execute it on the moved workspace and
-            # settle the record without buying either authoring turn.  A moved
-            # oracle of its own is different: return it to its author first.
-            if value.craft == MOVED and value.oracle_witness_current:
-                return f"des craft --repo-root {root} --value {value.position}"
-            return f"des oracle --repo-root {root} --value {value.position}"
+            return f"des oracle --repo-root {root} --value {value.position} --input -"
         if not value.craft_recorded:
-            return f"des craft --repo-root {root} --value {value.position}"
+            return f"des craft --repo-root {root} --value {value.position} --input -"
     if state.candidate is not None and state.candidate_record == RECORDED:
         return f"des integrate --repo-root {root} --candidate {state.candidate}"
     return f"des verify --repo-root {root}"

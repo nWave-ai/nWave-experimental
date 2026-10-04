@@ -358,3 +358,163 @@ class TestDESConfigEnabledForRepoRelativeCwd:
         config = DESConfig(cwd=tmp_path.resolve())
 
         assert config.enabled_for_repo is True
+
+
+def test_verification_reuse_requires_project_ownership_not_global_preferences(tmp_path):
+    from des.adapters.driven.config.des_config import DESConfig
+
+    project = tmp_path / "project.json"
+    global_config = tmp_path / "global.json"
+    policy = {"verification": {"reuse": {"outputs": ["generated", "artifacts"]}}}
+    global_config.write_text(json.dumps(policy))
+    config = DESConfig(config_path=project, global_config_path=global_config)
+    assert config.verification_reuse_outputs is None
+    project.write_text(json.dumps(policy))
+    assert config.verification_reuse_outputs == ("generated", "artifacts")
+    project.write_text('{"verification": {}}')
+    assert config.verification_reuse_outputs is None
+
+
+def test_verification_reuse_policy_decodes_whole_configuration(tmp_path):
+    from des.adapters.driven.config.des_config import DESConfig, VerificationReusePolicy
+
+    project = tmp_path / "project.json"
+    project.write_text(
+        json.dumps(
+            {
+                "verification": {
+                    "reuse": {
+                        "outputs": ["generated"],
+                        "workspace": {"root": "work", "automatic": False},
+                    }
+                }
+            }
+        )
+    )
+    config = DESConfig(
+        config_path=project, global_config_path=tmp_path / "missing-global.json"
+    )
+    policy = config.verification_reuse_policy()
+    assert isinstance(policy, VerificationReusePolicy)
+    assert policy.outputs == ("generated",)
+    assert policy.workspace == {"root": "work", "automatic": False}
+    # The per-field properties are views of the same kernel view.
+    assert config.verification_reuse_outputs == policy.outputs
+    assert config.verification_reuse_workspace == policy.workspace
+    # A malformed outputs list refuses through the same view.
+    project.write_text('{"verification": {"reuse": {"outputs": []}}}')
+    with pytest.raises(ValueError):
+        _ = config.verification_reuse_policy()
+
+
+def test_verification_reuse_policy_absent(tmp_path):
+    from des.adapters.driven.config.des_config import DESConfig
+
+    config = DESConfig(
+        config_path=tmp_path / "project.json",
+        global_config_path=tmp_path / "missing-global.json",
+    )
+    assert config.verification_reuse_policy() is None
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '{"verification": null}',
+        '{"verification": {"reuse": null}}',
+        '{"verification": {"reuse": {"outputs": []}}}',
+        '{"verification": {"reuse": {"outputs": ["generated", "generated"]}}}',
+        '{"verification": {"reuse": {"outputs": [42]}}}',
+        '{"verification": {"reuse": {"outputs": ["generated"], "enabled": true}}}',
+        '{"verification":',
+    ],
+)
+def test_malformed_verification_reuse_is_not_silently_cold(tmp_path, raw):
+    from des.adapters.driven.config.des_config import DESConfig
+
+    project = tmp_path / "project.json"
+    project.write_text(raw)
+    config = DESConfig(
+        config_path=project, global_config_path=tmp_path / "missing-global.json"
+    )
+    with pytest.raises(ValueError):
+        _ = config.verification_reuse_outputs
+
+
+def test_verification_reuse_outputs_and_workspace_coexist(tmp_path):
+    from des.adapters.driven.config.des_config import DESConfig
+
+    project = tmp_path / "project.json"
+    project.write_text(
+        json.dumps(
+            {
+                "verification": {
+                    "reuse": {
+                        "outputs": ["generated"],
+                        "workspace": {
+                            "root": "work",
+                            "cache_limit_bytes": 1024,
+                            "automatic": True,
+                            "adopt_outputs": ["vendor-cache"],
+                        },
+                    }
+                }
+            }
+        )
+    )
+    config = DESConfig(
+        config_path=project, global_config_path=tmp_path / "missing-global.json"
+    )
+    assert config.verification_reuse_outputs == ("generated",)
+    assert config.verification_reuse_workspace == {
+        "root": "work",
+        "cache_limit_bytes": 1024,
+        "automatic": True,
+        "adopt_outputs": ["vendor-cache"],
+    }
+
+
+def test_verification_reuse_workspace_absent_or_partial(tmp_path):
+    from des.adapters.driven.config.des_config import DESConfig
+
+    project = tmp_path / "project.json"
+    project.write_text('{"verification": {"reuse": {"outputs": ["generated"]}}}')
+    config = DESConfig(
+        config_path=project, global_config_path=tmp_path / "missing-global.json"
+    )
+    assert config.verification_reuse_workspace is None
+    project.write_text('{"verification": {"reuse": {"workspace": {}}}}')
+    assert config.verification_reuse_workspace == {}
+    project.write_text(
+        '{"verification": {"reuse": {"workspace": {"automatic": true}}}}'
+    )
+    assert config.verification_reuse_workspace == {"automatic": True}
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '{"verification": {"reuse": {"workspace": []}}}',
+        '{"verification": {"reuse": {"workspace": {"root": ""}}}}',
+        '{"verification": {"reuse": {"workspace": {"root": 7}}}}',
+        '{"verification": {"reuse": {"workspace": {"cache_limit_bytes": 0}}}}',
+        '{"verification": {"reuse": {"workspace": {"cache_limit_bytes": -5}}}}',
+        '{"verification": {"reuse": {"workspace": {"cache_limit_bytes": true}}}}',
+        '{"verification": {"reuse": {"workspace": {"automatic": "yes"}}}}',
+        '{"verification": {"reuse": {"workspace": {"enabled": true}}}}',
+        '{"verification": {"reuse": {"workspace": {"adopt_outputs": []}}}}',
+        '{"verification": {"reuse": {"workspace": {"adopt_outputs": ["a", "a"]}}}}',
+        '{"verification": {"reuse": {"workspace": {"adopt_outputs": [7]}}}}',
+        '{"verification": {"reuse": {"workspace": {"adopt_outputs": "target"}}}}',
+    ],
+)
+def test_malformed_verification_reuse_workspace_is_refused(tmp_path, raw):
+    from des.adapters.driven.config.des_config import DESConfig
+
+    project = tmp_path / "project.json"
+    project.write_text(raw)
+    config = DESConfig(
+        config_path=project, global_config_path=tmp_path / "missing-global.json"
+    )
+    with pytest.raises(ValueError):
+        _ = config.verification_reuse_workspace

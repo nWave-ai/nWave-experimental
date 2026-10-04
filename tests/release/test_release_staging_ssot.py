@@ -1219,6 +1219,7 @@ def _clean_install_probe(
     clean_env.update(
         {
             "HOME": str(fake_home),
+            "NWAVE_AGENTS_HOME": str(fake_home),
             "USERPROFILE": str(fake_home),
             "PATH": f"{binary_dir}{os.pathsep}{clean_env.get('PATH', '')}",
             "PYTHONNOUSERSITE": "1",
@@ -1985,6 +1986,7 @@ def test_same_real_wheel_installs_public_native_surfaces_for_non_codex_hosts(
     clean_env.update(
         {
             "HOME": str(installed["fake_home"]),
+            "NWAVE_AGENTS_HOME": str(installed["fake_home"]),
             "USERPROFILE": str(installed["fake_home"]),
             "PATH": f"{binary_dir}{os.pathsep}{clean_env.get('PATH', '')}",
             "PYTHONNOUSERSITE": "1",
@@ -2151,6 +2153,7 @@ def test_mixed_claude_copilot_source_install_keeps_claude_hook_on_existing_runti
     hook_env.pop("PYTHONPATH", None)
     hook_env.pop("PYTHONHOME", None)
     hook_env["HOME"] = str(fake_home)
+    hook_env["NWAVE_AGENTS_HOME"] = str(fake_home)
     hook_env["USERPROFILE"] = str(fake_home)
     fired = subprocess.run(
         ["bash", "-c", command],
@@ -2206,6 +2209,7 @@ def test_standalone_copilot_hook_executes_from_its_installed_runtime(
     environment.update(
         {
             "HOME": str(installed["fake_home"]),
+            "NWAVE_AGENTS_HOME": str(installed["fake_home"]),
             "USERPROFILE": str(installed["fake_home"]),
             "PATH": f"{binary_dir}{os.pathsep}{environment.get('PATH', '')}",
             "PYTHONNOUSERSITE": "1",
@@ -2274,6 +2278,7 @@ def test_all_target_install_keeps_codex_and_copilot_hooks_on_one_runtime(
     environment.update(
         {
             "HOME": str(home),
+            "NWAVE_AGENTS_HOME": str(home),
             "USERPROFILE": str(home),
             "PATH": f"{binary_dir}{os.pathsep}{environment.get('PATH', '')}",
             "PYTHONNOUSERSITE": "1",
@@ -2437,6 +2442,7 @@ def test_same_real_wheel_native_lifecycle_is_owned_and_never_creates_claude(
     environment.update(
         {
             "HOME": str(fake_home),
+            "NWAVE_AGENTS_HOME": str(fake_home),
             "USERPROFILE": str(fake_home),
             "PATH": f"{binary_dir}{os.pathsep}{environment.get('PATH', '')}",
             "PYTHONNOUSERSITE": "1",

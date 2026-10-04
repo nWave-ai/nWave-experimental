@@ -1,10 +1,10 @@
 {
   "installed_at_iso": "1970-01-01T00:00:00Z",
-  "installed_version": "4.0.0+atddpure.0b7a60fd2",
+  "installed_version": "4.0.0+atddpure.44a8d7890",
   "schema_version": 1,
   "source_commit": "",
   "source_dirty": false,
   "source_kind": "wheel",
   "source_tree": "",
-  "tree_hash": "sha256:125de3aacba96144eb530995d678da28039da8a09d9f91344f526049e5b68c57"
+  "tree_hash": "sha256:49f48bbeaf91e9d91f5b56138526273a09873358cb74203a26f8b1c648bb12c1"
 }

@@ -58,7 +58,9 @@ from des.ports.driven_ports.task_invocation_port import (
     DesignTarget,
     ModelOutcome,
     ModelRun,
+    NotApplicable,
     ProductValue,
+    ReuseAnalysis,
     TaskInvocationPort,
 )
 from tests.des._helpers.step_stimulus import crafted, through_oracle
@@ -95,6 +97,16 @@ def _facts(*, extra: tuple[str, ...] = ()) -> DesignFacts:
         acceptance_supports=(),
         verification=(("python", "-m", "pytest", ORACLE, "-q"),),
         oracle_verification_index=0,
+        architectural_tests=NotApplicable(
+            "The fixture has no structural boundary change."
+        ),
+        contract_tests=NotApplicable("The fixture changes no shared contract."),
+        prefactoring=NotApplicable("The fixture requires no preservation move."),
+        agreement_analysis=NotApplicable("The fixture has no affected agreement."),
+        reuse_analysis=ReuseAnalysis(()),
+        impact_closure=NotApplicable(
+            "The fixture reaches no public surface, consumer or build metadata."
+        ),
     )
 
 
@@ -247,112 +259,6 @@ def one_craft_turn(subject: Path, port: ScriptedPort) -> DeliveryOutcome | tuple
     return crafted(runner, port, subject, stored, design)
 
 
-@pytest.mark.parametrize(
-    "blocker",
-    [CraftBlocker.Oracle, CraftBlocker.Design, CraftBlocker.Product],
-    ids=["oracle", "design", "product"],
-)
-def test_a_blocked_craft_turn_refuses_and_buys_nobody_a_correction(
-    subject: Path, blocker: CraftBlocker
-) -> None:
-    """Every closed word ends this invocation; none of them routes anywhere.
-
-    The three words used to mean three different things to the software -- two
-    opened a correction window on a role, the third did not. A step invoked
-    alone treats them alike, because choosing who answers a finding is Section
-    4b's decision for the orchestrator and not a branch in here.
-    """
-    port = ScriptedPort(subject, [_blocked(blocker)])
-
-    outcome = one_craft_turn(subject, port)
-
-    assert isinstance(outcome, DeliveryOutcome)
-    assert outcome.disposition is Disposition.Refusal
-    assert outcome.failure is not None
-    assert outcome.failure.what == "CraftRejected"
-    # Nobody was re-invoked: one crafter turn, no correction of any role.
-    assert port.roles.count("nw-software-crafter") == 1, port.roles
-    assert port.designer_corrections == 0, port.roles
-    assert port.architect_turns == [OBSERVATION], port.roles
-
-
-def test_the_crafters_own_finding_travels_verbatim_into_the_refusal(
-    subject: Path,
-) -> None:
-    """The runner never paraphrases a diagnostic; it forwards it.
-
-    This is the surviving half of the routing scenarios: the finding has to
-    reach the orchestrator intact for it to be able to choose an owner at all.
-    """
-    port = ScriptedPort(subject, [_blocked(CraftBlocker.Oracle)])
-
-    outcome = one_craft_turn(subject, port)
-
-    assert isinstance(outcome, DeliveryOutcome)
-    assert outcome.failure is not None
-    assert FINDING in outcome.failure.why
-
-
-def test_a_refusal_that_names_no_blocker_is_still_the_crafters_own_refusal(
-    subject: Path,
-) -> None:
-    """An absent closed word costs the step nothing, because it routes nothing.
-
-    RECONCILED AGAINST THE CURRENT CODE, and the change is a consequence rather
-    than a regression. While the software spent a window on the word, an
-    envelope that carried none left it with nothing to route and no honest way
-    to guess, so it answered `CraftBlockerMissing` / `Indeterminate` -- the
-    DEGRADE-LOUD of a routing decision it could not take (GDP-6). A step takes
-    no such decision, so there is nothing left to degrade: the word is data the
-    orchestrator may or may not receive, and the turn is the crafter's own
-    refusal either way. What must NOT happen is the step inventing an owner,
-    and the assertions below are that it does not: no role is re-invoked.
-    """
-    port = ScriptedPort(subject, [_blocked(None)])
-
-    outcome = one_craft_turn(subject, port)
-
-    assert isinstance(outcome, DeliveryOutcome)
-    assert outcome.disposition is Disposition.Refusal
-    assert outcome.failure is not None
-    assert outcome.failure.what == "CraftRejected"
-    assert FINDING in outcome.failure.why
-    assert port.designer_corrections == 0, port.roles
-    assert port.architect_turns == [OBSERVATION], port.roles
-
-
-def test_an_indeterminate_craft_turn_buys_no_correction(subject: Path) -> None:
-    # A turn that established no semantic result answers nothing, so spending a
-    # paid correction on it would buy a repair for a finding nobody made.
-    port = ScriptedPort(
-        subject,
-        [ModelRun(ModelOutcome.Indeterminate, "the crafter did not answer", 0, True)],
-    )
-
-    outcome = one_craft_turn(subject, port)
-
-    assert isinstance(outcome, DeliveryOutcome)
-    assert outcome.disposition is Disposition.Indeterminate
-    assert outcome.failure is not None
-    assert outcome.failure.what == "CraftIndeterminate"
-    assert port.designer_corrections == 0, port.roles
-
-
-def test_an_accepted_craft_turn_changes_the_declared_target(subject: Path) -> None:
-    """The negative control: the same stimulus, answered, writes the byte.
-
-    Without it every assertion above is satisfied by a `craft` step that
-    refuses unconditionally.
-    """
-    port = ScriptedPort(subject, [_accepted()])
-
-    outcome = one_craft_turn(subject, port)
-
-    assert not isinstance(outcome, DeliveryOutcome), outcome
-    assert (subject / PRODUCTION).read_text(encoding="utf-8") == BODY
-    assert SHARED not in _fact(port.craft_prompts[-1], "mutable_targets")  # type: ignore[operator]
-
-
 def test_a_failed_standalone_verify_retains_native_evidence_after_candidate_cleanup(
     subject: Path,
 ) -> None:
@@ -367,7 +273,7 @@ def test_a_failed_standalone_verify_retains_native_evidence_after_candidate_clea
     # it. This is a native failure, not a mocked record or a provider verdict.
     (subject / PRODUCTION).write_text("ANSWER = 41\n", encoding="utf-8")
     outcome = runner.verify_request(
-        subject, port, stored, [(stored.values[0].observation, design)]
+        subject, stored, [(stored.values[0].observation, design)]
     )
 
     assert isinstance(outcome, DeliveryOutcome), outcome
@@ -383,6 +289,7 @@ def test_a_failed_standalone_verify_retains_native_evidence_after_candidate_clea
     assert retained[0]["argv"] == ["python", "-m", "pytest", ORACLE, "-q"]
     assert retained[0]["exit"] == 1
     assert "AssertionError" in retained[0]["stdout"] + retained[0]["stderr"]
+    assert retained[0]["cwd"] and not Path(retained[0]["cwd"]).exists()
     # Candidate worktrees are still ephemeral; only their observation remains.
     worktrees = subprocess.run(
         ["git", "-C", str(subject), "worktree", "list", "--porcelain"],
@@ -391,6 +298,122 @@ def test_a_failed_standalone_verify_retains_native_evidence_after_candidate_clea
         text=True,
     ).stdout
     assert "nwave-candidate-" not in worktrees
+
+
+@pytest.mark.parametrize(
+    "phase", ("native", "interrupt", "radius", "retention", "checkout")
+)
+def test_candidate_worktree_is_removed_when_native_execution_raises(
+    subject: Path, monkeypatch: pytest.MonkeyPatch, phase: str
+) -> None:
+    port = ScriptedPort(subject, [_accepted()])
+    runner, stored, design = through_oracle(port, subject, REQUEST)
+    assert not isinstance(
+        crafted(runner, port, subject, stored, design), DeliveryOutcome
+    )
+    candidates: list[Path] = []
+    native, git_observation = runner._native, runner._git
+    exception = KeyboardInterrupt if phase == "interrupt" else RuntimeError
+
+    def interrupted(*_args, **_kwargs):
+        raise exception("candidate observation interrupted")
+
+    def observe_native(directory: Path, *args, **kwargs):
+        candidates.append(directory)
+        if phase in {"native", "interrupt"}:
+            interrupted()
+        return native(directory, *args, **kwargs)
+
+    def observe_git(root: Path, *args: str, **kwargs):
+        result = git_observation(root, *args, **kwargs)
+        if phase == "checkout" and args[:2] == ("worktree", "add"):
+            candidates.append(Path(args[3]))
+            interrupted()
+        return result
+
+    monkeypatch.setattr(runner, "_native", observe_native)
+    monkeypatch.setattr(runner, "_git", observe_git)
+    if phase == "radius":
+        monkeypatch.setattr(
+            "des.application.delivery_continuation.candidate_radius", interrupted
+        )
+    if phase == "retention":
+        monkeypatch.setattr(runner, "_retain_native_failure_evidence", interrupted)
+    with pytest.raises(exception, match="candidate observation interrupted"):
+        runner.verify_request(subject, stored, [(stored.values[0].observation, design)])
+
+    assert candidates
+    assert not candidates[0].exists(), "the failed invocation left its owned checkout"
+    worktrees = runner._git(subject, "worktree", "list", "--porcelain").stdout
+    assert str(candidates[0]) not in worktrees
+    assert (subject / PRODUCTION).read_text() == BODY
+    if phase == "radius":
+        assert runner.native_evidence_locator is not None
+        retained = json.loads((subject / runner.native_evidence_locator).read_bytes())
+        assert retained[0]["exit"] == 0
+        assert "1 passed" in retained[0]["stdout"]
+
+
+def test_cleanup_failure_names_its_owned_path_and_keeps_native_receipts(
+    subject: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    port = ScriptedPort(subject, [_accepted()])
+    runner, stored, design = through_oracle(port, subject, REQUEST)
+    assert not isinstance(
+        crafted(runner, port, subject, stored, design), DeliveryOutcome
+    )
+    candidates: list[Path] = []
+    native = runner._native
+
+    def lock_candidate(directory: Path, *args, **kwargs):
+        candidates.append(directory)
+        evidence = native(directory, *args, **kwargs)
+        assert not runner._git(subject, "worktree", "lock", str(directory)).returncode
+        return evidence
+
+    monkeypatch.setattr(runner, "_native", lock_candidate)
+    try:
+        outcome = runner.verify_request(
+            subject, stored, [(stored.values[0].observation, design)]
+        )
+        assert isinstance(outcome, DeliveryOutcome)
+        assert outcome.disposition is Disposition.Indeterminate
+        assert outcome.failure and outcome.failure.what == "CleanupUnproven"
+        assert str(candidates[0]) in outcome.failure.why
+        assert str(candidates[0]) in outcome.failure.how
+        assert candidates[0].exists()
+        assert runner.native_evidence_locator is not None
+        retained = json.loads((subject / runner.native_evidence_locator).read_bytes())
+        assert retained[0]["exit"] == 0
+    finally:
+        for directory in candidates:
+            runner._git(subject, "worktree", "unlock", str(directory))
+            runner._git(subject, "worktree", "remove", "--force", str(directory))
+
+
+def test_unavailable_candidate_removes_only_its_empty_owned_allocation(
+    subject: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import tempfile
+
+    from des.application.delivery_continuation import DeliveryContinuationRunner
+
+    allocated: list[Path] = []
+    allocate = tempfile.mkdtemp
+
+    def capture_allocation(*args, **kwargs):
+        directory = allocate(*args, **kwargs)
+        allocated.append(Path(directory))
+        return directory
+
+    monkeypatch.setattr(tempfile, "mkdtemp", capture_allocation)
+    outcome = DeliveryContinuationRunner()._with_candidate_worktree(
+        subject, "0" * 40, ()
+    )
+    assert isinstance(outcome, DeliveryOutcome)
+    assert outcome.failure and outcome.failure.what == "CandidateCheckoutUnavailable"
+    assert allocated and all(not path.exists() for path in allocated)
+    assert (subject / "README.md").read_text() == "subject\n"
 
 
 def test_verification_record_becomes_historical_when_a_declared_target_changes(
@@ -408,11 +431,13 @@ def test_verification_record_becomes_historical_when_a_declared_target_changes(
         crafted(runner, port, subject, stored, design), DeliveryOutcome
     )
     verified = runner.verify_request(
-        subject, port, stored, [(stored.values[0].observation, design)]
+        subject, stored, [(stored.values[0].observation, design)]
     )
     assert not isinstance(verified, DeliveryOutcome), verified
     _base, candidate, _evidence = verified
-    assert runner.persist_native_radius(subject, candidate)
+    assert runner.persist_candidate_observations(
+        subject, candidate, stored, [(stored.values[0].observation, design)]
+    )
     runner.record_verified_candidate(subject, stored, candidate, None)
 
     current = runner.verification_record(subject, stored)
@@ -448,6 +473,7 @@ def test_an_incomplete_declared_native_command_retains_prior_evidence_after_clea
     partial: str,
 ) -> None:
     """A late native interruption cannot erase the command that already answered."""
+    monkeypatch.setenv("NATIVE_EVIDENCE_SECRET", "must-not-be-recorded")
     port = ScriptedPort(subject, [_accepted()])
     runner, stored, design = through_oracle(port, subject, REQUEST)
     assert not isinstance(
@@ -477,7 +503,7 @@ def test_an_incomplete_declared_native_command_retains_prior_evidence_after_clea
 
     monkeypatch.setattr("des.application.delivery_continuation.spawn", native_spawn)
     outcome = runner.verify_request(
-        subject, port, stored, [(stored.values[0].observation, design)]
+        subject, stored, [(stored.values[0].observation, design)]
     )
 
     assert isinstance(outcome, DeliveryOutcome), outcome
@@ -503,10 +529,9 @@ def test_an_incomplete_declared_native_command_retains_prior_evidence_after_clea
     assert retained[0]["duration_seconds"] >= 0
     assert retained[1]["duration_seconds"] >= 0
     assert retained[1]["cwd"]
-    assert set(retained[1]["declared_environment"]) <= {
-        "PYTHONPATH",
-        "PYTEST_ADDOPTS",
-    }
+    assert not Path(retained[1]["cwd"]).exists()
+    assert "NATIVE_EVIDENCE_SECRET" not in retained[1]["declared_environment"]
+    assert "must-not-be-recorded" not in json.dumps(retained)
     if failure == "timeout":
         assert retained[1]["stderr"] == "partial stderr\n"
     assert retained[1]["incomplete"] is True
@@ -553,12 +578,14 @@ def test_native_success_evidence_survives_a_later_host_recorded_role_failure(
 
     monkeypatch.setattr(runner, "_native", counted_native)
     verified = runner.verify_request(
-        subject, port, stored, [(stored.values[0].observation, design)]
+        subject, stored, [(stored.values[0].observation, design)]
     )
 
     assert not isinstance(verified, DeliveryOutcome), verified
     _base, candidate, _evidence = verified
-    assert runner.persist_native_radius(subject, candidate)
+    assert runner.persist_candidate_observations(
+        subject, candidate, stored, [(stored.values[0].observation, design)]
+    )
     runner.record_verified_candidate(subject, stored, candidate, None)
 
     # The host selects and records the later role through its own port.  Verify
@@ -582,7 +609,7 @@ def test_native_success_evidence_survives_a_later_host_recorded_role_failure(
             session=f"later-{role}-{outcome}",
         ),
         json.dumps({"structured_output": role_payload}).encode(),
-        prepared_input=Path(input_locator) if role == "examiner" else None,
+        prepared_input=Path(input_locator),
     )
     assert recorded == outcome
     result = json.loads((subject / result_locator).read_text(encoding="utf-8"))
@@ -597,6 +624,7 @@ def test_native_success_evidence_survives_a_later_host_recorded_role_failure(
     assert retained[0]["argv"] == ["python", "-m", "pytest", ORACLE, "-q"]
     assert retained[0]["exit"] == 0
     assert "1 passed" in retained[0]["stdout"]
+    assert retained[0]["cwd"] and not Path(retained[0]["cwd"]).exists()
     assert retained[0]["stderr"] == ""
     retained_candidate, digest = _native_record_identity(record)
     assert retained_candidate == candidate

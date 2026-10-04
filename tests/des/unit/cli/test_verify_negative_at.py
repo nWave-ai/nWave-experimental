@@ -3,7 +3,7 @@
 These tests ARE the evolution-plan P0.3 done-currency, made permanent: the
 gate was proven by execution against a planted defect of its target class
 (a critical scenario covered only by presence-only ATs — the GS-8 /
-lyra-tsunami-4x class where "asserts the right output appears" passed every
+external-tsunami-4x class where "asserts the right output appears" passed every
 code-reading review while nothing asserted the wrong output is NOT
 produced), a compliant case, the Gherkin arm, the honest-N/A case, and the
 degrade-LOUD case. Deleting the gate's logic turns these RED.
@@ -166,3 +166,25 @@ def test_test_dir_scans_py_and_feature_files(tmp_path: Path) -> None:
     (tmp_path / "booking.feature").write_text(_PRESENCE_ONLY_FEATURE)
 
     assert main(["--test-dir", str(tmp_path)]) == 1
+
+
+def test_native_literal_file_with_unknown_surface_is_not_not_applicable(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    native = tmp_path / "test reservation.ml"
+    native.write_text('let () = Alcotest.run "reservation" []\n')
+    assert main(["--repo", str(tmp_path), "--test-file", native.name]) == 2
+    assert _first_event(capsys)["event"] == "NegativeAtIndeterminate"
+    assert native.read_text() == 'let () = Alcotest.run "reservation" []\n'
+
+
+def test_native_name_observation_does_not_claim_assertions_or_complete_scan(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    native = tmp_path / "reservation.rs"
+    native.write_text("fn reservation_rejects_conflict() {}\n")
+    assert main(["--test-file", str(native), "--all-critical"]) == 0
+    event = _first_event(capsys)
+    assert event["negative_ats_found"] == 1
+    assert event["assertions_verified"] is False
+    assert event["native_scan_complete"] is False

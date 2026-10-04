@@ -215,12 +215,14 @@ class TargetPlatform(Enum):
     OPENCODE: OpenCode AI coding assistant (Charm Bracelet, ~/.config/opencode/)
     CODEX: OpenAI Codex CLI (Rust, ~/.codex/)
     COPILOT_CLI: GitHub Copilot CLI (@github/copilot, ~/.copilot/)
+    OMP: oh-my-pi (omp, ~/.omp/)
     """
 
     CLAUDE_CODE = "claude_code"
     OPENCODE = "opencode"
     CODEX = "codex"
     COPILOT_CLI = "copilot"
+    OMP = "omp"
 
 
 def _detect_claude_code() -> bool:
@@ -305,6 +307,33 @@ def _detect_copilot() -> bool:
     return copilot_env or copilot_config_exists or copilot_binary
 
 
+def _detect_omp() -> bool:
+    """Detect if OMP (oh-my-pi) is available for installation.
+
+    Checks two signals, mirroring the Codex/OpenCode detectors:
+    - `omp` binary in PATH (via shutil.which)
+    - the OMP native agent directory exists
+
+    The directory is the config-root agent dir, ``$HOME/.omp/agent`` by
+    default. OMP's documented ``PI_CONFIG_DIR`` override renames the config
+    root under home, so detection resolves through ``omp_agent_dir()`` -- the
+    SAME resolver the omp installer plugins write through. Deciding on a
+    hardcoded ``~/.omp`` instead would key on the designation rather than on
+    the property "an OMP agent dir exists where we would install".
+
+    Returns:
+        True if any OMP signal is detected.
+    """
+    try:
+        from scripts.shared.install_paths import omp_agent_dir
+    except ImportError:  # installed layout: scripts/ is on sys.path
+        from shared.install_paths import omp_agent_dir  # type: ignore[no-redef]
+
+    omp_binary = shutil.which("omp") is not None
+    omp_config_exists = omp_agent_dir().is_dir()
+    return omp_binary or omp_config_exists
+
+
 def detect_target_platforms() -> set[TargetPlatform]:
     """Auto-detect which AI coding platforms are available for installation.
 
@@ -314,6 +343,7 @@ def detect_target_platforms() -> set[TargetPlatform]:
     - Codex CLI: `codex` binary in PATH OR ~/.codex/ directory exists
     - Copilot CLI: COPILOT_CLI env set OR $COPILOT_HOME/~/.copilot/ exists OR
       `copilot` binary in PATH
+    - OMP: `omp` binary in PATH OR the OMP native agent directory exists
 
     Returns:
         Set of detected platforms, which is empty when no supported host is
@@ -333,5 +363,8 @@ def detect_target_platforms() -> set[TargetPlatform]:
 
     if _detect_copilot():
         platforms.add(TargetPlatform.COPILOT_CLI)
+
+    if _detect_omp():
+        platforms.add(TargetPlatform.OMP)
 
     return platforms

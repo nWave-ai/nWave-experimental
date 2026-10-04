@@ -251,7 +251,7 @@ class DESPlugin(InstallationPlugin):
     # These are the complete command strings emitted by the retired shared
     # hook registry.  Upgrade cleanup deliberately uses equality, rather than
     # token matching: hooks.json is user-owned outside the entries installed by
-    # this plugin, so a Lyra or user hook may legitimately mention a retired
+    # this plugin, so a External or user hook may legitimately mention a retired
     # protocol while doing something unrelated.
     _RETIRED_HOOK_COMMANDS = (
         "# des-hook:pre-bash-spine-ledger\n"

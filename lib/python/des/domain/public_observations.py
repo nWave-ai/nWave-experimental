@@ -132,7 +132,7 @@ class _Validator:
                 pointer, "bad_value", f"must contain at most {maximum} character(s)"
             )
         if pattern is not None and not pattern.fullmatch(value):
-            self.add(pointer, "bad_value", "has an invalid format")
+            self.add(pointer, "bad_value", f"must match {pattern.pattern}")
         return True
 
     def any_strings(self, value: object, pointer: str) -> None:
@@ -162,7 +162,11 @@ class _Validator:
             self.add(pointer, "wrong_type", "must be a state reference or null")
         elif value not in states:
             self.add(
-                pointer, "unresolved_ref", f"does not name a state: {json.dumps(value)}"
+                pointer,
+                "unresolved_ref",
+                f"does not name a key of /states: {json.dumps(value)}; a reference "
+                "is null or a state key such as S1 whose value lives in /states, "
+                "never inline content",
             )
 
     def validate(self, packet: object) -> list[Defect]:
@@ -220,7 +224,7 @@ class _Validator:
                     self.add(
                         _join("/states", key),
                         "bad_value",
-                        "state key has an invalid format",
+                        f"state key must match {_STATE.pattern} (S1 to S99999)",
                     )
         scenarios = packet["scenarios"]
         if not isinstance(scenarios, list):
@@ -386,3 +390,86 @@ def read_packet(
             "copied_source_or_selectors",
         ],
     }
+
+
+def encode_packet(
+    candidate: str,
+    tree: str,
+    producer: dict[str, str],
+    states: dict[str, object],
+    scenarios: list[dict[str, object]],
+) -> bytes:
+    """Construct transport bytes from host-selected public events, not capture them."""
+    packet = {
+        "schema": SCHEMA,
+        "version": 1,
+        "candidate_sha": candidate,
+        "candidate_tree_sha": tree,
+        "producer": producer,
+        "states": states,
+        "scenarios": scenarios,
+    }
+    defects = _Validator(candidate, tree, []).validate(packet)
+    if defects:
+        raise ObservationPacketRefused(defects)
+    raw = json.dumps(
+        packet, ensure_ascii=False, sort_keys=True, allow_nan=False
+    ).encode("utf-8")
+    if len(raw) > MAX_PACKET_BYTES:
+        raise ObservationPacketRefused(
+            [
+                Defect(
+                    "",
+                    "oversize",
+                    f"is {len(raw)} bytes; maximum is {MAX_PACKET_BYTES}",
+                )
+            ],
+            True,
+        )
+    return raw
+
+
+def input_description() -> str:
+    """Project a validated public example at the authoring surface."""
+    example = encode_packet(
+        "0" * 40,
+        "0" * 40,
+        {"id": "host-public-capture", "version": "1"},
+        {"S1": {"status": "before"}, "S2": {"status": "after"}},
+        [
+            {
+                "id": "public-journey",
+                "substrate": "installed_host",
+                "purpose": "Distinguish the promised public behavior from its falsifier.",
+                "events": [
+                    {
+                        "seq": 1,
+                        "stimulus": {
+                            "argv": ["public-command", "public-argument"],
+                            "stdin": None,
+                        },
+                        "response": {
+                            "exit": 0,
+                            "stdout": "observed response",
+                            "stderr": "",
+                        },
+                        "state": {"before": "S1", "after": "S2"},
+                        "counter": None,
+                    }
+                ],
+            }
+        ],
+    )
+    return (
+        "Host captures actual public stimuli/responses/state, then uses "
+        "`des.domain.public_observations.encode_packet` to construct the JSON bytes. "
+        "No tests/evals helper or Python user test is required. The host selects the "
+        "events; DES validates transport, not capture authenticity. Replace example "
+        "identities with the verified candidate SHA and its tree SHA, use only public "
+        "data, never source/test locators. Substrate: installed_host, source_tree or "
+        "mock_provider (declare honestly). State keys are S1 to S99999; state "
+        "references (stimulus.stdin, state.before/after) are null or such keys. "
+        "seq increases within each scenario, gaps allowed. All example keys are required. "
+        f"Maximum {MAX_PACKET_BYTES} UTF-8 bytes; select fewer events rather than truncate.\n\n"
+        + json.dumps(json.loads(example), ensure_ascii=False, indent=2)
+    )

@@ -7,7 +7,16 @@ disable-model-invocation: true
 
 # Consolidation Patterns (KNOWLEDGE)
 
-**Kind**: KNOWLEDGE (reference). **One trigger**: "I have redundant tests — how do I collapse them without losing coverage" — consulted when the budget gate fires consolidation, or the paradigm-match rule routes here. Composed by `nw-test-optimization`.
+Native project conventions govern every pattern below. Python decorators,
+fixture scopes and plugin commands illustrate Python bindings only; use the
+actual native runner/build graph and sufficient incumbent helpers under
+`nw-test-design-mandates`. Do not install pytest/xdist/randomly or add `.py`
+files to apply consolidation in another stack. Preserve distinct consumer
+observations, not test counts, source wording or hash pins.
+
+**Kind**: KNOWLEDGE (reference). **One trigger**: "I have redundant tests — how do I collapse them without losing coverage" — consulted when behavior mapping shows two tests observing the same outcome, or the paradigm-match rule routes here. Composed by `nw-test-optimization`.
+
+**Write scope**: apply these edits only to test files the dispatch declares as the oracle set under revision. A role reusing a complete oracle read-only (GREEN_TO_GREEN) or reviewing it reports consolidation candidates to their owner instead of editing. The release-window deadlines below bind the project's test-optimization workflow, not a single role turn.
 
 Apply in this order. Each preserves coverage.
 
@@ -106,7 +115,7 @@ class TestTutorialSetupScripts:
 **Pre-conditions** (HARD GATES):
 - Setup is **read-only** for the assertions — no test mutates shared state. If even one test mutates, scope cannot promote (audit per §3.3).
 - Failure granularity preserved: each assertion identifies WHAT failed (file/property/contract), not just "setup failed".
-- Tests remain **order-independent** — `pytest-randomly` must not change outcomes (proves no hidden coupling).
+- Tests remain **order-independent** — use the project's native isolated/reordered execution capability to expose hidden coupling; pytest-randomly is only an optional Python binding, not a universal prerequisite.
 
 **Anti-pattern**: do NOT collapse when assertions verify **steps of a state-transition sequence** (run A → assert, mutate B → assert, mutate C → assert). That is state-delta paradigm territory (§3.8), not single-lifecycle.
 
@@ -116,4 +125,4 @@ For tests that mutate user-observable state (installer, uninstaller, sync, hooks
 
 Honest gain: 13% compression / 17% wall-clock on the addressable subset (Ale 2026-05-05 revision). NOT universal — pure-function/AST/schema tests retain standard assertions (3-5× ceremony for zero gain otherwise).
 
-See: `nw-state-delta-paradigm` skill (when present) and memory `feedback_state_transition_test_paradigm` for scope rules. Empirical anchor: Task #12 pilot (both slices).
+See `nw-tdd-methodology-paradigm` for public-state/transition observation and `nw-test-design-mandates` for native conventions; no optional missing skill or private-memory lookup is required.

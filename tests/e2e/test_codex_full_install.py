@@ -8,7 +8,7 @@ proper format transformations:
 
   1. Skills at ~/.agents/skills/, each with SKILL.md (NOT under ~/.codex/)
   2. Agents at ~/.codex/agents/ as `.toml` files (Codex frontmatter shape)
-  3. DES hook wired into ~/.codex/hooks.json with narrow ^Task$|^Bash$ matcher
+  3. DES hook wired into ~/.codex/hooks.json matching exec_command, not Task
   4. Three manifests:
        - ~/.agents/skills/.nwave-manifest.json
        - ~/.codex/agents/.nwave-agents-manifest.json
@@ -34,38 +34,10 @@ import pytest
 from tests.e2e.conftest import exec_in_container, require_docker
 
 
-# Core install markers — same contract as OpenCode (the installer plugins
-# emit identical phase markers regardless of detected target).  The Codex
-# install does NOT register a commands plugin (Codex has no slash-command
-# surface), so we check the same four core markers as OpenCode.
-_CORE_MARKERS = (
-    "Skills installed",
-    "Agents installed",
-    "DES module",
-    "Settings updated",
-)
-
-
 @pytest.mark.e2e
 @require_docker
 class TestCodexFullInstall:
     """Codex-aware installer deploys skills, agents, DES hooks with contract."""
-
-    # --- 1. Install succeeded (core markers) -----------------------------
-
-    def test_install_produced_core_component_markers(self, codex_container) -> None:
-        """>=3 of 4 core install markers must appear in installer stdout.
-
-        Mirrors the OpenCode heuristic: optional plugins may fail without
-        invalidating the core install contract.
-        """
-        stdout = getattr(codex_container, "_install_stdout", "")
-        found = sum(1 for m in _CORE_MARKERS if m in stdout)
-        assert found >= 3, (
-            f"Only {found}/{len(_CORE_MARKERS)} core markers found in install output.\n"
-            f"Markers expected: {_CORE_MARKERS}\n"
-            f"Install output tail:\n{stdout[-800:]}"
-        )
 
     # --- 2. Codex skills (under ~/.agents/skills/, NOT ~/.codex/) -------
 
@@ -237,9 +209,10 @@ class TestCodexFullInstall:
         quarantine negatives that asserted the pre-FM-1 top-level array root
         and the pre-FM-3 ``^Task$|^Bash$`` matcher. Asserts the
         production shape directly — event-keyed root (``{"hooks": {"PreToolUse":
-        [...]}}``) with exactly one nWave entry whose matcher includes
-        ``apply_patch`` and excludes ``Task``. End-to-end DES firing on this
-        schema is proven by ``tests/e2e/test_codex_real_boot.py``.
+        [...]}}``) with exactly one nWave entry whose matcher matches the
+        observed Codex host tool ``exec_command`` (a36fc9a6e) and never ``Task``.
+        End-to-end DES firing on this schema is proven by
+        ``tests/e2e/test_codex_real_boot.py``.
         """
         code, out = exec_in_container(
             codex_container,
@@ -275,13 +248,13 @@ class TestCodexFullInstall:
             f"Expected exactly one nWave PreToolUse entry, found {len(nwave_entries)}."
         )
         matcher = nwave_entries[0].get("matcher", "")
-        assert "apply_patch" in matcher, (
-            f"DES hook matcher {matcher!r} must include 'apply_patch' (documented "
-            "Codex write surface; FM-3 closure)."
+        assert re.search(matcher, "exec_command"), (
+            f"DES hook matcher {matcher!r} must match the observed Codex host "
+            "tool 'exec_command'."
         )
-        assert "Task" not in matcher, (
-            f"DES hook matcher {matcher!r} must NOT include 'Task' (legacy pre-FM-3 "
-            "tool name; production narrowed to ^Bash$|^apply_patch$)."
+        assert not re.search(matcher, "Task"), (
+            f"DES hook matcher {matcher!r} must NOT match 'Task' (legacy pre-FM-3 "
+            "tool name)."
         )
 
     def test_codex_des_manifest_present(self, codex_container) -> None:
@@ -300,10 +273,9 @@ class TestCodexFullInstall:
     # --- 5. Claude Code skills parity install ----------------------------
 
     def test_claude_code_skills_also_installed(self, codex_container) -> None:
-        """Installing with Codex detected must NOT skip the Claude install.
+        """Both detected targets receive skills so users can switch CLIs.
 
-        Both targets must receive the skill set so the user can switch CLIs
-        without reinstalling.
+        The fixture declares both ~/.claude/ and ~/.codex/ before installation.
         """
         _code, out = exec_in_container(
             codex_container,

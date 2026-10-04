@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -24,7 +25,10 @@ from tests.des.acceptance.distill_document_construction.test_distill_document_co
     _discuss_payload,
     _distill_payload,
 )
-from tests.des.acceptance.steps_for_the_orchestrator.conftest import base_repository
+from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
+    PACKAGE_PARENT,
+    base_repository,
+)
 
 
 HANDOVER = Path(".nwave/des/handover.json")
@@ -243,7 +247,11 @@ def test_bound_scope_survives_a_real_new_process(
         text=True,
         capture_output=True,
         cwd=root,
-        env={**__import__("os").environ, "HOME": str(tmp_path / "home")},
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "PYTHONPATH": str(PACKAGE_PARENT),
+        },
     )
     assert done.returncode == 0, done.stdout + done.stderr
     assert (root / "docs/feature/feature-a/architecture/brief.md").is_file()
@@ -292,6 +300,76 @@ def test_feature_config_writer_uses_the_readers_root_in_linked_worktree_and_subd
     assert code == 0, text
     assert not (worktree / ".nwave/config.json").exists()
     assert "arch/b.md" in (main / ".nwave/config.json").read_text()
+
+
+def test_feature_override_validates_against_the_declared_project_template(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A valid override under a DECLARED project template is accepted and resolved.
+
+    The writer once validated per-feature overrides against the BUILT-IN
+    defaults while the reader resolved them through the real global/project
+    cascade: a project template like ``user-docs/features/{feature}/brief.md``
+    made the writer refuse the very override the reader would honour. Both
+    sides now share one tier kernel
+    (``DESConfig.feature_document_tiers``), so refusal sets are identical.
+    """
+    main = _repo(tmp_path, monkeypatch)
+    code, text = _nwave(
+        main,
+        "project",
+        "feature-template",
+        "discuss",
+        "user-docs/features/{feature}/brief.md",
+    )
+    assert code == 0, text
+
+    from des.adapters.driven.config.des_config import DESConfig
+
+    # The declared template resolves as the project tier says it must.
+    assert DESConfig.feature_document_destinations(main, "billing")["discuss"] == (
+        "user-docs/features/billing/brief.md"
+    )
+
+    code, text = _nwave(
+        main,
+        "project",
+        "feature-document",
+        "billing",
+        "design",
+        "user-docs/features/billing/decisions/design.md",
+    )
+    assert code == 0, text
+    assert (main / ".nwave/features/billing/config.json").is_file()
+    assert DESConfig.feature_document_destinations(main, "billing")["design"] == (
+        "user-docs/features/billing/decisions/design.md"
+    )
+
+
+def test_feature_override_outside_declared_feature_directory_is_still_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reconciliation strengthens nothing away: the law's refusals hold."""
+    main = _repo(tmp_path, monkeypatch)
+    code, text = _nwave(
+        main,
+        "project",
+        "feature-template",
+        "discuss",
+        "user-docs/features/{feature}/brief.md",
+    )
+    assert code == 0, text
+    code, text = _nwave(
+        main,
+        "project",
+        "feature-document",
+        "billing",
+        "design",
+        "user-docs/other-feature/design.md",
+    )
+    assert code != 0
+    assert "outside this feature's directory" in text
+    assert not (main / ".nwave/features/billing/config.json").exists()
 
 
 @pytest.mark.parametrize(

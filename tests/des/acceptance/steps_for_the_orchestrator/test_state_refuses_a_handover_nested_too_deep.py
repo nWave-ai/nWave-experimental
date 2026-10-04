@@ -11,11 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
-    asked,
-    block,
-    nexts,
-)
+from tests.des.acceptance.steps_for_the_orchestrator.conftest import block
 
 
 DEPTH = 5000
@@ -49,11 +45,7 @@ def test_state_refuses_a_handover_nested_too_deep(
     assert fields.get("WHAT") == "HandoverMalformed"
     assert fields.get("WHY") == WHY
     assert fields.get("HOW") == HOW
-    assert fields.get("TURNS-BOUGHT") == "0"
-    assert nexts(stdout) == [
-        f"des state --repo-root {root.resolve()} -- after the HOW above"
-    ]
+
     assert "Traceback" not in stdout + stderr
     assert "RecursionError" not in stdout + stderr
     assert handover.read_bytes() == nested
-    assert asked(turns) == []

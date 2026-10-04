@@ -285,3 +285,34 @@ class TestDesCommitIndexHygiene:
             if line.strip()
         }
         assert "a.py" not in unstaged
+
+
+def _terminal(captured: str) -> dict[str, str]:
+    return dict(line.split(": ", 1) for line in captured.splitlines() if ": " in line)
+
+
+class TestDesCommitSpeaksTheStepTerminal:
+    """One terminal dialect: the commit it made, or WHAT / WHY / HOW."""
+
+    def test_success_names_the_commit_it_created(self, tmp_path, capsys):
+        _init_git_repo(tmp_path)
+        (tmp_path / "a.py").write_text("owned = 1\n")
+
+        assert _run(tmp_path, ["a.py"], step_id="02-03") == 0
+
+        rows = _terminal(capsys.readouterr().out)
+        assert rows["DELIVERY-OUTCOME"] == "Success"
+        assert rows["COMMIT"] == _git(tmp_path, "rev-parse", "HEAD").strip()
+        assert rows["STEP-ID"] == "02-03"
+
+    def test_an_unchanged_owned_path_is_a_refusal_with_a_how(self, tmp_path, capsys):
+        _init_git_repo(tmp_path)
+        before = _commit_count(tmp_path)
+
+        assert _run(tmp_path, [".gitkeep"]) == 1
+
+        rows = _terminal(capsys.readouterr().out)
+        assert rows["DELIVERY-OUTCOME"] == "Refusal"
+        assert ".gitkeep" in rows["WHY"]
+        assert rows["HOW"]
+        assert _commit_count(tmp_path) == before

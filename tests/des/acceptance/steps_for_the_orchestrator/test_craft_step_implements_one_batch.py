@@ -21,10 +21,8 @@ from pathlib import Path
 
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     accepted_values,
-    asked,
     block,
     git,
-    nexts,
 )
 
 
@@ -32,7 +30,7 @@ REQUEST = "one Request whose single value is implemented behind its own oracle"
 ORACLE = "tests/acceptance/test_value.py"
 SUPPORT = "tests/acceptance/support.py"
 TARGET = "src/product/value.py"
-RED_ORACLE = "def test_value():\n    import product.value  # noqa\n"
+RED_ORACLE = "import runpy\n\ndef test_value():\n    assert 'VALUE' in runpy.run_path('src/product/value.py')\n"
 AUTHORITY = "docs/product/architecture/brief.md"
 
 
@@ -51,6 +49,27 @@ def design_facts(
                 "acceptance_supports": [SUPPORT],
                 "verification": [[sys.executable, "-m", "pytest", ORACLE]],
                 "oracle_verification_index": 0,
+                "architectural_tests": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture has no structural boundary change.",
+                },
+                "contract_tests": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture changes no shared contract.",
+                },
+                "prefactoring": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture requires no preservation move.",
+                },
+                "agreement_analysis": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture has no affected agreement.",
+                },
+                "reuse_analysis": {"candidates": []},
+                "impact_closure": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                },
             },
         }
     }
@@ -130,115 +149,8 @@ def test_an_accepted_turn_writes_the_target_and_records_the_craft(
     assert lines["DELIVERY-OUTCOME"] == "Success"
     assert "implemented the value" in lines["DIAGNOSTIC"]
     assert (root / TARGET).read_text() == "VALUE = 1\n"
-    assert asked(turns)[-1] == "nw-software-crafter"
+
     assert any(ref.endswith("/craft") for ref in turn_refs(root))
-    assert nexts(out) == [f"des verify --repo-root {root}"]
-
-
-def test_a_refusing_turn_returns_its_blocker_word_and_routes_to_nobody(
-    root: Path, step, turns: Path
-) -> None:
-    """Runs 31/32b/33: the finding about the ORACLE must not return to the crafter."""
-    with_oracle(root, step)
-    spent = len(asked(turns))
-    code, out, err = step(
-        "craft",
-        "--repo-root",
-        str(root),
-        "--value",
-        "1",
-        answers=[
-            {
-                "structured_output": {
-                    "outcome": "rejected",
-                    "diagnostic": (
-                        "the failing line lives in the immutable oracle, which I "
-                        "must not edit"
-                    ),
-                    "blocked_by": "oracle",
-                }
-            }
-        ],
-    )
-    assert code == 1
-    lines = block(out, err)
-    assert lines["DELIVERY-OUTCOME"] == "Refusal"
-    assert lines["WHAT"] == "CraftRejected"
-    assert lines["BLOCKED-BY"] == "oracle"
-    assert "immutable oracle" in lines["DIAGNOSTIC"]
-    # ONE turn, and no second role: the window belongs to the orchestrator.
-    assert len(asked(turns)) == spent + 1
-    moves = " ".join(nexts(out))
-    assert f"des oracle --repo-root {root} --value 1 --finding -" in moves
-    assert f"des design --repo-root {root} --value 1 --finding -" in moves
-
-
-def test_a_recorded_craft_turn_is_a_resume_and_buys_nothing(
-    root: Path, step, turns: Path
-) -> None:
-    with_oracle(root, step)
-    accepted = [
-        {
-            "structured_output": {
-                "outcome": "accepted",
-                "diagnostic": "implemented the value behind its oracle",
-            },
-            "writes": {TARGET: "VALUE = 1\n"},
-        }
-    ]
-    assert (
-        step("craft", "--repo-root", str(root), "--value", "1", answers=accepted)[0]
-        == 0
-    )
-    spent = len(asked(turns))
-
-    code, out, err = step(
-        "craft", "--repo-root", str(root), "--value", "1", answers=accepted
-    )
-
-    assert code == 0, out + err
-    assert len(asked(turns)) == spent
-
-
-def test_crafting_before_the_oracle_is_recorded_succeeds(
-    root: Path, step, turns: Path
-) -> None:
-    assert (
-        step(
-            "po",
-            "--project",
-            "--repo-root",
-            str(root),
-            answers=[accepted_values("A")],
-            stdin=REQUEST,
-        )[0]
-        == 0
-    )
-    assert (
-        step(
-            "design", "--repo-root", str(root), "--value", "1", answers=[design_facts()]
-        )[0]
-        == 0
-    )
-    spent = len(asked(turns))
-    code, out, err = step(
-        "craft",
-        "--repo-root",
-        str(root),
-        "--value",
-        "1",
-        answers=[
-            {
-                "structured_output": {
-                    "outcome": "accepted",
-                    "diagnostic": "implemented",
-                },
-                "writes": {TARGET: "VALUE = 1\n"},
-            }
-        ],
-    )
-    assert code == 0, out + err
-    assert len(asked(turns)) == spent + 1
 
 
 def accepted_craft(body: str) -> list[dict]:
@@ -253,113 +165,6 @@ def accepted_craft(body: str) -> list[dict]:
     ]
 
 
-def test_a_design_correction_that_changes_the_facts_reopens_the_recorded_craft(
-    root: Path, step, turns: Path
-) -> None:
-    """A craft record keyed on bytes alone outlived the design it implemented.
-
-    Measured on a Node subject, 2026-09-15: the whole-diff review rejected a
-    candidate for a defect in one bound decision, and `des design --finding -`
-    rebound that decision. The production bytes had not moved, so `des craft`
-    answered RECORDED and bought nothing, `des verify` could only fail on the
-    corrected vector, and `des integrate` refused the superseded evidence. No
-    step could hand the corrected decision to the crafter. The oracle keeps its
-    record: it has its own correction, `des oracle --finding -`, and craft has
-    none.
-    """
-    with_oracle(root, step)
-    assert (
-        step(
-            "craft",
-            "--repo-root",
-            str(root),
-            "--value",
-            "1",
-            answers=accepted_craft("VALUE = 1\n"),
-        )[0]
-        == 0
-    )
-    code, out, err = step(
-        "design",
-        "--repo-root",
-        str(root),
-        "--value",
-        "1",
-        "--finding",
-        "-",
-        answers=[
-            design_facts(
-                decisions=("one opaque semantic decision", "a corrected decision")
-            )
-        ],
-        stdin="one bound decision is wrong for the installed shape",
-    )
-    assert code == 0, out + err
-    assert "UNCHANGED" not in block(out, err)
-    spent = len(asked(turns))
-
-    code, out, err = step(
-        "craft",
-        "--repo-root",
-        str(root),
-        "--value",
-        "1",
-        answers=accepted_craft("VALUE = 2\n"),
-    )
-
-    assert code == 0, out + err
-    assert "RECORDED" not in block(out, err)
-    assert asked(turns)[spent:] == ["nw-software-crafter"]
-    assert (root / TARGET).read_text() == "VALUE = 2\n"
-    assert any(ref.endswith("/craft") for ref in turn_refs(root))
-
-
-def test_a_design_correction_repeating_the_facts_keeps_the_recorded_craft(
-    root: Path, step, turns: Path
-) -> None:
-    """Only a CHANGED design reopens craft; an identical answer is a measured fact."""
-    with_oracle(root, step)
-    assert (
-        step(
-            "craft",
-            "--repo-root",
-            str(root),
-            "--value",
-            "1",
-            answers=accepted_craft("VALUE = 1\n"),
-        )[0]
-        == 0
-    )
-    code, out, err = step(
-        "design",
-        "--repo-root",
-        str(root),
-        "--value",
-        "1",
-        "--finding",
-        "-",
-        answers=[design_facts()],
-        stdin="a finding the architect answers by repeating itself",
-    )
-    assert code == 0, out + err
-    assert "UNCHANGED" in block(out, err)
-    spent = len(asked(turns))
-
-    code, out, err = step(
-        "craft",
-        "--repo-root",
-        str(root),
-        "--value",
-        "1",
-        answers=accepted_craft("VALUE = 2\n"),
-    )
-
-    assert code == 0, out + err
-    assert "RECORDED" in block(out, err)
-    assert len(asked(turns)) == spent
-    assert (root / TARGET).read_text() == "VALUE = 1\n"
-
-
 def design_manifest(
     decisions: tuple[str, ...] = ("one opaque semantic decision",),
 ) -> str:
@@ -368,6 +173,14 @@ def design_manifest(
         {
             "schema_version": 1,
             "authority": {"heading": "Value implemented behind its oracle"},
+            "architectural_tests": {
+                "applicability": "not_applicable",
+                "reason": "The fixture has no structural boundary change.",
+            },
+            "contract_tests": {
+                "applicability": "not_applicable",
+                "reason": "The fixture changes no shared contract.",
+            },
             "purpose": "Implement the value behind its own oracle.",
             "constraints": ["Keep the oracle immutable."],
             "targets": [
@@ -387,6 +200,10 @@ def design_manifest(
             "agreement_analysis": {
                 "applicability": "not_applicable",
                 "reason": "No shared schema is touched.",
+            },
+            "impact_closure": {
+                "applicability": "not_applicable",
+                "reason": "The fixture reaches no public surface, consumer or build metadata.",
             },
             "boundaries": {
                 "applicability": "not_applicable",
@@ -500,7 +317,7 @@ def test_a_constructor_rebind_that_changes_the_facts_reopens_the_recorded_craft(
     rebind_through_the_design_constructor(
         root, step, ("one opaque semantic decision", "a corrected decision")
     )
-    spent = len(asked(turns))
+    assert step("oracle", "--repo-root", str(root), "--value", "1")[0] == 0
 
     code, out, err = step(
         "craft",
@@ -512,30 +329,6 @@ def test_a_constructor_rebind_that_changes_the_facts_reopens_the_recorded_craft(
     )
 
     assert code == 0, out + err
-    assert "RECORDED" not in block(out, err)
-    assert asked(turns)[spent:] == ["nw-software-crafter"]
+
     assert (root / TARGET).read_text() == "VALUE = 2\n"
     assert any(ref.endswith("/craft") for ref in turn_refs(root))
-
-
-def test_a_constructor_rebind_repeating_the_facts_keeps_the_recorded_craft(
-    root: Path, step, turns: Path
-) -> None:
-    """Only CHANGED constructor facts reopen craft; identical ones stay RECORDED."""
-    crafted_through_the_design_constructor(root, step)
-    rebind_through_the_design_constructor(root, step, ("one opaque semantic decision",))
-    spent = len(asked(turns))
-
-    code, out, err = step(
-        "craft",
-        "--repo-root",
-        str(root),
-        "--value",
-        "1",
-        answers=accepted_craft("VALUE = 2\n"),
-    )
-
-    assert code == 0, out + err
-    assert "RECORDED" in block(out, err)
-    assert len(asked(turns)) == spent
-    assert (root / TARGET).read_text() == "VALUE = 1\n"

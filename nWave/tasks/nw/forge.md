@@ -16,7 +16,7 @@ Routes the existing `forge` surface to one owning procedure. The procedure creat
 | Request condition | Internal procedure | Result |
 |---|---|---|
 | Create a new agent | `nw-ab-create-agent` | New agent and only needed skills |
-| Validate only an existing agent | `nw-ab-validate-spec` | 19-item validation verdict |
+| Validate only an existing agent | `nw-ab-validate-spec` | Per-item checklist verdict |
 | Migrate an existing agent monolith | `nw-ab-migrate-monolith` | Lean agent core plus routed skills |
 | Optimize one existing skill | `nw-ab-optimize-skill` | Measured optimization result or `NOT_ELIGIBLE` |
 
@@ -33,7 +33,7 @@ Routes the existing `forge` surface to one owning procedure. The procedure creat
 - `forge` remains the public command; this task owns only routing.
 - Existing behavioral projections are immutable. Do not create a command, validator, grammar, compiler, hook, or gate for this change.
 - Safety by construction first; hooks last resort with a recorded reason (GDP-0).
-- Creation follows the five-phase `nw-ab-create-agent` workflow; validation uses the 19-item `nw-ab-validate-spec` checklist.
+- Creation follows the five-phase `nw-ab-create-agent` workflow; validation runs `nw-ab-validate-spec` over the `nw-ab-validation-checklist` items.
 - Skill optimization is internal routing, not a new public command.
 
 ## Success Criteria

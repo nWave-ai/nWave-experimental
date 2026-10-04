@@ -49,6 +49,10 @@ def _value_lines(state: object) -> list[str]:
             f"VALUE-{value.position}: {json.dumps(value.observation, ensure_ascii=False)}"
             f" {carried}"
         )
+        if value.prefactoring_phase is not None:
+            lines.append(
+                f"VALUE-{value.position}-PREFACTORING: {value.prefactoring_phase}"
+            )
         selection = value.selection
         if selection is not None and selection.label == "uncertain":
             if selection.what is not None:

@@ -6,26 +6,44 @@ import hashlib
 import json
 import re
 import shlex
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
+from functools import partial
 from typing import TYPE_CHECKING, Generic, TypeVar
 
 from des.domain.architecture_brief_resolver import (
     is_design_oracle_locator,
     is_repository_relative_whole_file_locator,
-    new_target_acceptance_support_conflict,
+    target_acceptance_support_conflict,
+    target_acceptance_support_conflict_text,
 )
+from des.domain.input_defects import Defects, InputDefects
 from des.ports.driven_ports.task_invocation_port import (
+    AgreementParty,
+    ApplicableADR,
+    ApplicableAgreementAnalysis,
+    ApplicableArchitecturalTests,
+    ApplicableContractTests,
+    ApplicableImpactClosure,
+    ApplicablePrefactoring,
+    ArchitecturalTestObligation,
+    ContractTestObligation,
     DesignFacts,
     DesignTarget,
+    ImpactItem,
+    LegacyDesignFacts,
+    NotApplicable,
     PublicOracle,
+    ReuseAnalysis,
+    ReuseCandidate,
+    UnassessedDesignDecision,
 )
 
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 
 
-class DesignDocumentInvalid(ValueError):
+class DesignDocumentInvalid(InputDefects):
     """The supplied document is not a member of the closed v1 language."""
 
 
@@ -60,8 +78,9 @@ def _path(value: object, name: str) -> str:
 
 _ORACLE_SHAPE = (
     "a repository-relative DESIGN oracle locator: the whole file "
-    "(`tests/verify_order.py`) or the file with an optional `::selector` "
-    "(`tests/verify_order.py::Class::case`); a `:line` suffix is not accepted"
+    "(`test/orders.ml`) or the file with an optional `::selector` "
+    "(`tests/orders.rs::reject_cancelled`); native runner targets select that file; "
+    "a `:line` suffix is not accepted"
 )
 
 
@@ -85,6 +104,18 @@ def _reuse_locator(value: object, name: str) -> str:
             f"{name} must be a repository-relative path and positive line"
         )
     return locator
+
+
+def _impact_locator(value: object, name: str) -> str:
+    locator = _text(value, name)
+    if is_repository_relative_whole_file_locator(locator):
+        return locator
+    try:
+        return _reuse_locator(locator, name)
+    except DesignDocumentInvalid:
+        raise DesignDocumentInvalid(
+            f"{name} must be a repository-relative path, optionally followed by :line"
+        ) from None
 
 
 T = TypeVar("T")
@@ -118,6 +149,18 @@ class _Leaf(_Form[T]):
 class _Field:
     name: str
     form: _Form[object]
+    optional: bool = False
+    #: A cross-field admission rule the decoder enforces on this field and the
+    #: form alone cannot state, printed with the field so a producer learns it
+    #: before submitting rather than from a refusal.
+    note: str = ""
+
+    def headline(self, described: str) -> str:
+        """The form's first described line, followed by this field's note."""
+        head = described.lstrip()
+        if not self.note:
+            return head
+        return f"{head.rstrip('.')}; {self.note}."
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,12 +171,36 @@ class _Product(_Form[dict[str, object]]):
 
     def decode(self, value: object, name: str) -> dict[str, object]:
         decoded = _object(value, name)
-        _keys(decoded, {field.name for field in self.fields}, name)
-        return self.decode_fields(decoded, name)
+        defects = Defects(DesignDocumentInvalid)
+        fields = self.decode_into(decoded, name, defects)
+        defects.close()
+        return fields
 
-    def decode_fields(self, decoded: dict[str, object], name: str) -> dict[str, object]:
+    def decode_into(
+        self, decoded: dict[str, object], name: str, defects: Defects
+    ) -> dict[str, object]:
+        """Decode every present field, recording the key-set and field defects.
+
+        A refused or absent field is ``None``: a present field that decodes is
+        never ``None``, so a caller can tell which cross-field rules may run.
+        """
+        required = {field.name for field in self.fields if not field.optional}
+        allowed = {field.name for field in self.fields}
+        if not required <= set(decoded) <= allowed:
+            defects.add(
+                f"{name} must contain {sorted(required)}; optional: {sorted(allowed - required)}"
+            )
+        return self.decode_fields(decoded, name, defects)
+
+    def decode_fields(
+        self, decoded: dict[str, object], name: str, defects: Defects
+    ) -> dict[str, object]:
         return {
-            field.name: field.form.decode(decoded[field.name], f"{name}.{field.name}")
+            field.name: defects.take(
+                partial(field.form.decode, decoded[field.name], f"{name}.{field.name}")
+            )
+            if field.name in decoded
+            else None
             for field in self.fields
         }
 
@@ -142,7 +209,10 @@ class _Product(_Form[dict[str, object]]):
         lines: list[str] = [f"{prefix}object with exactly:"]
         for field in self.fields:
             child = field.form.describe(indent + 2)
-            lines.append(f"{prefix}- `{field.name}`: {child[0].lstrip()}")
+            qualifier = " (optional)" if field.optional else ""
+            lines.append(
+                f"{prefix}- `{field.name}`{qualifier}: {field.headline(child[0])}"
+            )
             lines.extend(child[1:])
         return tuple(lines)
 
@@ -169,10 +239,13 @@ class _ListOf(_Form[tuple[object, ...]]):
         if not isinstance(value, list) or (self.non_empty and not value):
             qualifier = "non-empty " if self.non_empty else ""
             raise DesignDocumentInvalid(f"{name} must be a {qualifier}list")
+        defects = Defects(DesignDocumentInvalid)
         decoded = tuple(
-            self.item.decode(item, f"{name}[{index}]")
+            defects.take(partial(self.item.decode, item, f"{name}[{index}]"))
             for index, item in enumerate(value)
         )
+        # Duplicates are judged only over a wholly decoded list.
+        defects.close()
         if self.unique:
             _duplicates(tuple(self.identity(item) for item in decoded), name)
         return decoded
@@ -207,12 +280,18 @@ class _Choice(_Form[object]):
         selected = _text(decoded.get(self.tag), f"{name}.{self.tag}")
         for label, product in self.products:
             if selected == label:
-                _keys(
-                    decoded,
-                    {self.tag, *(field.name for field in product.fields)},
-                    name,
+                defects = Defects(DesignDocumentInvalid)
+                defects.take(
+                    partial(
+                        _keys,
+                        decoded,
+                        {self.tag, *(field.name for field in product.fields)},
+                        name,
+                    )
                 )
-                return {self.tag: label, **product.decode_fields(decoded, name)}
+                fields = product.decode_fields(decoded, name, defects)
+                defects.close()
+                return {self.tag: label, **fields}
         raise DesignDocumentInvalid(f"{name}.{self.tag} is not supported")
 
     def describe(self, indent: int = 0) -> tuple[str, ...]:
@@ -227,7 +306,7 @@ class _Choice(_Form[object]):
             for field in product.fields:
                 child = field.form.describe(indent + 4)
                 lines.append(
-                    f"{' ' * (indent + 2)}- `{field.name}`: {child[0].lstrip()}"
+                    f"{' ' * (indent + 2)}- `{field.name}`: {field.headline(child[0])}"
                 )
                 lines.extend(child[1:])
         return tuple(lines)
@@ -254,13 +333,21 @@ _SCHEMA_VERSION = _Leaf(
         else (_ for _ in ()).throw(DesignDocumentInvalid(f"{name} must be 1"))
     ),
 )
-_PARADIGM = _Choice(("object_oriented", "functional"))
+_PARADIGM = _Choice(("object_oriented", "functional", "procedural"))
 _TARGET_DECISION = _Choice(("EXTEND", "CREATE_NEW"))
 _REUSE_DECISION = _Choice(("REUSE", "EXTEND", "REPLACE", "CREATE_NEW"))
 _FAILURE_OUTCOME = _Choice(("Refusal", "Retry", "Indeterminate"))
 
 _TEXTS = _ListOf(_TEXT)
 _PATHS = _ListOf(_PATH, non_empty=False)
+#: Both rules are refused by `DesignDocument.from_json`; stated here so the
+#: generated grammar teaches them before a submission (native architect runs
+#: listed the oracle's own file as a support, and an EXTEND target as one).
+_SUPPORTS_NOTE = (
+    "only acceptance-owned fixtures the oracle needs before craft: never the "
+    "`oracle`'s own file and never a `targets` path (a production module the "
+    "oracle imports is a target)"
+)
 
 
 def _argv_token(value: object, name: str) -> str:
@@ -348,6 +435,12 @@ _PREFACTORING = _Choice(
                     _Field("existing_oracle", _ORACLE),
                     _Field("move", _TEXT),
                     _Field("preserved_observation", _TEXT),
+                    _Field("verification", _VERIFICATION),
+                    _Field(
+                        "acceptance_supports",
+                        _PATHS,
+                        note="never `existing_oracle`'s own file",
+                    ),
                 )
             ),
         ),
@@ -424,6 +517,110 @@ _AUTHORITY = _Product(
         ),
     )
 )
+
+
+def _applicability(form: _Product) -> _Choice:
+    return _Choice(
+        tag="applicability",
+        products=(
+            ("applicable", form),
+            ("not_applicable", _Product((_Field("reason", _TEXT),))),
+        ),
+    )
+
+
+_ARCHITECTURAL_OBLIGATION = _Product(
+    (
+        _Field("obligation", _TEXT),
+        _Field("oracle", _ORACLE),
+        _Field("verification_index", _ORACLE_VERIFICATION_INDEX),
+    )
+)
+_CONTRACT_OBLIGATION = _Product(
+    (
+        _Field("obligation", _TEXT),
+        _Field("contract", _TEXT),
+        _Field("producer", _REUSE_LOCATOR),
+        _Field("consumer", _REUSE_LOCATOR),
+        _Field("observation", _TEXT),
+        _Field("oracle", _ORACLE),
+        _Field("verification_index", _ORACLE_VERIFICATION_INDEX),
+    )
+)
+_ARCHITECTURAL_TESTS = _applicability(
+    _Product((_Field("obligations", _ListOf(_ARCHITECTURAL_OBLIGATION)),))
+)
+_CONTRACT_TESTS = _applicability(
+    _Product((_Field("obligations", _ListOf(_CONTRACT_OBLIGATION)),))
+)
+_ADR = _applicability(
+    _Product(
+        (
+            _Field("context", _TEXT),
+            _Field("decision", _TEXT),
+            _Field("alternatives", _TEXTS),
+            _Field("consequences", _TEXTS),
+            _Field(
+                "status", _Choice(("proposed", "accepted", "superseded", "deprecated"))
+            ),
+        )
+    )
+)
+#: Language-neutral roles a reached locator can play.  The software never maps
+#: a file name to a role: the architect classifies, and the closure rule below
+#: only demands that nothing the DESIGN names or reaches is left unclassified.
+_IMPACT_KIND = _Choice(
+    (
+        "public_interface",
+        "consumer",
+        "test",
+        "fixture",
+        "export",
+        "discovery",
+        "build_metadata",
+        "manifest",
+        "lock",
+        "runtime",
+    )
+)
+_IMPACT_DECISION = _Choice(("CHANGED", "MIGRATED", "UNCHANGED_COMPATIBLE"))
+_IMPACT_LOCATOR = _Leaf(
+    "repository-relative path, optionally followed by `:line`.", _impact_locator
+)
+_IMPACT_ITEM = _Product(
+    (
+        _Field("kind", _IMPACT_KIND),
+        _Field("locator", _IMPACT_LOCATOR),
+        _Field("decision", _IMPACT_DECISION),
+        _Field("reason", _TEXT),
+    )
+)
+_IMPACT_CLOSURE = _applicability(
+    _Product(
+        (
+            _Field(
+                "items",
+                _ListOf(
+                    _IMPACT_ITEM,
+                    collection="list with distinct locators",
+                    identity=lambda item: item["locator"],  # type: ignore[index]
+                ),
+            ),
+        )
+    )
+)
+_DECISION_FIELDS = (
+    _Field("architectural_tests", _ARCHITECTURAL_TESTS),
+    _Field("contract_tests", _CONTRACT_TESTS),
+    _Field("prefactoring", _PREFACTORING),
+    _Field("agreement_analysis", _AGREEMENT_ANALYSIS),
+    _Field("reuse_analysis", _REUSE_ANALYSIS),
+    _Field("impact_closure", _IMPACT_CLOSURE),
+    _Field("adr", _ADR, optional=True),
+)
+_DESIGN_DECISIONS = _Product(_DECISION_FIELDS)
+
+
 _MANIFEST = _Product(
     (
         _Field("schema_version", _SCHEMA_VERSION),
@@ -436,14 +633,380 @@ _MANIFEST = _Product(
         _Field("reuse_analysis", _REUSE_ANALYSIS),
         _Field("prefactoring", _PREFACTORING),
         _Field("agreement_analysis", _AGREEMENT_ANALYSIS),
+        _Field("architectural_tests", _ARCHITECTURAL_TESTS),
+        _Field("contract_tests", _CONTRACT_TESTS),
+        _Field("adr", _ADR, optional=True),
+        _Field("impact_closure", _IMPACT_CLOSURE),
         _Field("boundaries", _BOUNDARIES),
         _Field("public_oracle", _PUBLIC_ORACLE),
         _Field("oracle", _ORACLE),
-        _Field("acceptance_supports", _PATHS),
+        _Field(
+            "acceptance_supports",
+            _PATHS,
+            note=_SUPPORTS_NOTE,
+        ),
         _Field("verification", _VERIFICATION),
         _Field("oracle_verification_index", _ORACLE_VERIFICATION_INDEX),
     )
 )
+
+
+def design_decisions_wire(facts: DesignFacts) -> dict[str, object]:
+    """Lossless JSON projection shared by every typed-fact transport."""
+
+    def wire(value: object) -> object:
+        if isinstance(value, dict):
+            return {key: wire(item) for key, item in value.items()}
+        if isinstance(value, tuple):
+            return [wire(item) for item in value]
+        return value
+
+    return {
+        field.name: wire(asdict(getattr(facts, field.name)))
+        for field in _DECISION_FIELDS
+        if getattr(facts, field.name) is not None
+        and not isinstance(getattr(facts, field.name), UnassessedDesignDecision)
+    }
+
+
+def decode_design_decisions(
+    raw: dict[str, object], *, historical: bool = False
+) -> dict[str, object]:
+    """Decode required decisions with the constructor's sole grammar."""
+    selected = {
+        field.name: raw[field.name] for field in _DECISION_FIELDS if field.name in raw
+    }
+    form = _DESIGN_DECISIONS
+    if historical:
+        form = _Product(
+            tuple(replace(field, optional=True) for field in _DECISION_FIELDS)
+        )
+    decoded = form.decode(selected, "design")
+    return {
+        name: _decision_record(name, decision) for name, decision in decoded.items()
+    }
+
+
+_APPLICABLE_LISTS = {
+    "architectural_tests": (
+        ApplicableArchitecturalTests,
+        "obligations",
+        ArchitecturalTestObligation,
+    ),
+    "contract_tests": (ApplicableContractTests, "obligations", ContractTestObligation),
+    "agreement_analysis": (ApplicableAgreementAnalysis, "parties", AgreementParty),
+    "impact_closure": (ApplicableImpactClosure, "items", ImpactItem),
+}
+
+
+def _decision_record(name: str, decision: object) -> object:
+    """The domain record of one decoded decision; ``None`` is an absent one."""
+    if decision is None:
+        return None if name == "adr" else UnassessedDesignDecision()
+    if name == "reuse_analysis":
+        return ReuseAnalysis(
+            tuple(ReuseCandidate(**item) for item in decision["candidates"])  # type: ignore[index]
+        )
+    if decision["applicability"] == "not_applicable":  # type: ignore[index]
+        return NotApplicable(decision["reason"])  # type: ignore[index]
+    if name in _APPLICABLE_LISTS:
+        record_type, member, item_type = _APPLICABLE_LISTS[name]
+        return record_type(tuple(item_type(**item) for item in decision[member]))  # type: ignore[index]
+    record_type = ApplicablePrefactoring if name == "prefactoring" else ApplicableADR
+    return record_type(
+        **{
+            key: item
+            for key, item in decision.items()  # type: ignore[attr-defined]
+            if key != "applicability"
+        }
+    )
+
+
+def without_absent_optional_decisions(raw: dict[str, object]) -> dict[str, object]:
+    """Normalize a strict provider's `null` for an optional decision to absence.
+
+    A provider whose strict output must list every property carries an optional
+    decision as nullable; the constructor's grammar knows only absence.
+    """
+    optional = {field.name for field in _DECISION_FIELDS if field.optional}
+    return {
+        key: value
+        for key, value in raw.items()
+        if not (key in optional and value is None)
+    }
+
+
+def design_decisions_defect(
+    facts: DesignFacts, *, historical: bool = False
+) -> str | None:
+    """Validate shape and declared linkage, not whether a check is sufficient."""
+    defects = design_decisions_defects(facts, historical=historical)
+    return str(DesignDocumentInvalid(*defects)) if defects else None
+
+
+def design_decisions_defects(
+    facts: DesignFacts, *, historical: bool = False
+) -> tuple[str, ...]:
+    """Every shape and declared-linkage defect of ``facts``, found in one pass."""
+    if isinstance(facts, LegacyDesignFacts) and not historical:
+        return (
+            f"historical DESIGN decisions are unassessed: {', '.join(facts.missing_decisions)}; "
+            "reconstruct complete DESIGN with --replace-current --input - before reusing delivery proof",
+        )
+    try:
+        decisions = decode_design_decisions(
+            design_decisions_wire(facts), historical=historical
+        )
+    except DesignDocumentInvalid as error:
+        return error.defects
+    except (TypeError, AttributeError) as error:
+        return (str(error),)
+    found: list[str] = []
+    try:
+        for defect in _decision_rule_defects(
+            decisions, facts.targets, facts.verification
+        ):
+            found.append(defect)
+    except (TypeError, AttributeError) as error:
+        found.append(str(error))
+    return tuple(found)
+
+
+def _unlinked_party_defect(
+    role: str,
+    obligation: ContractTestObligation,
+    parties: tuple[AgreementParty, ...],
+) -> str:
+    """The unlinked contract party, with the parties the analysis does declare."""
+    defect = (
+        f"contract_tests.{role} must name an agreement party for {obligation.contract}"
+    )
+    declared = tuple(
+        f"`{party.locator}`"
+        for party in parties
+        if party.contract == obligation.contract and party.role == role
+    )
+    if declared:
+        return (
+            f"{defect}: agreement_analysis declares {role} {', '.join(declared)} "
+            f"for that contract, not `{getattr(obligation, role)}`"
+        )
+    elsewhere = tuple(
+        f"`{party.locator}` for `{party.contract}`"
+        for party in parties
+        if party.role == role
+    )
+    return f"{defect}: agreement_analysis declares no {role} for that contract" + (
+        f"; its {role} parties are {', '.join(elsewhere)}" if elsewhere else ""
+    )
+
+
+def _decision_rule_defects(
+    decisions: Mapping[str, object],
+    targets: Iterable[DesignTarget] | None,
+    verification: Sequence[object] | None,
+) -> Iterator[str]:
+    """Each declared-linkage defect among the decided ``decisions``.
+
+    A decision missing from ``decisions``, or ``None`` targets or verification,
+    was itself refused: a rule needing it does not run, so no defect is
+    reported only because another field failed.
+    """
+    agreement = decisions.get("agreement_analysis")
+    for name in ("architectural_tests", "contract_tests"):
+        decision = decisions.get(name)
+        if decision is None or isinstance(
+            decision, (NotApplicable, UnassessedDesignDecision)
+        ):
+            continue
+        contract = name == "contract_tests"
+        if contract and isinstance(
+            agreement, (NotApplicable, UnassessedDesignDecision)
+        ):
+            yield "contract_tests requires applicable agreement_analysis"
+        for obligation in decision.obligations:  # type: ignore[attr-defined]
+            if verification is not None and obligation.verification_index >= len(
+                verification
+            ):
+                yield f"{name}.verification_index must name one declared verification command"
+            if not contract or not isinstance(agreement, ApplicableAgreementAnalysis):
+                continue
+            for role in ("producer", "consumer"):
+                locator = getattr(obligation, role)
+                if not any(
+                    party.contract == obligation.contract
+                    and party.role == role
+                    and party.locator == locator
+                    for party in agreement.parties
+                ):
+                    yield _unlinked_party_defect(role, obligation, agreement.parties)
+    prefactoring = decisions.get("prefactoring")
+    if (
+        isinstance(prefactoring, ApplicablePrefactoring)
+        and prefactoring.existing_oracle.partition("::")[0]
+        in prefactoring.acceptance_supports
+    ):
+        yield "prefactoring.acceptance_supports cannot include its own oracle"
+    consumers = (
+        tuple(
+            dict.fromkeys(
+                party.locator for party in agreement.parties if party.role == "consumer"
+            )
+        )
+        if isinstance(agreement, ApplicableAgreementAnalysis)
+        else ()
+    )
+    closure = decisions.get("impact_closure")
+    if isinstance(closure, NotApplicable) and consumers:
+        yield (
+            "impact_closure is not_applicable while agreement_analysis declares "
+            f"consumers {', '.join(consumers)}: a consumer is reached by the "
+            "change, so its disposition cannot be waived; declare impact_closure "
+            "applicable with one item per consumer locator (kind, decision, reason)"
+        )
+    if isinstance(closure, ApplicableImpactClosure):
+        dispositions = {item.locator for item in closure.items}
+        missing = tuple(
+            dict.fromkeys(
+                (
+                    *(
+                        target.path
+                        for target in targets or ()
+                        if target.path not in dispositions
+                    ),
+                    *(locator for locator in consumers if locator not in dispositions),
+                )
+            )
+        )
+        if missing:
+            yield (
+                "impact_closure is not closed: no disposition for "
+                f"{', '.join(missing)}; a target or consumer without a CHANGED, "
+                "MIGRATED or UNCHANGED_COMPATIBLE disposition leaves its "
+                "downstream impact unproven before craft; add one "
+                "impact_closure item per listed locator naming its kind, "
+                "decision and reason"
+            )
+
+
+def _manifest_rule_defects(root: Mapping[str, object]) -> Iterator[str]:
+    """Each cross-field defect of a manifest whose own fields decoded.
+
+    ``root`` maps a refused or absent field to ``None``; a rule whose inputs
+    include one does not run.
+    """
+    oracle = root["oracle"]
+    supports = root["acceptance_supports"]
+    targets = root["targets"]
+    verification = root["verification"]
+    index = root["oracle_verification_index"]
+    if index is not None and verification is not None and index >= len(verification):  # type: ignore[operator, arg-type]
+        yield "manifest.oracle_verification_index must name one declared verification command"
+    if oracle is not None and supports is not None:
+        oracle_file = oracle.partition("::")[0]  # type: ignore[attr-defined]
+        if oracle_file in supports:  # type: ignore[operator]
+            yield (
+                "manifest.acceptance_supports must not list the oracle's own "
+                f"file, which is never its own support: {oracle_file}"
+            )
+        for target in targets or ():  # type: ignore[attr-defined]
+            conflict = target_acceptance_support_conflict(
+                oracle,  # type: ignore[arg-type]
+                (target["path"],),
+                supports,  # type: ignore[arg-type]
+            )
+            if conflict is not None:
+                yield (
+                    "manifest.acceptance_supports: "
+                    + target_acceptance_support_conflict_text(conflict)
+                )
+    yield from _decision_rule_defects(
+        {
+            field.name: _decision_record(field.name, root[field.name])
+            for field in _DECISION_FIELDS
+            if root[field.name] is not None
+        },
+        None
+        if targets is None
+        else tuple(
+            DesignTarget(item["path"], item["decision"])  # type: ignore[index]
+            for item in targets  # type: ignore[attr-defined]
+        ),
+        verification,  # type: ignore[arg-type]
+    )
+
+
+def design_decisions_schema() -> dict[str, object]:
+    """Provider schema projected from the same finite decision forms."""
+
+    def schema(form: _Form[object]) -> dict[str, object]:
+        if isinstance(form, _Product):
+            return {
+                "type": "object",
+                "properties": {field.name: schema(field.form) for field in form.fields},
+                "required": [field.name for field in form.fields if not field.optional],
+                "additionalProperties": False,
+            }
+        if isinstance(form, _ListOf):
+            return {
+                "type": "array",
+                "items": schema(form.item),
+                "minItems": int(form.non_empty),
+                "uniqueItems": form.unique,
+            }
+        if isinstance(form, _Choice):
+            if form.tag is None:
+                return {"type": "string", "enum": list(form.alternatives)}
+            return {
+                "anyOf": [
+                    {
+                        **schema(product),
+                        "properties": {
+                            form.tag: {"type": "string", "const": label},
+                            **schema(product)["properties"],
+                        },
+                        "required": [form.tag, *schema(product)["required"]],
+                    }
+                    for label, product in form.products
+                ]
+            }
+        if form is _ORACLE_VERIFICATION_INDEX:
+            return {"type": "integer", "minimum": 0}
+        if form is _ORACLE:
+            from des.domain.architecture_brief_resolver import (
+                DESIGN_ORACLE_LOCATOR_PATTERN,
+            )
+
+            return {"type": "string", "pattern": DESIGN_ORACLE_LOCATOR_PATTERN}
+        if form is _PATH:
+            from des.domain.architecture_brief_resolver import (
+                REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN,
+            )
+
+            return {"type": "string", "pattern": REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN}
+        if form is _REUSE_LOCATOR:
+            from des.domain.architecture_brief_resolver import (
+                REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN,
+            )
+
+            return {
+                "type": "string",
+                "pattern": REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN[:-1]
+                + r":[1-9][0-9]*$",
+            }
+        if form is _IMPACT_LOCATOR:
+            from des.domain.architecture_brief_resolver import (
+                REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN,
+            )
+
+            return {
+                "type": "string",
+                "pattern": REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN[:-1]
+                + r"(?::[1-9][0-9]*)?$",
+            }
+        return {"type": "string", "minLength": 1}
+
+    return schema(_DESIGN_DECISIONS)
 
 
 _WRAP_WIDTH = 80
@@ -592,6 +1155,114 @@ def _fenced(language: str, content: str) -> list[str]:
     return [f"{fence}{language}", content, fence]
 
 
+def _assurance_blocks(facts: DesignFacts, suffix: str = "") -> list[list[str]]:
+    blocks: list[list[str]] = []
+    for title, decision in (
+        ("Architectural tests", facts.architectural_tests),
+        ("Contract tests", facts.contract_tests),
+    ):
+        blocks.append([f"### {title}{suffix}"])
+        if isinstance(decision, NotApplicable):
+            blocks.append(_wrap(f"Not applicable: {decision.reason}"))
+            continue
+        blocks.append(
+            _wrap(
+                "The following checks falsify the declared obligations using the linked native verification command."
+            )
+        )
+        for check in decision.obligations:
+            blocks += [
+                _wrap(f"Obligation: {check.obligation}"),
+                _wrap(f"Test locator: `{check.oracle}`"),
+                _wrap(f"Verification command index: `{check.verification_index}`"),
+            ]
+            if isinstance(check, ContractTestObligation):
+                blocks += [
+                    _wrap(f"Contract: {check.contract}"),
+                    _wrap(
+                        f"Producer: `{check.producer}`; consumer: `{check.consumer}`"
+                    ),
+                    _wrap(f"Observation: {check.observation}"),
+                ]
+    if facts.adr is not None:
+        blocks.append([f"### Architecture decision record{suffix}"])
+        if isinstance(facts.adr, NotApplicable):
+            blocks.append(_wrap(f"Not applicable: {facts.adr.reason}"))
+        else:
+            adr = facts.adr
+            blocks += [
+                _wrap(f"Context: {adr.context}"),
+                _wrap(f"Decision: {adr.decision}"),
+                _wrap(f"Status: {adr.status}"),
+                _wrap("Alternatives considered:"),
+                _bullets(adr.alternatives),
+                _wrap("Consequences of this decision:"),
+                _bullets(adr.consequences),
+            ]
+    return blocks
+
+
+def _impact_closure_blocks(facts: DesignFacts, suffix: str = "") -> list[list[str]]:
+    closure = facts.impact_closure
+    if isinstance(closure, UnassessedDesignDecision):
+        return []
+    blocks: list[list[str]] = [[f"### Impact closure{suffix}"]]
+    if isinstance(closure, NotApplicable):
+        blocks.append(_wrap(f"Not applicable: {closure.reason}"))
+    else:
+        blocks.append(
+            _bullets(
+                tuple(
+                    f"{item.kind}: `{item.locator}`; {item.decision}: {item.reason}"
+                    for item in closure.items
+                )
+            )
+        )
+    return blocks
+
+
+def _reuse_blocks(facts: DesignFacts) -> list[list[str]]:
+    reuse = facts.reuse_analysis
+    if isinstance(reuse, UnassessedDesignDecision):
+        return []
+    blocks: list[list[str]] = [["### Reuse analysis"]]
+    blocks.append(
+        _bullets(
+            tuple(
+                f"{item.symbol}: `{item.locator}`; {item.decision}: {item.reason}"
+                for item in reuse.candidates
+            )
+        )
+        or _wrap("No reuse candidates were found.")
+    )
+    return blocks
+
+
+def _preservation_commands(facts: DesignFacts) -> list[list[str]]:
+    if not isinstance(facts.prefactoring, ApplicablePrefactoring):
+        return []
+    blocks = [
+        _wrap(
+            "Preservation uses the same existing test and support content before and after the move, before behavior changes."
+        )
+    ]
+    if facts.prefactoring.acceptance_supports:
+        blocks.append(
+            _bullets(
+                tuple(
+                    f"Preservation support: `{path}`"
+                    for path in facts.prefactoring.acceptance_supports
+                )
+            )
+        )
+    for argv in facts.prefactoring.verification:
+        blocks += [
+            _wrap("Preservation verification command:"),
+            _fenced("sh", shlex.join(argv)),
+        ]
+    return blocks
+
+
 @dataclass(frozen=True, slots=True)
 class DesignFactsSection:
     """The authority section one architect turn's TYPED FACTS alone render.
@@ -668,6 +1339,41 @@ class DesignFactsSection:
                 for argv in self.facts.verification
             ),
         ]
+        lines += [
+            "",
+            "\n\n".join("\n".join(block) for block in _assurance_blocks(self.facts)),
+        ]
+        lines += ["", "### Prefactoring"]
+        if isinstance(self.facts.prefactoring, NotApplicable):
+            lines += _wrap(f"Not applicable: {self.facts.prefactoring.reason}")
+        else:
+            prefactoring = self.facts.prefactoring
+            lines += _wrap(f"Existing oracle: `{prefactoring.existing_oracle}`")
+            lines += _wrap(f"Move: {prefactoring.move}")
+            lines += _wrap(
+                f"Preserved observation: {prefactoring.preserved_observation}"
+            )
+            lines += [
+                "",
+                "\n\n".join(
+                    "\n".join(block) for block in _preservation_commands(self.facts)
+                ),
+            ]
+        reuse = _reuse_blocks(self.facts)
+        if reuse:
+            lines += ["", "\n\n".join("\n".join(block) for block in reuse)]
+        impact = _impact_closure_blocks(self.facts)
+        if impact:
+            lines += ["", "\n\n".join("\n".join(block) for block in impact)]
+        lines += ["", "### Agreement analysis", ""]
+        if isinstance(self.facts.agreement_analysis, NotApplicable):
+            lines += _wrap(f"Not applicable: {self.facts.agreement_analysis.reason}")
+        else:
+            for party in self.facts.agreement_analysis.parties:
+                lines += _wrap(
+                    f"Contract: {party.contract}; {party.role}: `{party.locator}`; "
+                    f"{party.decision}: {party.reason}"
+                )
         return "\n".join(lines) + "\n"
 
 
@@ -705,7 +1411,18 @@ class DesignDocument:
             value = json.loads(raw)
         except (json.JSONDecodeError, UnicodeDecodeError) as error:
             raise DesignDocumentInvalid(f"input is not JSON: {error}") from error
-        root = _MANIFEST.decode(value, "manifest")
+        manifest = _object(value, "manifest")
+        # An unsupported schema_version is the envelope: no other field is
+        # judged against a language the input does not claim.
+        if "schema_version" in manifest:
+            _SCHEMA_VERSION.decode(
+                manifest["schema_version"], "manifest.schema_version"
+            )
+        defects = Defects(DesignDocumentInvalid)
+        root = _MANIFEST.decode_into(manifest, "manifest", defects)
+        for defect in _manifest_rule_defects(root):
+            defects.add(defect)
+        defects.close()
         semantic_sha256 = hashlib.sha256(
             json.dumps(
                 root, sort_keys=True, ensure_ascii=False, separators=(",", ":")
@@ -784,28 +1501,6 @@ class DesignDocument:
         supports = root["acceptance_supports"]
         verification = root["verification"]
         oracle_verification_index = root["oracle_verification_index"]
-        if oracle_verification_index >= len(verification):
-            raise DesignDocumentInvalid(
-                "manifest.oracle_verification_index must name one declared verification command"
-            )
-        if oracle.partition("::")[0] in supports:
-            raise DesignDocumentInvalid(
-                "manifest.acceptance_supports must not list the oracle's own "
-                f"file, which is never its own support: {oracle.partition('::')[0]}"
-            )
-        conflict = new_target_acceptance_support_conflict(
-            oracle,
-            ((path, decision) for path, decision, _ in targets),
-            supports,
-        )
-        if conflict is not None:
-            raise DesignDocumentInvalid(
-                "a non-oracle CREATE_NEW target cannot also be a required "
-                f"acceptance support: {conflict}; the acceptance designer must "
-                "create supports before craft: declare an oracle fixture only "
-                "as acceptance_supports, or remove a craft-created target from "
-                "acceptance_supports; do not label a new file EXTEND"
-            )
         facts = DesignFacts(
             tuple(DesignTarget(path, decision) for path, decision, _ in targets),
             paradigm,
@@ -816,6 +1511,10 @@ class DesignDocument:
             oracle_verification_index,
             constraints,
             public_oracle=public_oracle,
+            **{
+                field.name: _decision_record(field.name, root[field.name])
+                for field in _DECISION_FIELDS
+            },
         )
         return cls(
             heading,
@@ -840,6 +1539,13 @@ class DesignDocument:
             (
                 "DESIGN constructor input is one strict UTF-8 JSON manifest:",
                 *_MANIFEST.describe(),
+                "",
+                "Impact closure rule: an applicable `impact_closure` must hold one "
+                "item for every `targets` path and for every `agreement_analysis` "
+                "consumer locator, each with its kind, decision and reason; "
+                "`not_applicable` is refused while `agreement_analysis` declares a "
+                "consumer.  A manifest with any locator undisposed is refused "
+                "before craft, naming every missing locator at once.",
             )
         )
 
@@ -900,6 +1606,7 @@ class DesignDocument:
                 _wrap(f"Move: {self.prefactoring[2]}"),
                 _wrap(f"Preserved observation: {self.prefactoring[3]}"),
             ]
+            blocks += _preservation_commands(self.facts)
         blocks.append(heading("Agreement analysis"))
         if self.agreement_analysis[0] == "not_applicable":
             blocks.append(_wrap(f"Not applicable: {self.agreement_analysis[1]}"))
@@ -915,6 +1622,8 @@ class DesignDocument:
                     ),
                 )
             )
+        blocks += _impact_closure_blocks(self.facts, f" ({self.heading})")
+        blocks += _assurance_blocks(self.facts, f" ({self.heading})")
         blocks.append(heading("Boundaries"))
         blocks.append(
             _wrap(f"Not applicable: {self.boundaries[1]}")
@@ -1061,6 +1770,7 @@ class DesignDocument:
             "verification": [list(argv) for argv in facts.verification],
             "oracle_verification_index": facts.oracle_verification_index,
             "obligations": list(facts.obligations),
+            **design_decisions_wire(facts),
         }
         if facts.authority_locator:
             projection["authority_locator"] = facts.authority_locator

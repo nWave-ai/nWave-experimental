@@ -13,6 +13,29 @@ if TYPE_CHECKING:
 _SKILL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 _INVOCATION = re.compile(r"Invoke (?:ONE )?Skill\(([A-Za-z0-9][A-Za-z0-9._-]*)\)")
 _PREFIXES = ("~/.claude/skills/", "~/.agents/skills/")
+_CONDITIONAL_INDEX = re.compile(
+    r"<!-- GENERATED:role-skill-loading START.*?"
+    r"<!-- GENERATED:role-skill-loading END -->\n?",
+    re.DOTALL,
+)
+
+
+def _conditional_index_first(text: str) -> str:
+    """Emit the role's conditional skill index directly after its frontmatter.
+
+    The index is the role's only statement of when to load a non-preloaded
+    skill; read late, after the workflow, it was skipped. Placement is the
+    renderer's job, not an authoring convention.
+    """
+    index = _CONDITIONAL_INDEX.search(text)
+    if index is None:
+        return text
+    rest = text[: index.start()] + text[index.end() :]
+    match = re.match(r"\s*---\n.*?\n---\n", rest, re.DOTALL)
+    split = match.end() if match else 0
+    block = index.group(0).rstrip("\n") + "\n"
+    body = rest[split:].lstrip("\n")
+    return rest[:split] + "\n" + block + ("\n" + body if body else "")
 
 
 def _declared_skills(text: str) -> tuple[str, ...]:
@@ -149,7 +172,7 @@ def load_role_instructions(spec_path: Path, semantic_task: str | None = None) ->
 
 
 def _expand(spec_path: Path) -> str:
-    text = spec_path.read_text(encoding="utf-8")
+    text = _conditional_index_first(spec_path.read_text(encoding="utf-8"))
     skills = _declared_skills(text)
     if (
         not skills

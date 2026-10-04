@@ -259,7 +259,7 @@ def opencode_container():
             "rm -rf /var/lib/apt/lists/* && "
             "npm install -g opencode-ai --silent 2>&1 | tail -5 && "
             "useradd -m tester && "
-            "mkdir -p /home/tester/.config/opencode && "
+            "mkdir -p /home/tester/.claude /home/tester/.config/opencode && "
             'echo \'{"model": "openai/gpt-4o-mini"}\' > /home/tester/.config/opencode/opencode.json && '
             "chown -R tester:tester /home/tester"
         )
@@ -281,15 +281,14 @@ def opencode_container():
         install_script = (
             "set -e && "
             "python -m venv /tmp/venv && "
-            "/tmp/venv/bin/pip install --quiet pyyaml rich typer pydantic pydantic-settings httpx platformdirs packaging && "
+            "/tmp/venv/bin/pip install --quiet pyyaml rich typer pydantic pydantic-settings httpx platformdirs packaging jsonschema && "
             "chown -R tester:tester /tmp/venv && "
             "su tester -c 'cd /home/tester/nwave-dev && "
             "VIRTUAL_ENV=/tmp/venv PATH=/tmp/venv/bin:$PATH "
             "python scripts/install/install_nwave.py' 2>&1"
         )
         code, out = exec_in_container(container, ["bash", "-c", install_script])
-        # Install may exit non-zero if optional plugins fail; outcome is asserted
-        # per-test against core markers (mirrors Dockerfile `|| true` pattern).
+        assert code == 0, f"OpenCode install failed (exit {code}).\n{out}"
         container._install_stdout = out  # type: ignore[attr-defined]
 
         yield container
@@ -341,7 +340,7 @@ def codex_container():
             "apt-get install -y --no-install-recommends git -qq && "
             "rm -rf /var/lib/apt/lists/* && "
             "useradd -m tester && "
-            "mkdir -p /home/tester/.codex && "
+            "mkdir -p /home/tester/.claude /home/tester/.codex && "
             "chown -R tester:tester /home/tester"
         )
         code, out = exec_in_container(container, ["bash", "-c", setup_script])
@@ -360,15 +359,14 @@ def codex_container():
             "set -e && "
             "python -m venv /tmp/venv && "
             "/tmp/venv/bin/pip install --quiet pyyaml rich typer pydantic "
-            "pydantic-settings httpx platformdirs packaging && "
+            "pydantic-settings httpx platformdirs packaging jsonschema && "
             "chown -R tester:tester /tmp/venv && "
             "su tester -c 'cd /home/tester/nwave-dev && "
             "VIRTUAL_ENV=/tmp/venv PATH=/tmp/venv/bin:$PATH "
             "python scripts/install/install_nwave.py' 2>&1"
         )
         code, out = exec_in_container(container, ["bash", "-c", install_script])
-        # Install may exit non-zero if optional plugins fail; outcome asserted
-        # per-test against core markers (mirrors the Dockerfile `|| true` pattern).
+        assert code == 0, f"Codex install failed (exit {code}).\n{out}"
         container._install_stdout = out  # type: ignore[attr-defined]
 
         yield container

@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 **Kind**: KNOWLEDGE (reference). No forced sequence — consulted on its trigger.
 
-**Trigger**: you are shaping or judging a scenario's SHAPE — what to drive (boundary), what language to use, whether it is a complete user journey, and whether fixtures are parametrized correctly. Mandates 1-4 + the 3 Pillars + Walking Skeleton Strategy.
+**Trigger**: you are shaping or judging a scenario's SHAPE — what to drive (boundary), what language to use, whether it is a complete user journey, and whether fixtures are parameterized correctly. Mandates 1-4 + the 3 Pillars + Walking Skeleton Strategy.
 
 Numbering is an SSOT-internal index defined in the recomposing core `nw-test-design-mandates`; refer to mandates by descriptive name externally. Language-convention frame (non-Python target adaptation) lives in the core — read it before applying any code example below.
 
@@ -61,7 +61,7 @@ Step methods speak business language, abstract all technical details.
 
 ### Three Abstraction Layers
 
-**Layer 1 - Gherkin**: Pure business language, all stakeholders. Domain terms from ubiquitous language | Zero technical jargon | Describe WHAT user does, not HOW system does it
+**Layer 1 — Business scenario**: Describe the admitted context, user action and outcome with domain terms in the native test layout. Gherkin below is an illustration, not a required dependency. Public protocol terms are valid when the user's actual contract is that protocol.
 
 ```gherkin
 Scenario: Customer places order for available product
@@ -156,13 +156,14 @@ BEFORE parametrizing any test fixture with environment variants:
 4. Test impure code (subprocess, file I/O) through adapter interfaces:
    - Define a port (interface) for each impure operation
    - Create a test adapter (in-memory, fake) for each port
-   - Acceptance tests use real adapters; unit tests use fakes
+   - Acceptance tests give each driven port its Architecture of Reference treatment (`nw-distill-port-treatment-policy`): an in-memory fake for a driven-internal port, a capturing fake for a driven-external one. Real driven-internal adapters serve only the feature's one walking skeleton and the adapter integration tests (`nw-tdd-methodology-walking-skeleton`)
 5. Parametrize fixtures ONLY for the thin adapter layer that connects to real environments
 
 **Rationale**: Parametrizing fixtures across environments is expensive. Pure functions need zero environment setup. Extract first, parametrize the minimum.
 
 ### Violation Pattern
 
+Python illustration (pytest binding; the rule — parameterize only the thin adapter layer — is language-neutral):
 ```python
 # WRONG: parametrizing entire test across environments
 @pytest.fixture(params=["clean", "with-pre-commit", "with-stale-config"])
@@ -207,7 +208,7 @@ These three pillars are the lens used during writing and review. They sit above 
 
 ### Pillar 1 — Domain language with specific actions
 
-Scenarios speak the domain, not the code. A domain expert reads them without seeing a single line of implementation. Step names are semantic (`User_signs_up`, NOT `Call_signup_endpoint`). Technical jargon (HTTP, JSON, schema, endpoint, database) is forbidden in scenario titles, Gherkin steps, and step-method names. Technical detail lives inside step bodies only.
+Scenarios speak the domain, not incidental code. A domain expert can read stimulus/outcome without implementation. Reuse business-named project helpers and isolate parsing/subprocess/timeout mechanics where useful; no forced DSL. Technical terms belong in the scenario only when they are actual public protocol/domain promises, not private plumbing. Assert outcome/state/types/required fields rather than incidental exact representation.
 
 ### Pillar 2 — Chained narrative
 
@@ -215,7 +216,7 @@ Within a story line, scenarios read as a sequence of state transitions: **the `G
 
 ### Pillar 3 — App as in production
 
-The SUT is built via the production composition root (style `WebApplicationFactory` or equivalent). Only **external / non-deterministic ports** (clock, email, SMS, push, payment, LLM, third-party APIs) are substituted by fakes/stubs. The app is never rebuilt by hand replicating the wiring. Tier B (state-machine PBT, Mandate 10) uses an `InMemoryComposition` root that honors the same interfaces — same vocabulary, different composition root.
+Drive the SUT through production composition and the selected public port. Give each driven port its Architecture of Reference treatment under `nw-distill-port-treatment-policy`: focused acceptance scenarios use an in-memory fake for driven-internal storage and a capturing fake for driven-external dependencies; real driven-internal adapters belong to the feature's walking skeleton and declared adapter integration observations. Production composition does not mean production I/O in every scenario. Do not rebuild the business rule inside fixtures. State-machine properties may reuse a law-preserving native in-memory composition with an explicit preservation map; a particular composition class or DSL is not required. Keep an identifiable feature E2E and distinct real storage/crash/race/protocol observations when promised.
 
 ## Mandate 16: Algebraic Analysis Before the Scenario
 

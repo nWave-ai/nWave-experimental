@@ -45,7 +45,7 @@ Execute \*forge to create {agent-name} agent.
 ## Success Criteria
 
 - [ ] Agent definition under 400 lines
-- [ ] 11-point validation checklist passes
+- [ ] Every `nw-ab-validation-checklist` item passes
 - [ ] 3-5 canonical examples included
 
 ## Next Wave

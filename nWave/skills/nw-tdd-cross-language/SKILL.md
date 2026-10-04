@@ -7,20 +7,21 @@ disable-model-invocation: true
 
 # Cross-Language State-Delta Porting Guide
 
-This is an implementation guide, not the language/PBT authority. The
-language-agnostic law and exact eight-adapter matrix live once in
-`nw-test-design-mandates-layered-mechanics`; framework-specific generator,
-shrinker/replay, and state-machine guidance lives in the matching
-`nw-pbt-*` skill. The recipes below show how to port the same state-delta
-observation algebra without making Python syntax normative. A language not
-covered by a shipped adapter returns `EVIDENCE_GAP` before PBT authoring; it
-never borrows Hypothesis as a substitute.
+This optional implementation guide is not a requirement to port an nWave API.
+Native discovery and applicability live in `nw-test-design-mandates`; its
+layered-mechanics module owns observation laws. Use incumbent native assertions,
+generators, shrinking/replay and helpers first. Matching `nw-pbt-*` guidance
+loads on need; unlisted languages use their real native tooling, not an
+`EVIDENCE_GAP` merely because no adapter is shipped. Never borrow Python as a
+substitute. The recipes below illustrate one optional helper implementation.
+
+Unlisted languages (C, C++, OCaml, etc.) use their own native test, generator, shrinker and replay libraries; no Python-derived shim is imposed.
 
 ---
 
 ## Canonical Python reference
 
-**API contract** (locked at pilot, see `nwave_ai.state_delta.matcher`):
+**Illustrative Python API contract** (semantics reference only; not a required API, file path or predicate count; see `nwave_ai.state_delta.matcher`):
 
 ```python
 def assert_state_delta(
@@ -34,7 +35,7 @@ def assert_state_delta(
 
 Predicate = Callable[[Any, Any], bool]
 
-# 8 predicate factories:
+# Illustrative predicate factories (not a required set or count):
 def prepended_with(prefix: str, sep: str = ":") -> Predicate: ...
 def appended_with(suffix: str, sep: str = ":") -> Predicate: ...
 def unchanged() -> Predicate: ...
@@ -54,18 +55,18 @@ def legacy_healed(detector: Callable[[Any], bool], healed_check: Callable[[Any],
 
 ---
 
-## Porting recipe (language-agnostic)
+## Porting recipe (conditional, language-agnostic)
 
-For ANY language, the port is a small shim around the language's PBT library + an `assert_state_delta` function that captures the multi-violation collection semantics. **Keep it small (~70-150 LOC). Do not over-engineer.**
+Only when an existing native assertion/helper cannot express a needed public-state preservation observation, consider a small project-idiomatic helper. Translate the semantics needed by actual consumers, not a mandatory eight-predicate API or fixed path. Do not create a shim or additional allocations merely to match this illustrative Python reference.
 
-### Step 1 — Translate the API contract
+### Step 1 — Translate the semantics, only if a helper is needed
 
 Adapt the function signatures using language-idiomatic types:
 - Universe = set/list of strings (`Set<String>`, `string[]`, `&[String]`, etc.)
 - Expected = map of string → predicate (`Map<String, Predicate>`, `{[key: string]: Predicate}`, `HashMap<String, Box<dyn Fn>>`)
 - Predicate = callable taking `(old, new) → bool`
 
-### Step 2 — Implement the multi-violation collector
+### Step 2 — Multi-violation collector (illustrative)
 
 ```pseudocode
 function assert_state_delta(before, after, universe, expected, strict=false):
@@ -85,19 +86,13 @@ function assert_state_delta(before, after, universe, expected, strict=false):
         raise AssertionError(format_multiline_message(violations))
 ```
 
-### Step 3 — Implement the 8 predicate factories
+### Step 3 — Predicates (only those consumers need)
 
-Each factory closes over its parameters and returns a callable. Use language-idiomatic closure mechanism:
-- TypeScript: arrow functions
-- Rust: `move` closures returning `impl Fn(...) -> bool`
-- F#: partial application
-- Java: anonymous inner class or lambda + `Function`/`BiPredicate`
-- Go: function returning `func(old, new interface{}) bool`
+Include only the predicates actual tests need; the Python eight are illustrative, not a required count. If added, each closes over its parameters using the language's idiom (illustrative: TypeScript arrow functions, Rust `move` closures, F# partial application, Java lambdas, Go returned funcs).
 
-### Step 4 — Hook to PBT library
+### Step 4 — Compose with the native PBT library (if any)
 
-Combine with language's PBT library. The PBT library generates inputs; `assert_state_delta` validates the post-action state.
-
+If the project already has a generator/shrinker/replay library, it generates inputs and the native assertion or helper validates post-action state. Illustrative sketch:
 ```pseudocode
 property "installer preserves user PATH":
     forall(path: gen_realistic_path):
@@ -112,13 +107,13 @@ property "installer preserves user PATH":
 
 ---
 
-## Idiomatic mini-examples per language
+## Illustrative mini-examples per language (not required APIs, paths or LOC)
 
 ### TypeScript / fast-check
 
 ```typescript
 import { fc } from 'fast-check';
-import { assertStateDelta, prependedWith } from './state-delta';  // ~80 LOC shim
+import { assertStateDelta, prependedWith } from './state-delta';  // hypothetical helper
 
 fc.assert(
   fc.property(pathStrategy(), (userPath) => {
@@ -138,7 +133,7 @@ fc.assert(
 
 ```rust
 use proptest::prelude::*;
-use crate::state_delta::{assert_state_delta, prepended_with};  // ~100 LOC shim
+use crate::state_delta::{assert_state_delta, prepended_with};  // hypothetical helper
 
 proptest! {
     #[test]
@@ -160,7 +155,7 @@ proptest! {
 
 ```fsharp
 open FsCheck.Xunit
-open StateDelta  // ~70 LOC shim
+open StateDelta  // hypothetical helper
 
 [<Property>]
 let ``installer preserves user PATH`` (userPath: PathShape) =
@@ -177,7 +172,7 @@ let ``installer preserves user PATH`` (userPath: PathShape) =
 
 ```java
 import net.jqwik.api.*;
-import org.example.statedelta.StateDelta;  // ~120 LOC shim
+import org.example.statedelta.StateDelta;  // hypothetical helper
 
 class InstallerProperties {
     @Property
@@ -204,9 +199,7 @@ If the SUT (system under test) is a Python service or CLI:
 - Spawn the Python service, use Python `assert_state_delta` directly via test fixture
 - Cheaper than re-porting the matcher
 
-If the SUT is in your language but you only need state-delta for a few critical surfaces:
-- Hand-roll a 30-line minimal version (just `assert_state_delta` + 2-3 predicates you actually need)
-- Don't port the full 8-predicate library prematurely
+If the SUT is in your language, first use the incumbent native assertions. Only if a public-state preservation observation cannot be expressed, add a minimal project-idiomatic helper with just the predicates consumers actually need; do not port a fixed predicate set.
 
 ---
 
@@ -219,7 +212,7 @@ The 3-stage cascade in `nw-tdd-methodology::Paradigm Mandate` applies regardless
 - **Stage 2a** (post Stage 1): PBT amplification ~0% by design
 - **Stage 2b** (legacy bug-prone, no Stage 1): PBT amplification ~75%
 
-Stage applicability is independent of language. Language port is enabling infrastructure; the paradigm itself is universal.
+Stage applicability is independent of language. The language-independent law: observe port-exposed state before and after the action, and fail closed on any unexpected change. Express it with the project's own native tooling; any helper is optional infrastructure.
 
 ---
 

@@ -1,26 +1,4 @@
-"""The invocable steps of the canonical order, each returning to its caller.
-
-ADR-SSOT-002 Section 4b: «The DES exposes steps that may be invoked singly.
-Each takes minimal typed input and returns one closed outcome ... A step never
-chooses the next step: it NAMES the canonical next step as data and returns,
-and the orchestrator calls again or does something else.»
-
-WHY THIS IS A FACADE AND NOT A SECOND RUNNER.  Section 4b preserves «exactly one
-resident software boundary that owns measurement, construction, enactment and
-the handover», and names a second such owner as its own falsifier.  So every
-step here delegates to `DeliveryContinuationRunner`, which keeps the whole
-measuring and enacting half unchanged.  What this module adds is the part the
-runner never had: taking the shared lock for ONE step, resolving the provider
-port for ONE turn, and returning the closed outcome together with the role's
-diagnostic instead of falling through into the next role.
-
-WHAT IT DELIBERATELY DOES NOT HOLD.  No phase, no status, no attempt count, no
-progress label, and no memory between calls.  Section 4b: «no process
-composes.»  A step re-derives everything it needs from the two owned facts --
-the persisted handover and the turn records -- so calling it twice after a
-crash resumes rather than duplicates, and nothing here can be a second source
-of truth about where a Request stands.
-"""
+"""Deterministic document construction, native measurement and persistence."""
 
 from __future__ import annotations
 
@@ -30,17 +8,11 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, cast
 
 from des.adapters.driven.config.des_config import DESConfig
+from des.adapters.driven.task_invocation.model_envelope import decode_model_run
 from des.application.delivery_continuation import (
-    AcceptanceFinding,
-    CraftSettlement,
     DeliveryContinuationRunner,
     DeliveryOutcome,
-    DesignOptions,
     FailureDetail,
-    FrozenHandover,
-    OracleSettlement,
-    RequestRewrite,
-    RoleTurn,
     SelectedValue,
 )
 from des.application.design_document_producer import (
@@ -48,7 +20,6 @@ from des.application.design_document_producer import (
     DesignPublicationWidenings,
     bound_authority_headings,
     bound_value_headings,
-    judge_design_destination,
     publish_design_document,
 )
 from des.application.discuss_document_producer import publish_discuss_document
@@ -58,6 +29,7 @@ from des.application.handover import (
     Blocked,
     BoundDesign,
     HandoverValue,
+    ProductAuthority,
     SharedDesign,
     acquire_delivery_lock,
     bind_design_facts,
@@ -68,7 +40,14 @@ from des.application.handover import (
     stored_handover,
 )
 from des.application.operational_document_producer import publish_operational_document
-from des.domain.algebraic_modelling_tools import algebra_line
+from des.application.verification_workspace import (
+    WorkspaceUnavailable,
+    acquire_verification_lock,
+)
+from des.domain.architecture_brief_resolver import (
+    target_acceptance_support_conflict,
+    target_acceptance_support_conflict_text,
+)
 from des.domain.delivery_disposition import Disposition
 from des.domain.design_document import DesignDocument, DesignDocumentInvalid
 from des.domain.discuss_contract import HOW_TO_FIX as DISCUSS_HOW_TO_FIX
@@ -92,7 +71,12 @@ from des.domain.operational_document import (
     OperationalDocument,
     OperationalDocumentInvalid,
 )
-from des.ports.driven_ports.task_invocation_port import DesignFacts, ModelRun
+from des.ports.driven_ports.task_invocation_port import (
+    DesignFacts,
+    MalformedModelEnvelope,
+    ModelOutcome,
+    ModelRun,
+)
 
 
 if TYPE_CHECKING:
@@ -100,7 +84,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from des.application.handover import StoredHandover
-    from des.ports.driven_ports.task_invocation_port import TaskInvocationPort
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,72 +92,19 @@ class StepOutcome:
 
     `facts` are terminal lines the step measured and the orchestrator reads --
     the values a decomposition produced, a candidate SHA, a captured exit code.
-    `diagnostic` is the role's own words forwarded VERBATIM when a role ran, and
-    `None` when none did; nothing in this module or its callers parses it.
-
-    `turns_bought` counts the provider turns whose PROCESS ran, which is not the
-    same as the answers received: an envelope the boundary refuses costs a turn
-    and leaves no diagnostic. Deriving "did a role run" from the diagnostic told
-    a reader the software had refused before buying one over a turn the provider
-    log shows was bought (measured 2026-09-06), so the count travels beside it.
+    `diagnostic` contains host-declared role words; neither it nor the role
+    identifier proves execution or measures the host's model expenditure.
     """
 
     disposition: Disposition
     failure: FailureDetail | None = None
     facts: tuple[str, ...] = ()
     diagnostic: str | None = None
-    turns_bought: int = 0
     role: str | None = None
 
     @property
     def succeeded(self) -> bool:
         return self.disposition is Disposition.Success
-
-
-@dataclass(frozen=True, slots=True)
-class RoleInvocation:
-    """The one host-selected role turn and its closed step observation."""
-
-    outcome: StepOutcome
-    model_run: ModelRun | None = None
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class DecompositionInput:
-    """Everything ONE Product Owner turn is given, carried as one value.
-
-    `request` is the Request to decompose, or `None` to correct the one the
-    handover already carries.  `finding` is the correction the turn must answer.
-    `operational_facts` are the DEVOPS constraints put in front of the Product
-    Owner.  All three reach the runner: `finding` on the rewrite and on the first
-    decomposition alike, `operational_facts` on the decomposition.
-
-    Keyword-only because `request` and `finding` are both `str | None`: nothing
-    here checks annotations at runtime, so a positional transposition would
-    decompose the correction text AS the Request.
-    """
-
-    request: str | None
-    finding: str | None = None
-    operational_facts: dict[str, object] | None = None
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ArchitectTurn:
-    """Which value ONE architect turn is for, and how it differs from a first pass.
-
-    `finding` is the correction the turn must answer, `None` on a first pass over
-    an unbound value.  `competence` is an explicit construction parameter: absent,
-    the invoked role resolves exactly as it otherwise would.
-
-    Keyword-only because `finding` and `competence` are both `str | None`: nothing
-    here checks annotations at runtime, so a positional transposition would send
-    the correction text as the competence the role is resolved with.
-    """
-
-    position: int
-    finding: str | None = None
-    competence: str | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -218,6 +148,15 @@ class ReplacementModes:
 #: module constant rather than a default-argument call, which ruff's B008 refuses.
 _NO_REPLACEMENT = ReplacementModes()
 
+#: The repair for a manifest the decoder refused.  The WHY names the first
+#: offending field; the grammar is printed by `des design --help`, so the HOW
+#: points there instead of restating "a complete manifest", which named no
+#: field and no source of the grammar (codex retest 2026-10-01, both cases).
+_DESIGN_MANIFEST_HOW = (
+    "correct the field named in WHY (the closed manifest grammar is printed "
+    "by `des design --help`), then resubmit the whole manifest on stdin"
+)
+
 
 def blocked_disposition(blocked: Blocked) -> Disposition:
     """The ONE reading of `Blocked`'s two booleans (ADR-DES-003 §4).
@@ -243,12 +182,46 @@ def _from_blocked(blocked: Blocked) -> StepOutcome:
 def _from_outcome(
     outcome: DeliveryOutcome,
     diagnostic: str | None,
-    turns_bought: int = 0,
     role: str | None = None,
 ) -> StepOutcome:
-    return StepOutcome(
-        outcome.disposition, outcome.failure, (), diagnostic, turns_bought, role
-    )
+    return StepOutcome(outcome.disposition, outcome.failure, (), diagnostic, role)
+
+
+def _host_result(raw: str, role: str) -> ModelRun | StepOutcome:
+    """Decode a declared host observation, never evidence of DES execution."""
+    try:
+        result = decode_model_run(json.loads(raw)["structured_output"], role_id=role)
+    except (
+        ValueError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        MalformedModelEnvelope,
+    ) as error:
+        return StepOutcome(
+            Disposition.Refusal,
+            FailureDetail(
+                "HostResultMalformed",
+                str(error),
+                "supply the host specialist's complete structured_output JSON",
+            ),
+        )
+    if result.outcome is not ModelOutcome.Accepted:
+        return StepOutcome(
+            Disposition.Refusal
+            if result.outcome is ModelOutcome.Rejected
+            else Disposition.Indeterminate,
+            FailureDetail(
+                "HostRoleResult",
+                result.diagnostic,
+                "the host selects the owner and any next action from this observation",
+            ),
+            facts=()
+            if result.craft_blocker is None
+            else (f"BLOCKED-BY: {result.craft_blocker.value}",),
+            diagnostic=result.diagnostic,
+        )
+    return result
 
 
 def _retaining_bound_facts(
@@ -401,62 +374,7 @@ def _published(value: HandoverValue) -> PublishedAcceptance:
 
 @dataclass(slots=True)
 class DeliverySteps:
-    """Each method is ONE step: it locks, runs one turn, and returns."""
-
-    invoker: TaskInvocationPort | None = None
-    #: Explicit --feature of the step being run; the durable binding is the
-    #: handover's own feature_id (see _feature_scope).
-    _feature: DocumentScope | str | None = None
-    _project: bool = False
-
-    def decompose(
-        self,
-        root: Path,
-        given: DecompositionInput,
-        feature: DocumentScope | str | None = None,
-        project: bool = False,
-    ) -> StepOutcome:
-        """One Product Owner turn over the given Request, recorded as the graph.
-
-        IDEMPOTENT against the handover, which is what makes a re-invocation
-        after a crash a resume rather than a second paid turn: a graph that
-        already exists for this exact Request is REPORTED, never re-elicited and
-        never overwritten.  A graph that exists for a DIFFERENT Request is
-        refused LOUD with both moves named, and this step deletes nothing --
-        the bytes on disk are somebody's unfinished delivery.
-        """
-        self._feature = feature
-        self._project = project
-        return self._locked(
-            root, lambda runner, port: self._decompose(runner, port, root, given)
-        )
-
-    def design(
-        self,
-        root: Path,
-        position: int,
-        finding: str | None = None,
-        *,
-        competence: str | None = None,
-        feature: DocumentScope | str | None = None,
-    ) -> StepOutcome:
-        """One architect turn for the value at `position`, derived and bound.
-
-        REPEATABLE, which is what makes a correction the same step rather than a
-        second one.  Called again over a bound value with `finding`, the turn
-        receives the CURRENT typed facts beside the finding and what it returns
-        REPLACES them.  Which finding goes back to which role, and whether to
-        spend a turn on it at all, is the orchestrator's decision.
-
-        `competence` is an explicit construction parameter: absent, the invoked
-        role resolves exactly as before; the orchestrator passes it only when
-        this turn needs a different competence than the role's ordinary one.
-        """
-        self._feature = feature
-        turn = ArchitectTurn(position=position, finding=finding, competence=competence)
-        return self._locked(
-            root, lambda runner, port: self._design(runner, port, root, turn)
-        )
+    """Explicit construction and measurement operations; model execution is host-owned."""
 
     def design_document(
         self,
@@ -476,7 +394,7 @@ class DeliverySteps:
                 FailureDetail(
                     "InvalidDesignDocument",
                     str(error),
-                    "provide the complete closed v1 DESIGN JSON manifest",
+                    error.how(_DESIGN_MANIFEST_HOW),
                 ),
             )
         lock = acquire_delivery_lock(root)
@@ -607,6 +525,7 @@ class DeliverySteps:
                 facts=(
                     f"DOCUMENT: {published.locator}",
                     f"DOCUMENT-SHA256: {published.digest}",
+                    f"SEMANTIC-SHA256: {document.semantic_sha256}",
                     f"DESIGN-FACTS: {document.facts_json(facts)}",
                     "SCHEMA-VERSION: 1",
                 ),
@@ -631,7 +550,7 @@ class DeliverySteps:
                 FailureDetail(
                     "InvalidDesignDocument",
                     str(error),
-                    "provide the complete closed v1 DESIGN JSON manifest",
+                    error.how(_DESIGN_MANIFEST_HOW),
                 ),
             )
         lock = acquire_delivery_lock(root)
@@ -800,7 +719,9 @@ class DeliverySteps:
                 FailureDetail(
                     "InvalidOperationalDocument",
                     str(error),
-                    "provide the complete closed v1 OperationalDocumentInput JSON",
+                    error.how(
+                        "provide the complete closed v1 OperationalDocumentInput JSON"
+                    ),
                 ),
             )
         lock = acquire_delivery_lock(root)
@@ -922,7 +843,7 @@ class DeliverySteps:
                 FailureDetail(
                     "InvalidDiscussDocument",
                     str(error),
-                    DISCUSS_HOW_TO_FIX,
+                    error.how(DISCUSS_HOW_TO_FIX),
                 ),
             )
         lock = acquire_delivery_lock(root)
@@ -1004,17 +925,18 @@ class DeliverySteps:
             )
             if isinstance(published, Blocked):
                 return _from_blocked(published)
-            if (
-                replace_current
-                and stored is not None
-                and (graph != stored.values or scope_changed)
+            product_authority = ProductAuthority(published.locator, published.digest)
+            if stored is not None and (
+                (replace_current and (graph != stored.values or scope_changed))
+                or stored.product_authority != product_authority
             ):
                 rewritten = rewrite_handover(
                     root,
                     stored.raw,
                     document.request,
-                    graph,
+                    graph if replace_current else stored.values,
                     feature_id=scope,
+                    product_authority=product_authority,
                 )
                 if isinstance(rewritten, Blocked):
                     return StepOutcome(
@@ -1031,7 +953,11 @@ class DeliverySteps:
                     )
             if stored is None:
                 created = create_constructed_handover(
-                    root, document.request, graph, scope
+                    root,
+                    document.request,
+                    graph,
+                    scope,
+                    product_authority=product_authority,
                 )
                 if isinstance(created, Blocked):
                     return StepOutcome(
@@ -1076,7 +1002,7 @@ class DeliverySteps:
                 FailureDetail(
                     "InvalidDistillDocument",
                     str(error),
-                    V2_HOW,
+                    error.how(V2_HOW),
                 ),
             )
         lock = acquire_delivery_lock(root)
@@ -1131,6 +1057,36 @@ class DeliverySteps:
                             "--replace-current to replace the selection",
                         ),
                     )
+            conflicts = tuple(
+                (position, conflict)
+                for position, value in enumerate(stored.values, start=1)
+                if value.observation in incoming
+                and isinstance(value.authority, DesignFacts)
+                and (
+                    conflict := target_acceptance_support_conflict(
+                        incoming[value.observation].oracle,
+                        (target.path for target in value.authority.targets),
+                        incoming[value.observation].supports,
+                    )
+                )
+                is not None
+            )
+            if conflicts:
+                return StepOutcome(
+                    Disposition.Refusal,
+                    FailureDetail(
+                        "TargetAcceptanceSupportConflict",
+                        "; ".join(
+                            f"value {position}: "
+                            + target_acceptance_support_conflict_text(conflict)
+                            for position, conflict in conflicts
+                        ),
+                        "remove each named DESIGN target from that value's "
+                        "acceptance_supports and resubmit the DISTILL revision; "
+                        "if the oracle truly needs a new fixture, it is "
+                        "acceptance-owned and not a DESIGN target",
+                    ),
+                )
             prior_brief = AcceptanceBrief(
                 tuple(_published(value) for value in stored.values if value.acceptance)
             )
@@ -1201,324 +1157,76 @@ class DeliverySteps:
         finally:
             lock.release()
 
-    def oracle(
-        self, root: Path, position: int, finding: str | None = None
+    def oracle(self, root: Path, position: int, raw: str) -> StepOutcome:
+        """Record a host author's result and measure its existing public oracle."""
+        return self._locked_native(
+            root, lambda runner: self._oracle(runner, root, position, raw)
+        )
+
+    def craft(self, root: Path, position: int, raw: str) -> StepOutcome:
+        """Measure and record an implementation supplied by the host-selected crafter."""
+        return self._locked_native(
+            root, lambda runner: self._craft(runner, root, position, raw)
+        )
+
+    def prefactoring(self, root: Path, position: int, phase: str) -> StepOutcome:
+        """Measure one explicitly selected preservation phase; perform no move."""
+        return self._locked_native(
+            root, lambda runner: self._prefactoring(runner, root, position, phase)
+        )
+
+    def _prefactoring(
+        self, runner: DeliveryContinuationRunner, root: Path, position: int, phase: str
     ) -> StepOutcome:
-        """Author or correct one value's oracle, measure it RED, and judge it.
-
-        The RED measurement runs before the judgement because it is free next to
-        it: on run 23 the reviewer approved a broken oracle in 27.4s of paid turn
-        while the same oracle answers `broken` to an execution in 1.1s of wall.
-
-        A refusal that ONE named owner may still repair carries that owner back
-        as DATA -- the reviewer's own closed word, never read by this software --
-        so the orchestrator can choose which step answers it.
-        """
-        return self._locked(
-            root,
-            lambda runner, port: self._oracle(runner, port, root, position, finding),
+        stored = _graph(root)
+        if isinstance(stored, StepOutcome):
+            return stored
+        ready = _value_at(stored, position)
+        if isinstance(ready, StepOutcome):
+            return ready
+        if ready.authority is None:
+            return _unbound_design(root, (position,))
+        design = runner.selected_authority(root, stored, position)
+        if isinstance(design, DeliveryOutcome):
+            return _from_outcome(design, None)
+        measured = runner.measure_prefactoring(
+            root, SelectedValue(stored, ready, design), phase
         )
-
-    def craft(self, root: Path, position: int) -> StepOutcome:
-        """One crafter turn for this value's batch, returning its blocker as data.
-
-        A refusing turn names WHO can unblock it in a closed word of its typed
-        payload, and this step forwards that word on `BLOCKED-BY` and stops.
-        The composed run spends one window on the role it names; a step invoked
-        alone must not, because that choice is the orchestrator's (Section 4b).
-        """
-        return self._locked(
-            root, lambda runner, port: self._craft(runner, port, root, position)
-        )
-
-    def verify(self, root: Path) -> StepOutcome:
-        """One whole-Request candidate and its declared native observation."""
-        return self._locked_native(root, lambda runner: self._verify(runner, root))
-
-    def invoke_role(
-        self,
-        root: Path,
-        cwd: Path,
-        role_id: str,
-        prompt: str,
-        semantic_task: str | None = None,
-    ) -> RoleInvocation:
-        """Issue one already-selected host role and return its typed observation.
-
-        The CLI binds the selected runtime and the persisted role input. This
-        boundary owns the one provider turn, its cooperative lock, and the
-        truthful turn telemetry; it neither sequences another role nor
-        interprets the returned model result.
-        """
-        runner = DeliveryContinuationRunner(self.invoker)
-        port = runner.resolve_port(root)
-        if isinstance(port, DeliveryOutcome):
-            return RoleInvocation(_from_outcome(port, None))
-        lock = acquire_delivery_lock(root)
-        if isinstance(lock, Blocked):
-            return RoleInvocation(_from_blocked(lock))
-        try:
-            invoked = runner._invoke(
-                port,
-                cwd,
-                RoleTurn(role=role_id, prompt=prompt, semantic_task=semantic_task),
-                FrozenHandover(raw=None),
-            )
-            if isinstance(invoked, DeliveryOutcome):
-                return RoleInvocation(
-                    _from_outcome(
-                        invoked,
-                        runner.last_diagnostic,
-                        runner.turns_bought,
-                        runner.last_role,
-                    )
-                )
-            return RoleInvocation(
-                StepOutcome(
-                    Disposition.Success,
-                    diagnostic=runner.last_diagnostic,
-                    turns_bought=runner.turns_bought,
-                    role=runner.last_role,
+        if isinstance(measured, DeliveryOutcome):
+            return _from_outcome(measured, None)
+        locator, evidence = measured
+        return StepOutcome(
+            Disposition.Success,
+            facts=(
+                f"VALUE-{position}: {json.dumps(ready.observation, ensure_ascii=False)}",
+                f"PREFACTORING-PHASE: {phase}",
+                "PREFACTORING-OBSERVATION: GREEN basis=exit-status-only",
+                f"NATIVE-EVIDENCE: {locator}",
+                *(
+                    f"PREFACTORING-ARGV: {json.dumps(item.argv)} exit={item.exit_status}"
+                    for item in evidence
                 ),
-                invoked,
-            )
-        finally:
-            lock.release()
-
-    def integrate(
-        self, root: Path, candidate: str, on_my_evidence: str | None = None
-    ) -> StepOutcome:
-        """Compare-and-swap one candidate in, reconcile, and close the graph.
-
-        `on_my_evidence` is an optional host rationale retained for compatibility.
-        Integration performs candidate identity, compare-and-swap, reconciliation,
-        and cleanup mechanics; it does not interpret role observations as admission.
-        """
-        return self._locked(
-            root,
-            lambda runner, _port: self._integrate(
-                runner, root, candidate, on_my_evidence
             ),
+        )
+
+    def verify(self, root: Path, *, fresh: bool = False) -> StepOutcome:
+        """Recover an observation, or explicitly measure the declared checks again."""
+        return self._locked_native(
+            root,
+            lambda runner: self._verify(runner, root, fresh=fresh),
+            verification=True,
+        )
+
+    def integrate(self, root: Path, candidate: str) -> StepOutcome:
+        """Apply the explicit candidate identity, compare-and-swap and cleanup operation."""
+        return self._locked_native(
+            root, lambda runner: self._integrate(runner, root, candidate)
         )
 
     # ----------------------------------------------------------------- inner
 
-    def _decompose(
-        self,
-        runner: DeliveryContinuationRunner,
-        port: TaskInvocationPort,
-        root: Path,
-        given: DecompositionInput,
-    ) -> StepOutcome:
-        # `request` is the only one of the three that is re-bound below -- an
-        # absent Request resumes the stored one -- so it is the only one taken
-        # out of the record.
-        request = given.request
-        stored = stored_handover(root)
-        if isinstance(stored, Blocked):
-            return _from_blocked(stored)
-        scope = _feature_scope(stored, self._feature, project=self._project)
-        if isinstance(scope, StepOutcome):
-            return scope
-        checked = _scoped_destination(
-            DESConfig.discuss_document_destination, root, scope
-        )
-        if isinstance(checked, StepOutcome):
-            return checked
-        runner.feature_id = scope
-        if request is None:
-            if stored is None:
-                return StepOutcome(
-                    Disposition.Refusal,
-                    FailureDetail(
-                        "FindingRequestUnavailable",
-                        "a finding on stdin requires an existing Request to correct",
-                        "supply the original Request on stdin and additional context "
-                        "as --finding <text>, or create the Request first",
-                    ),
-                )
-            request = stored.request
-        if stored is not None and stored.request == request and given.finding is None:
-            # L1: the same Request over the graph it produced is a resume.
-            return StepOutcome(Disposition.Success, facts=_value_facts(stored))
-        if stored is not None:
-            # ADR-DES-003 §7: a Request that differs is not a mismatch to
-            # refuse. It is a REWRITE, and the six hand deletions of the
-            # handover on 2026-09-05/06 are what it replaces.
-            rewritten = runner.rewrite_request(
-                root, port, stored, request, finding=given.finding
-            )
-            diagnostic = runner.last_diagnostic
-            if isinstance(rewritten, DeliveryOutcome):
-                return _from_outcome(
-                    rewritten, diagnostic, runner.turns_bought, runner.last_role
-                )
-            graph, split = rewritten
-            return StepOutcome(
-                Disposition.Success,
-                facts=(*_value_facts(graph), *_split_facts(graph, split)),
-                diagnostic=diagnostic,
-                turns_bought=runner.turns_bought,
-                role=runner.last_role,
-            )
-        decomposed = runner.decompose(
-            root, port, request, given.operational_facts, finding=given.finding
-        )
-        diagnostic = runner.last_diagnostic
-        if isinstance(decomposed, DeliveryOutcome):
-            return _from_outcome(
-                decomposed, diagnostic, runner.turns_bought, runner.last_role
-            )
-        return StepOutcome(
-            Disposition.Success,
-            facts=_value_facts(decomposed),
-            diagnostic=diagnostic,
-            turns_bought=runner.turns_bought,
-            role=runner.last_role,
-        )
-
-    def _design(
-        self,
-        runner: DeliveryContinuationRunner,
-        port: TaskInvocationPort,
-        root: Path,
-        turn: ArchitectTurn,
-    ) -> StepOutcome:
-        stored = _graph(root)
-        if isinstance(stored, StepOutcome):
-            return stored
-        ready = _value_at(stored, turn.position)
-        if isinstance(ready, StepOutcome):
-            return ready
-        if turn.finding is None and ready.authority is not None:
-            # L1 (ADR-DES-003 §2): the second call over a bound value succeeds,
-            # changes nothing and costs nothing. Without this it re-bought the
-            # architect and SILENTLY REPLACED the bound facts, so a retry after
-            # a lost terminal was a paid overwrite. Re-binding is spelled
-            # `--finding -` and nothing else.
-            # A designation is not evidence. Before the zero-cost Success is
-            # composed, the value's own recorded locator is resolved against the
-            # document ON DISK; a record and a file that disagree are reported,
-            # never confirmed. Intercepted here, ahead of derivation, so the
-            # refusal is about that one disagreement.
-            disagreement = runner.confirm_recorded_authority(
-                root, ready.authority, turn.position
-            )
-            if disagreement is not None:
-                return _from_outcome(disagreement, None)
-            facts = runner.derive_authority(root, ready.authority)
-            if isinstance(facts, DeliveryOutcome):
-                return _from_outcome(facts, None)
-            return StepOutcome(
-                Disposition.Success,
-                facts=(
-                    f"VALUE-{turn.position}: "
-                    f"{json.dumps(ready.observation, ensure_ascii=False)}",
-                    f"PARADIGM: {facts.paradigm}",
-                    f"ORACLE: {facts.acceptance_oracle_locator}",
-                    "TARGETS: "
-                    + ", ".join(
-                        f"{path} ({decision})"
-                        for path, decision in facts.target_decisions
-                    ),
-                    algebra_line(),
-                    "RECORDED: this value's typed design facts are already bound "
-                    "over these bytes, so no turn was bought; re-bind with "
-                    f"`des design --repo-root <root> --value {turn.position} "
-                    "--finding -`",
-                ),
-            )
-        # The STEP owns the destination and the role owns only the heading, so
-        # the configured document is resolved here, at the same application
-        # boundary the closed-document path resolves it at, and handed in.
-        scope = _feature_scope(stored, self._feature)
-        if isinstance(scope, StepOutcome):
-            return scope
-        destination = _scoped_destination(
-            DESConfig.design_document_destination, root, scope
-        )
-        if isinstance(destination, StepOutcome):
-            return destination
-        # A destination the post-turn rule would refuse is refused HERE, on the
-        # only expression that reaches a provider invocation, so the operator
-        # pays nothing for an answer the software already knows it must refuse.
-        # The judgement is the destination-only half of the very rule
-        # `publish_design_document` applies afterwards, which is kept: a
-        # destination replaced DURING the turn is still refused after it.
-        if destination is not None:
-            # The bound headings are threaded, never re-read inside the
-            # producer: the pre-turn judge and the post-turn publish read the
-            # SAME `stored` and cannot disagree about what this Request wrote.
-            unsafe = judge_design_destination(
-                root, destination, bound_authority_headings(stored, destination)
-            )
-            if unsafe is not None:
-                return _from_blocked(unsafe)
-        designed = runner.design_value(
-            root,
-            port,
-            stored,
-            ready,
-            options=DesignOptions(
-                finding=turn.finding,
-                competence=turn.competence,
-                destination=destination,
-            ),
-        )
-        diagnostic = runner.last_diagnostic
-        if isinstance(designed, DeliveryOutcome):
-            return _from_outcome(
-                designed, diagnostic, runner.turns_bought, runner.last_role
-            )
-        _, facts = designed
-        # Printed only when a section was actually published, so a caller can
-        # read from the terminal alone that this turn produced document bytes,
-        # in the same two rows the closed-document path already prints.
-        published = runner.published_design
-        document = (
-            ()
-            if published is None
-            else (
-                f"DOCUMENT: {published.locator}",
-                f"DOCUMENT-SHA256: {published.digest}",
-            )
-        )
-        unchanged = (
-            ("UNCHANGED: the accepted correction repeated the bound typed facts",)
-            if runner.design_unchanged
-            else ()
-        )
-        return StepOutcome(
-            Disposition.Success,
-            facts=(
-                f"VALUE-{turn.position}: "
-                f"{json.dumps(ready.observation, ensure_ascii=False)}",
-                f"PARADIGM: {facts.paradigm}",
-                f"ORACLE: {facts.acceptance_oracle_locator}",
-                "TARGETS: "
-                + ", ".join(
-                    f"{path} ({decision})" for path, decision in facts.target_decisions
-                ),
-                *document,
-                *unchanged,
-                # Section 1a item 6 is settled HERE, where the typed facts that
-                # would carry an algebra are bound, and it is stated in both
-                # directions: a line printed only when the checker is missing
-                # would teach the reader that silence means the obligation met.
-                algebra_line(),
-            ),
-            diagnostic=diagnostic,
-            turns_bought=runner.turns_bought,
-            role=runner.last_role,
-        )
-
     def _oracle(
-        self,
-        runner: DeliveryContinuationRunner,
-        port: TaskInvocationPort,
-        root: Path,
-        position: int,
-        finding: str | None,
+        self, runner: DeliveryContinuationRunner, root: Path, position: int, raw: str
     ) -> StepOutcome:
         stored = _graph(root)
         if isinstance(stored, StepOutcome):
@@ -1527,96 +1235,32 @@ class DeliverySteps:
         if isinstance(ready, StepOutcome):
             return ready
         if ready.authority is None:
-            return _unbound_design(position)
+            return _unbound_design(root, (position,))
         design = runner.selected_authority(root, stored, position)
         if isinstance(design, DeliveryOutcome):
-            return _from_outcome(design, None, runner.turns_bought, runner.last_role)
-        # The settlement is consulted ONLY when there is no finding, so
-        # `--finding -` is untouched BY CONSTRUCTION rather than by a second
-        # rule: re-opening an approved oracle is the orchestrator's decision and
-        # no record may pre-empt it.
-        if finding is None:
-            settlement = runner.oracle_settlement(root, stored, ready, design)
-            named = (
-                f"VALUE-{position}: {json.dumps(ready.observation, ensure_ascii=False)}"
-            )
-            if settlement is OracleSettlement.RecordedOverCurrentBytes:
-                return StepOutcome(
-                    Disposition.Success,
-                    facts=(
-                        named,
-                        f"ORACLE: {design.acceptance_oracle_locator}",
-                        "RECORDED: this value's approved oracle turn is already a "
-                        "recorded fact over these exact bytes, so no turn was bought",
-                    ),
-                )
-            if settlement is OracleSettlement.SettledByItsOwnExecution:
-                # The measured row is printed, not summarised away: it is what
-                # makes the red arm and the green arm distinguishable by an
-                # examiner, and ADR-DES-003 §3 G3 records the surviving
-                # violation as a branch that PROMISES evidence it does not show.
-                return StepOutcome(
-                    Disposition.Success,
-                    facts=(
-                        named,
-                        f"ORACLE: {design.acceptance_oracle_locator}",
-                        *_oracle_red_facts(runner.settled_oracle_measured),
-                        f"WITNESS: the tracked oracle {design.acceptance_paths[0]} "
-                        "was executed on the current workspace bytes and RESOLVED "
-                        "to its own verdict, so this value's moved oracle record "
-                        "was re-pointed at them and no acceptance-designer turn "
-                        "was bought",
-                    ),
-                )
-        measurement = runner.oracle_value(
-            root, port, SelectedValue(stored, ready, design), finding=finding
+            return _from_outcome(design, None)
+        result = _host_result(raw, "nw-acceptance-designer")
+        if isinstance(result, StepOutcome):
+            return result
+        measurement = runner.measure_oracle(root, SelectedValue(stored, ready, design))
+        facts = (
+            f"VALUE-{position}: {json.dumps(ready.observation, ensure_ascii=False)}",
+            f"ORACLE: {design.acceptance_oracle_locator}",
+            *_oracle_red_facts(measurement.measured),
         )
-        diagnostic = runner.last_diagnostic
-        red = _oracle_red_facts(measurement.measured)
-        refusal = measurement.refusal
-        if refusal is None:
+        if measurement.refusal is not None:
             return StepOutcome(
-                Disposition.Success,
-                facts=(
-                    f"VALUE-{position}: "
-                    f"{json.dumps(ready.observation, ensure_ascii=False)}",
-                    f"ORACLE: {design.acceptance_oracle_locator}",
-                    *red,
-                ),
-                diagnostic=diagnostic,
-                turns_bought=runner.turns_bought,
-                role=runner.last_role,
+                measurement.refusal.disposition,
+                measurement.refusal.failure,
+                facts,
+                result.diagnostic,
             )
-        if isinstance(refusal, AcceptanceFinding):
-            terminal = refusal.terminal
-            assert terminal.failure is not None
-            return StepOutcome(
-                terminal.disposition,
-                terminal.failure,
-                facts=(*red, f"DEFECT-OWNER: {refusal.owner.value}"),
-                diagnostic=diagnostic,
-                turns_bought=runner.turns_bought,
-                role=runner.last_role,
-            )
-        # The cost travels with the refusal, like everywhere else. Omitting it
-        # here reported a REJECTING acceptance designer as costing nothing --
-        # the same class this lane already repaired once at the terminal, found
-        # again by the reference model on a generated sequence.
         return StepOutcome(
-            refusal.disposition,
-            refusal.failure,
-            tuple(red),
-            diagnostic,
-            turns_bought=runner.turns_bought,
-            role=runner.last_role,
+            Disposition.Success, facts=facts, diagnostic=result.diagnostic
         )
 
     def _craft(
-        self,
-        runner: DeliveryContinuationRunner,
-        port: TaskInvocationPort,
-        root: Path,
-        position: int,
+        self, runner: DeliveryContinuationRunner, root: Path, position: int, raw: str
     ) -> StepOutcome:
         stored = _graph(root)
         if isinstance(stored, StepOutcome):
@@ -1625,77 +1269,50 @@ class DeliverySteps:
         if isinstance(ready, StepOutcome):
             return ready
         if ready.authority is None:
-            return _unbound_design(position)
+            return _unbound_design(root, (position,))
         design = runner.selected_authority(root, stored, position)
         if isinstance(design, DeliveryOutcome):
-            return _from_outcome(design, None, runner.turns_bought, runner.last_role)
-        # ONE closed word, three arms, and the step composes one terminal for
-        # each.  Branching on two booleans here would put the settlement rule in
-        # this facade, where `des state`'s own reader could not see it.
-        settlement = runner.craft_settlement(root, stored, ready, design)
-        named = f"VALUE-{position}: {json.dumps(ready.observation, ensure_ascii=False)}"
-        if settlement is CraftSettlement.RecordedOverCurrentBytes:
-            return StepOutcome(
-                Disposition.Success,
-                facts=(
-                    named,
-                    "RECORDED: this value's craft turn is already a recorded fact "
-                    "over its mutable targets, so no turn was bought",
-                ),
-            )
-        if settlement is CraftSettlement.SettledByGreenOracle:
-            # The step STATES what settled the record.  A success that merely
-            # went quiet would be indistinguishable from the recorded-current
-            # resume above, and an operator whose bytes had moved would have no
-            # way to tell that an execution -- not a coincidence -- closed it.
-            return StepOutcome(
-                Disposition.Success,
-                facts=(
-                    named,
-                    f"WITNESS: the tracked oracle {design.acceptance_paths[0]} was "
-                    "executed on the current workspace bytes and observed GREEN, "
-                    "so this value's moved craft record was re-pointed at them "
-                    "and no crafter turn was bought",
-                ),
-            )
-        crafted = runner.craft_value(root, port, stored, ready, design)
-        diagnostic = runner.last_diagnostic
-        if isinstance(crafted, DeliveryOutcome):
-            blocker = runner.last_blocker
-            return StepOutcome(
-                crafted.disposition,
-                crafted.failure,
-                facts=() if blocker is None else (f"BLOCKED-BY: {blocker}",),
-                diagnostic=diagnostic,
-                turns_bought=runner.turns_bought,
-                role=runner.last_role,
-            )
+            return _from_outcome(design, None)
+        role = (
+            "nw-functional-software-crafter"
+            if design.paradigm == "functional"
+            else "nw-software-crafter"
+        )
+        result = _host_result(raw, role)
+        if isinstance(result, StepOutcome):
+            return result
+        refused = runner.record_craft(root, SelectedValue(stored, ready, design))
+        if refused is not None:
+            return _from_outcome(refused, result.diagnostic)
         return StepOutcome(
             Disposition.Success,
             facts=(
-                f"VALUE-{position}: "
-                f"{json.dumps(ready.observation, ensure_ascii=False)}",
+                f"VALUE-{position}: {json.dumps(ready.observation, ensure_ascii=False)}",
                 "TARGETS: " + ", ".join(path for path, _ in design.target_decisions),
-                *(f"SILENT: {sentence}" for sentence in crafted),
+                "WITNESS: the recorded public oracle observed GREEN on the host-supplied implementation",
             ),
-            diagnostic=diagnostic,
-            turns_bought=runner.turns_bought,
-            role=runner.last_role,
+            diagnostic=result.diagnostic,
         )
 
     def _verify(
         self,
         runner: DeliveryContinuationRunner,
         root: Path,
+        *,
+        fresh: bool = False,
     ) -> StepOutcome:
         stored = _graph(root)
         if isinstance(stored, StepOutcome):
             return stored
+        recorded = runner.verified_candidate(root, stored)
+        if fresh:
+            invalidated = runner.invalidate_verification(root, stored)
+            if invalidated is not None:
+                return _from_outcome(invalidated, None)
         prepared = _prepared(runner, root, stored)
         if isinstance(prepared, StepOutcome):
             return prepared
-        recorded = runner.verified_candidate(root, stored)
-        if recorded is not None:
+        if recorded is not None and not fresh:
             # The native observation is candidate-bound and durable. Re-running
             # would execute its declared argv a second time rather than recover
             # the one measurement already made.
@@ -1716,44 +1333,22 @@ class DeliverySteps:
                 FailureDetail(
                     "NativeEvidenceUnavailable",
                     f"candidate {recorded} has a verify record but no single readable native observation bound to it",
-                    "inspect .nwave/des/logs/native and explicitly decide whether to rebuild native evidence",
+                    "inspect .nwave/des/logs/native; use des verify --fresh to measure again",
                 ),
             )
-        verified = runner.verify_request(root, None, stored, prepared)
-        diagnostic = runner.last_diagnostic
+        verified = runner.verify_request(
+            root, stored, prepared, candidate=recorded if fresh else None
+        )
+        maintenance = (
+            ()
+            if runner.workspace_maintenance is None
+            else runner.workspace_maintenance.report
+        )
         if isinstance(verified, DeliveryOutcome):
-            # The measurement survives the refusal: Section 4b forbids a
-            # terminal to omit a fact the software already held, and the owner
-            # a judge named IS the orchestrator's next move. With the pre-craft
-            # judge retired, the whole-diff reviewer is the oracle's only
-            # independent judge, so a finding it charges to the oracle must
-            # reach the author's step rather than the crafter's.
-            owner = runner.last_review_owner
-            charged = runner.last_review_value
-            # The POSITIONS a finding can be answered at. When the judge named a
-            # value the form is exact; when it did not, every position of this
-            # Request is lawful and none is invented -- the cardinality is the
-            # honest fork signal (G7), not a guess dressed as one form.
-            positions = [
-                str(index)
-                for index, value in enumerate(stored.values, start=1)
-                if charged is None or value.observation == charged
-            ]
             return StepOutcome(
                 verified.disposition,
                 verified.failure,
-                facts=(
-                    f"RADIUS: {runner.radius}",
-                    *(() if owner is None else (f"DEFECT-OWNER: {owner}",)),
-                    *(
-                        ()
-                        if owner is None
-                        else (f"DEFECT-POSITIONS: {','.join(positions)}",)
-                    ),
-                ),
-                diagnostic=diagnostic,
-                turns_bought=runner.turns_bought,
-                role=runner.last_role,
+                facts=(f"RADIUS: {runner.radius}", *maintenance),
             )
         _, candidate, evidence = verified
         locator = runner.native_evidence_locator
@@ -1767,12 +1362,13 @@ class DeliverySteps:
                     "restore write access to .nwave/des/logs/native and verify again",
                 ),
             )
-        if not runner.persist_native_radius(root, candidate):
+        if not runner.persist_candidate_observations(root, candidate, stored, prepared):
             return StepOutcome(
                 Disposition.Indeterminate,
                 FailureDetail(
                     "NativeRadiusUnretained",
-                    f"candidate {candidate} native radius could not be persisted",
+                    f"candidate {candidate} native radius and oracle witness "
+                    "snapshot could not be persisted",
                     "restore .nwave/des/logs/radius write access",
                 ),
             )
@@ -1789,23 +1385,21 @@ class DeliverySteps:
                     f"argv={' '.join(item.argv)}"
                     for item in evidence
                 ),
+                *maintenance,
             ),
-            diagnostic=diagnostic,
-            turns_bought=runner.turns_bought,
-            role=runner.last_role,
         )
 
     def _integrate(
-        self,
-        runner: DeliveryContinuationRunner,
-        root: Path,
-        candidate: str,
-        on_my_evidence: str | None = None,
+        self, runner: DeliveryContinuationRunner, root: Path, candidate: str
     ) -> StepOutcome:
         already = runner.destination_is(root, candidate)
         stored = _graph(root)
         if isinstance(stored, StepOutcome):
-            if already:
+            if (
+                already
+                and stored.failure is not None
+                and stored.failure.what == "HandoverAbsent"
+            ):
                 # A truthful HOW on a repeat. The graph is closed BECAUSE this
                 # candidate was integrated, and the inherited message told the
                 # reader to decompose a Request first -- an accurate sentence
@@ -1817,8 +1411,8 @@ class DeliverySteps:
                         "AlreadyIntegrated",
                         f"{candidate} is already the destination and its graph "
                         "is closed, so there is nothing left to swap",
-                        "nothing is owed for this Request; start the next one "
-                        "by piping it into `des po` on stdin",
+                        "nothing is owed for this Request; construct the next one "
+                        "with a closed DISCUSS manifest using `des po --input -` and an explicit scope",
                     ),
                 )
             return stored
@@ -1839,9 +1433,8 @@ class DeliverySteps:
                     "CandidateUnverified",
                     f"no current verification record covers {candidate}"
                     + (
-                        "; it was verified against a Request graph a wave "
-                        "producer has since corrected, so the evidence covering "
-                        "it was collected before the correction"
+                        "; the selected graph, authority, or owned bytes no longer "
+                        "match the recorded candidate measurement"
                         if superseded and verified == candidate
                         else f"; the recorded candidate is {verified}"
                         if verified is not None
@@ -1859,9 +1452,7 @@ class DeliverySteps:
             return base
         integrated = runner.integrate_candidate(root, stored, prepared, base, candidate)
         if integrated.disposition is not Disposition.Success:
-            return _from_outcome(
-                integrated, None, runner.turns_bought, runner.last_role
-            )
+            return _from_outcome(integrated, None)
         return StepOutcome(
             Disposition.Success,
             facts=(
@@ -1870,43 +1461,40 @@ class DeliverySteps:
             ),
         )
 
-    def _locked(
-        self,
-        root: Path,
-        work: Callable[[DeliveryContinuationRunner, TaskInvocationPort], StepOutcome],
-    ) -> StepOutcome:
-        """Take the checkout's one cooperative lock for the duration of ONE step.
-
-        Each step still takes the lock for its own duration, so concurrent
-        mutation stays impossible; what disappears with the retired composition
-        is only the implicit ceiling of one PROCESS per Request (Section 4b,
-        «The risk this amendment accepts»).
-        """
-        runner = DeliveryContinuationRunner(self.invoker)
-        port = runner.resolve_port(root)
-        if isinstance(port, DeliveryOutcome):
-            return _from_outcome(port, None)
-        lock = acquire_delivery_lock(root)
-        if isinstance(lock, Blocked):
-            return _from_blocked(lock)
-        try:
-            return work(runner, port)
-        finally:
-            lock.release()
-
     def _locked_native(
         self,
         root: Path,
         work: Callable[[DeliveryContinuationRunner], StepOutcome],
+        *,
+        verification: bool = False,
     ) -> StepOutcome:
         """Run a native-only step without resolving a model provider."""
-        runner = DeliveryContinuationRunner(self.invoker)
+        runner = DeliveryContinuationRunner()
         lock = acquire_delivery_lock(root)
         if isinstance(lock, Blocked):
             return _from_blocked(lock)
+        verification_lock = None
         try:
+            if verification:
+                try:
+                    verification_lock = acquire_verification_lock(root)
+                except (OSError, WorkspaceUnavailable) as error:
+                    return _from_blocked(
+                        Blocked(
+                            "VerificationWorkspaceUnavailable",
+                            str(error),
+                            "restore the canonical Git repository and its verification lease",
+                        )
+                    )
+                if isinstance(verification_lock, Blocked):
+                    return _from_blocked(verification_lock)
+                runner.verification_lease_held = True
             return work(runner)
         finally:
+            if verification_lock is not None and not isinstance(
+                verification_lock, Blocked
+            ):
+                verification_lock.release()
             lock.release()
 
 
@@ -1935,9 +1523,12 @@ def _graph(root: Path) -> StoredHandover | StepOutcome:
                 "HandoverAbsent",
                 "no decomposition is recorded in this repository, so there is no "
                 "value at any position to work on",
-                "decompose one Request first -- pipe it into `des po` on stdin",
+                "construct host product facts with `des po --input -` and an explicit scope",
             ),
         )
+    defect = DeliveryContinuationRunner.product_authority_defect(root, stored)
+    if defect is not None:
+        return _from_blocked(defect)
     return stored
 
 
@@ -1989,25 +1580,38 @@ def _oracle_red_facts(measured: tuple[dict[str, object], ...]) -> tuple[str, ...
     return tuple(
         f"ORACLE-RED: {item.get('path')} verdict={item.get('verdict')} "
         f"axis={item.get('axis')} exit={item.get('exit')} "
-        f"diagnostic={json.dumps(str(item.get('diagnostic', '')), ensure_ascii=True)}"
+        + (
+            f" native-evidence={item['native_evidence_locator']}"
+            if item.get("native_evidence_locator")
+            else ""
+        )
+        + f" diagnostic={json.dumps(str(item.get('diagnostic', '')), ensure_ascii=True)}"
         for item in measured
     )
 
 
-def _unbound_design(position: int) -> StepOutcome:
-    """The one refusal every per-value step owes an unbound value.
+def _unbound_design(root: Path, positions: tuple[int, ...]) -> StepOutcome:
+    """The one refusal every step owes the unbound values it needs.
 
-    Written once because three steps consume the same bound facts, and a second
+    Written once because four steps consume the same bound facts, and a second
     spelling of "this value has no design yet" is a second contract for one
-    state.
+    state.  Every unbound position is named at once, each with its own DESIGN
+    invocation: a whole-Request step that named only the first made the host
+    discover the rest one refusal at a time (codex retest 2026-10-01,
+    durable-reservations: values 2, 3 and 4 were all unbound at `des verify`).
     """
+    named = ", ".join(str(position) for position in positions)
     return StepOutcome(
         Disposition.Refusal,
         FailureDetail(
             "DesignUnbound",
-            "this value carries no bound design facts, so nothing declares its "
-            "oracle, its targets or its verification",
-            f"bind them first with `des design --repo-root <root> --value {position}`",
+            f"value(s) {named} carry no bound design facts, so nothing declares "
+            "their oracle, targets or verification",
+            "submit a closed DESIGN manifest for each: "
+            + "; ".join(
+                f"`des design --repo-root {root} --value {position} --input -`"
+                for position in positions
+            ),
         ),
     )
 
@@ -2020,47 +1624,24 @@ def _prepared(
     """Every value of the Request with its derived facts, or why one is not ready.
 
     The candidate is WHOLE-REQUEST: Section 4a's shape has every value share the
-    single candidate, so none of them is verified unless all of them are. A
-    value that is not ready is named by POSITION, with the step that would make
-    it ready, rather than reported as a missing set.
+    single candidate, so none of them is verified unless all of them are. The
+    first value that is not ready decides the refusal, in graph order; when it
+    is unbound, every later unbound value is named with it, by POSITION, each
+    with the step that would make it ready.
     """
     prepared: list[tuple[str, object]] = []
     for position, value in enumerate(stored.values, start=1):
         if value.authority is None:
-            return _unbound_design(position)
+            return _unbound_design(
+                root,
+                tuple(
+                    later
+                    for later, item in enumerate(stored.values, start=1)
+                    if later >= position and item.authority is None
+                ),
+            )
         design = runner.selected_authority(root, stored, position)
         if isinstance(design, DeliveryOutcome):
-            return _from_outcome(design, None, runner.turns_bought, runner.last_role)
+            return _from_outcome(design, None)
         prepared.append((value.observation, design))
     return prepared
-
-
-def _split_facts(graph: StoredHandover, split: RequestRewrite) -> tuple[str, ...]:
-    """All three sets of a rewrite, always, so the split can be corrected.
-
-    ADR-DES-003 §7: the terminal shows both lists. Reporting only what was kept
-    would make an archived value indistinguishable from one that never existed,
-    and the archived bytes unreachable in practice even though the ref holds
-    them.
-    """
-    positions = {
-        value.observation: index for index, value in enumerate(graph.values, 1)
-    }
-    rows = [
-        f"KEPT: VALUE-{positions[observation]} "
-        f"{json.dumps(observation, ensure_ascii=False)}"
-        for observation in split.kept
-    ]
-    rows += [
-        f"ARCHIVED: {json.dumps(observation, ensure_ascii=False)} -- not in the "
-        "new decomposition"
-        for observation in split.archived
-    ]
-    rows += [
-        f"NEW: VALUE-{positions[observation]} "
-        f"{json.dumps(observation, ensure_ascii=False)}"
-        for observation in split.fresh
-    ]
-    if split.archive is not None:
-        rows.append(f"ARCHIVE: {split.archive}")
-    return tuple(rows)

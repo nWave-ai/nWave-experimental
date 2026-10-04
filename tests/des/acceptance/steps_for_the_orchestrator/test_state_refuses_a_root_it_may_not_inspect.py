@@ -14,7 +14,6 @@ from pathlib import Path
 import pytest
 
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
-    asked,
     base_repository,
     block,
     nexts,
@@ -47,8 +46,6 @@ def test_state_on_a_mode_000_root_is_indeterminate_and_says_permission_denied(
     how = rows.get("HOW", "")
     assert f"chmod u+rx {locked}" in how, how
     assert "des state" in how
-    assert rows.get("TURNS-BOUGHT") == "0"
-    assert nexts(stdout) == ["des state --repo-root <root> -- after the HOW above"]
+
     assert all("des po" not in n and "des oracle" not in n for n in nexts(stdout))
     assert code != 0
-    assert asked(turns) == []

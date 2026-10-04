@@ -40,6 +40,11 @@ tree-per-symbol`), so the properties below are fixed ONCE, never duplicated
    (``.git/hooks/commit_msg.py``, gitlint's own commit-msg hook) is real,
    on-disk, valid Python a naive ``*.py`` walk finds. Structural providers
    omit ``.git`` internals too, so this exclusion keeps their scopes aligned.
+   Nested linked worktrees are also separate scan roots: their ``.git`` file
+   points to Git metadata carrying ``commondir``. The walk prunes them before
+   descent, independently of ignore files. Ordinary source directories (even
+   one named ``lanes``) and submodules without that linked-worktree marker
+   remain in scope. Querying a lane as the root still scans its own source.
 4. **Single-pass-per-glob caching** — a ``root``/glob-pattern pair is walked at
    most ONCE per :class:`TreeScope` instance; a second call with the same
    pattern reuses the prior result. This is the no-reparse-per-symbol contract:
@@ -76,11 +81,8 @@ declared entry (``.claude/worktrees/``) needed. A GLOBBED line (containing
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-
-if TYPE_CHECKING:
-    from pathlib import Path
+import os
+from pathlib import Path
 
 
 _IGNORE_FILE_NAME = ".gitignore"
@@ -135,11 +137,7 @@ class TreeScope:
                 else []
             )
         else:
-            walked = [
-                path
-                for path in sorted(self._root.rglob(glob_pattern))
-                if path.is_file() and not self._is_excluded(path)
-            ]
+            walked = sorted(self._walk_files(glob_pattern))
         self._file_cache[glob_pattern] = walked
         return walked
 
@@ -157,6 +155,41 @@ class TreeScope:
         return None
 
     # -- internals -----------------------------------------------------------
+    def _walk_files(self, glob_pattern: str) -> list[Path]:
+        """Prune separate workspaces before walking, not after reading copies."""
+        files: list[Path] = []
+        for directory, children, names in os.walk(self._root):
+            parent = Path(directory)
+            for child in children[:]:
+                if self._is_linked_worktree(parent / child):
+                    children.remove(child)
+                    self.excluded_any = True
+            for name in names:
+                path = parent / name
+                if (
+                    path.match(glob_pattern)
+                    and path.is_file()
+                    and not self._is_excluded(path)
+                ):
+                    files.append(path)
+        return files
+
+    @staticmethod
+    def _is_linked_worktree(directory: Path) -> bool:
+        """Recognize Git's worktree metadata, not a project-specific name."""
+        marker = directory / ".git"
+        if not marker.is_file():
+            return False
+        try:
+            text = marker.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError):
+            return False
+        if not text.startswith("gitdir: "):
+            return False
+        metadata = Path(text[len("gitdir: ") :])
+        if not metadata.is_absolute():
+            metadata = directory / metadata
+        return (metadata / "commondir").is_file()
 
     def _is_excluded(self, path: Path) -> bool:
         """True iff ``path`` must be dropped from the walk — its own ancestor

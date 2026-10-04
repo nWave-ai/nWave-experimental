@@ -23,7 +23,6 @@ from pathlib import Path
 from des.domain.public_observations import WITHHELD
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     accepted_values,
-    asked,
     block,
     nexts,
 )
@@ -72,6 +71,27 @@ def crafted(root: Path, step) -> None:
                             "acceptance_supports": [SUPPORT],
                             "verification": [[sys.executable, "-m", "pytest", ORACLE]],
                             "oracle_verification_index": 0,
+                            "architectural_tests": {
+                                "applicability": "not_applicable",
+                                "reason": "The fixture has no structural boundary change.",
+                            },
+                            "contract_tests": {
+                                "applicability": "not_applicable",
+                                "reason": "The fixture changes no shared contract.",
+                            },
+                            "prefactoring": {
+                                "applicability": "not_applicable",
+                                "reason": "The fixture requires no preservation move.",
+                            },
+                            "agreement_analysis": {
+                                "applicability": "not_applicable",
+                                "reason": "The fixture has no affected agreement.",
+                            },
+                            "reuse_analysis": {"candidates": []},
+                            "impact_closure": {
+                                "applicability": "not_applicable",
+                                "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                            },
                         },
                     }
                 }
@@ -174,7 +194,7 @@ def test_reviewer_receives_measured_radius_while_examiner_stays_source_blind(
     """The host separately selects full review and source-blind EXAMINE inputs."""
 
     crafted(root, step)
-    spent = len(asked(turns))
+
     code, out, err = step(
         "verify",
         "--repo-root",
@@ -185,7 +205,7 @@ def test_reviewer_receives_measured_radius_while_examiner_stays_source_blind(
     candidate = block(out, err)["CANDIDATE"]
     reviewer = json.loads(_prepare(root, step, "reviewer", candidate).read_bytes())
     examiner = json.loads(_prepare(root, step, "examiner", candidate).read_bytes())
-    assert asked(turns)[spent:] == []
+
     assert "tier=" in reviewer["radius"]
     assert examiner["radius"] == WITHHELD
 
@@ -198,7 +218,7 @@ def test_a_host_recorded_reviewer_finding_is_typed_without_auto_routing(
     code, out, err = step("verify", "--repo-root", str(root), answers=[])
     assert code == 0, out + err
     candidate = block(out, err)["CANDIDATE"]
-    _prepare(root, step, "reviewer", candidate)
+    prepared_input = _prepare(root, step, "reviewer", candidate)
     code, recorded_out, recorded_err = step(
         "record-role-result",
         "--repo-root",
@@ -215,6 +235,8 @@ def test_a_host_recorded_reviewer_finding_is_typed_without_auto_routing(
         "radius-reviewer-finding",
         "--input",
         "-",
+        "--prepared-input",
+        str(prepared_input),
         stdin=json.dumps(
             {
                 "structured_output": {

@@ -96,7 +96,7 @@ def _write_lifecycle_fixture(context: InstallContext, plugin: DESPlugin) -> None
                 "hooks": {
                     "SessionStart": [
                         _nested(exact_session),
-                        _nested("python3 -m lyra.session_start"),
+                        _nested("python3 -m external.session_start"),
                         _nested(exact_session + " --user-supplied-argument"),
                     ],
                     "UserPromptSubmit": [
@@ -173,7 +173,7 @@ def test_config_without_hooks_key_is_not_detected_as_installed():
 
 
 def test_reinstall_removes_only_exact_retired_lifecycle_hooks(tmp_path: Path):
-    """Reinstall cleans its old lifecycle entries without touching Lyra or users."""
+    """Reinstall cleans its old lifecycle entries without touching External or users."""
     context = _hook_context(tmp_path)
     plugin = DESPlugin()
     _write_lifecycle_fixture(context, plugin)
@@ -182,11 +182,11 @@ def test_reinstall_removes_only_exact_retired_lifecycle_hooks(tmp_path: Path):
 
     assert result.success
     # SessionStart is a current event again (the route notice), so this array is
-    # stripped and re-added. The narrowed structural predicate keeps Lyra AND the
+    # stripped and re-added. The narrowed structural predicate keeps External AND the
     # user-modified near-match byte-for-byte; the ADDITION is the one
     # installer-owned command.
     assert _lifecycle_commands(context, "SessionStart") == [
-        "python3 -m lyra.session_start",
+        "python3 -m external.session_start",
         _historical_affordance_command("SessionStart") + " --user-supplied-argument",
         plugin._generate_hook_command(context, "session-start"),
     ]
@@ -207,7 +207,7 @@ def test_uninstall_removes_only_exact_retired_lifecycle_hooks(tmp_path: Path):
 
     assert result.success
     assert _lifecycle_commands(context, "SessionStart") == [
-        "python3 -m lyra.session_start",
+        "python3 -m external.session_start",
         _historical_affordance_command("SessionStart") + " --user-supplied-argument",
     ]
     assert _lifecycle_commands(context, "UserPromptSubmit") == [

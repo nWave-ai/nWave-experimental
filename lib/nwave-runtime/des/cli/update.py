@@ -1,10 +1,11 @@
-"""``des update`` -- discover + classify persisted artifacts (ADR-AUM-001, G2 slice 1).
+"""``des update`` -- inspect or apply supported persisted artifact migrations.
 
 ``--dry-run`` reports, for every artifact discovered under
 ``<root>/.nwave``: path, declared version verbatim (un-coerced), whether the
 versioning kernel can read that version, status (InFlight / Completed /
 Indeterminate) and planned action (Upcast / PreserveHistory / Indeterminate)
-with a reason. It writes nothing at all (obligation 6).
+with a reason. It writes nothing. ``--apply`` validates the discovered batch
+before persisting eligible replacements.
 """
 
 from __future__ import annotations
@@ -51,15 +52,23 @@ def _load_workflow_transition_catalog() -> WorkflowTransitionCatalog | None:
     if not resolution.is_usable or resolution.path is None:
         return None
     if not resolution.path.is_dir():
-        return WorkflowTransitionCatalog((), "the packaged asset is not a directory")
+        return WorkflowTransitionCatalog(
+            (), f"the packaged asset {resolution.path} is not a directory"
+        )
     transitions: list[WorkflowMigrationMap] = []
     try:
         entries = sorted(resolution.path.glob("*.json"))
         for entry in entries:
-            raw = json.loads(entry.read_text(encoding="utf-8"))
+            try:
+                raw = json.loads(entry.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                return WorkflowTransitionCatalog(
+                    (),
+                    f"malformed transition {entry}: JSON cannot be read or parsed: {exc}",
+                )
             if not isinstance(raw, dict):
                 return WorkflowTransitionCatalog(
-                    (), f"malformed transition {entry.name!r}"
+                    (), f"malformed transition {entry}: JSON must be an object"
                 )
             to_tag = raw.get("to-tag")
             from_tags = raw.get("from-tags")
@@ -69,7 +78,7 @@ def _load_workflow_transition_catalog() -> WorkflowTransitionCatalog | None:
             if not isinstance(phase_map, dict):
                 return WorkflowTransitionCatalog(
                     (),
-                    f"malformed transition {entry.name!r}: phase-map must be an object",
+                    f"malformed transition {entry}: phase-map must be an object",
                 )
             if not all(
                 isinstance(source, str)
@@ -80,7 +89,8 @@ def _load_workflow_transition_catalog() -> WorkflowTransitionCatalog | None:
             ):
                 return WorkflowTransitionCatalog(
                     (),
-                    f"malformed transition {entry.name!r}: phase-map must map non-empty strings",
+                    f"malformed transition {entry}: phase-map must map "
+                    "non-empty strings",
                 )
             if (
                 not isinstance(to_tag, str)
@@ -94,7 +104,9 @@ def _load_workflow_transition_catalog() -> WorkflowTransitionCatalog | None:
                 )
             ):
                 return WorkflowTransitionCatalog(
-                    (), f"malformed transition {entry.name!r}"
+                    (),
+                    f"malformed transition {entry}: required fields or tags "
+                    "have invalid shapes",
                 )
             # Preserve source multiplicity until it has been rejected.  A
             # dict comprehension would otherwise silently collapse duplicate
@@ -102,7 +114,7 @@ def _load_workflow_transition_catalog() -> WorkflowTransitionCatalog | None:
             # its unique-source topology rule.
             if len(set(from_tags)) != len(from_tags):
                 return WorkflowTransitionCatalog(
-                    (), f"duplicate source tag in transition {entry.name!r}"
+                    (), f"duplicate source tag in transition {entry}"
                 )
             transform = _build_phase_transform(phase_map)
             transitions.append(
@@ -115,9 +127,22 @@ def _load_workflow_transition_catalog() -> WorkflowTransitionCatalog | None:
                     required_fields=tuple(required_fields),
                 )
             )
-    except (OSError, json.JSONDecodeError, TypeError, AttributeError) as exc:
-        return WorkflowTransitionCatalog((), f"malformed transition data: {exc}")
-    return WorkflowTransitionCatalog(tuple(transitions))
+    except (OSError, TypeError, AttributeError) as exc:
+        return WorkflowTransitionCatalog(
+            (), f"malformed transition directory {resolution.path}: {exc}"
+        )
+    catalog = WorkflowTransitionCatalog(tuple(transitions))
+    if not transitions:
+        return WorkflowTransitionCatalog(
+            (), f"catalog directory {resolution.path} contains no transitions"
+        )
+    first_source = next(iter(transitions[0].forward))
+    try:
+        catalog.route_from(first_source)
+    except WorkflowTransitionCatalogError as exc:
+        inputs = ", ".join(str(entry) for entry in entries)
+        return WorkflowTransitionCatalog((), f"transition inputs [{inputs}]: {exc}")
+    return catalog
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -167,12 +192,12 @@ def _render_apply(paths: tuple[Path, ...]) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     root = Path(args.root)
-    filesystem = RealFileSystem()
-    workflow_transition_catalog = _load_workflow_transition_catalog()
-    service = AutoUpdateMigrationService(
-        filesystem, workflow_transition_catalog=workflow_transition_catalog
-    )
     try:
+        filesystem = RealFileSystem()
+        workflow_transition_catalog = _load_workflow_transition_catalog()
+        service = AutoUpdateMigrationService(
+            filesystem, workflow_transition_catalog=workflow_transition_catalog
+        )
         if args.apply:
             _render_apply(service.apply(root))
             return 0

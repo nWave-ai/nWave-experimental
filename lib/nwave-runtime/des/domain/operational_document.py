@@ -4,10 +4,18 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+from des.domain.input_defects import Defects, InputDefects
 
 
-class OperationalDocumentInvalid(ValueError):
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
+class OperationalDocumentInvalid(InputDefects):
     """The supplied value is outside the OperationalDocumentInput v1 grammar."""
 
 
@@ -63,6 +71,88 @@ def _text(value: object, name: str, *, single_line: bool = False) -> str:
     return normalized
 
 
+def _authority(value: object) -> str:
+    authority = _object(value, "authority")
+    defects = Defects(OperationalDocumentInvalid)
+    defects.take(partial(_keys, authority, {"heading"}, "authority"))
+    heading = (
+        defects.take(
+            partial(_text, authority["heading"], "authority.heading", single_line=True)
+        )
+        if "heading" in authority
+        else None
+    )
+    defects.close()
+    return heading  # type: ignore[return-value]
+
+
+def _applicability(value: object, name: str) -> str:
+    applicability = _text(value, f"{name}.applicability")
+    if applicability not in {"applicable", "not_applicable"}:
+        raise OperationalDocumentInvalid(f"{name}.applicability is not supported")
+    return applicability
+
+
+def _obligation(value: object, name: str) -> dict[str, str]:
+    obligation = _object(value, name)
+    keys = ("id", "requirement", "verification", "owner")
+    defects = Defects(OperationalDocumentInvalid)
+    defects.take(partial(_keys, obligation, set(keys), name))
+    normalized = {
+        key: defects.take(partial(_text, obligation[key], f"{name}.{key}"))
+        for key in keys
+        if key in obligation
+    }
+    defects.close()
+    return normalized  # type: ignore[return-value]
+
+
+def _obligations(value: object, name: str) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        raise OperationalDocumentInvalid(f"{name}.obligations must be an array")
+    defects = Defects(OperationalDocumentInvalid)
+    obligations = [
+        defects.take(partial(_obligation, item, f"{name}.obligations[{index}]"))
+        for index, item in enumerate(value)
+    ]
+    # Duplicate ids are judged only over wholly decoded obligations.
+    defects.close()
+    ids = [obligation["id"] for obligation in obligations]  # type: ignore[index]
+    if len(set(ids)) != len(ids):
+        raise OperationalDocumentInvalid(
+            f"{name}.obligations must not contain duplicate id"
+        )
+    return obligations  # type: ignore[return-value]
+
+
+def _section(value: object, name: str) -> dict[str, object]:
+    section = _object(value, name)
+    defects = Defects(OperationalDocumentInvalid)
+    defects.take(
+        partial(_keys, section, {"applicability", "reason", "obligations"}, name)
+    )
+
+    def member(key: str, decode: Callable[[object], object]) -> object:
+        return defects.take(partial(decode, section[key])) if key in section else None
+
+    applicability = member("applicability", partial(_applicability, name=name))
+    reason = member("reason", partial(_text, name=f"{name}.reason"))
+    obligations = member("obligations", partial(_obligations, name=name))
+    raw_obligations = section.get("obligations")
+    if (
+        applicability is not None
+        and isinstance(raw_obligations, list)
+        and (applicability == "applicable") != bool(raw_obligations)
+    ):
+        defects.add(f"{name}.obligations must be non-empty exactly when applicable")
+    defects.close()
+    return {
+        "applicability": applicability,
+        "reason": reason,
+        "obligations": obligations,
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class OperationalDocument:
     heading: str
@@ -75,64 +165,40 @@ class OperationalDocument:
             root = _object(json.loads(raw), "input")
         except (json.JSONDecodeError, UnicodeDecodeError) as error:
             raise OperationalDocumentInvalid(f"input is not JSON: {error}") from error
-        _keys(root, {"schema_version", "authority", "purpose", *_SECTIONS}, "input")
-        if (
-            not isinstance(root["schema_version"], int)
-            or isinstance(root["schema_version"], bool)
-            or root["schema_version"] != 1
+        # An unsupported schema_version is the envelope: no section is judged
+        # against a language the input does not claim.  An absent one is a
+        # key-set defect, reported with the sections' own defects.
+        version = root.get("schema_version")
+        if "schema_version" in root and (
+            not isinstance(version, int) or isinstance(version, bool) or version != 1
         ):
             raise OperationalDocumentInvalid("schema_version must be 1")
-        authority = _object(root["authority"], "authority")
-        _keys(authority, {"heading"}, "authority")
-        heading = _text(authority["heading"], "authority.heading", single_line=True)
-        purpose = _text(root["purpose"], "purpose")
-        sections: list[tuple[str, dict[str, object]]] = []
-        for name in _SECTIONS:
-            section = _object(root[name], name)
-            _keys(section, {"applicability", "reason", "obligations"}, name)
-            applicability = _text(section["applicability"], f"{name}.applicability")
-            if applicability not in {"applicable", "not_applicable"}:
-                raise OperationalDocumentInvalid(
-                    f"{name}.applicability is not supported"
-                )
-            reason = _text(section["reason"], f"{name}.reason")
-            raw_obligations = section["obligations"]
-            if not isinstance(raw_obligations, list):
-                raise OperationalDocumentInvalid(f"{name}.obligations must be an array")
-            if (applicability == "applicable") != bool(raw_obligations):
-                raise OperationalDocumentInvalid(
-                    f"{name}.obligations must be non-empty exactly when applicable"
-                )
-            obligations: list[dict[str, str]] = []
-            ids: set[str] = set()
-            for index, raw_obligation in enumerate(raw_obligations):
-                obligation = _object(raw_obligation, f"{name}.obligations[{index}]")
-                _keys(
-                    obligation,
-                    {"id", "requirement", "verification", "owner"},
-                    f"{name}.obligations[{index}]",
-                )
-                normalized = {
-                    key: _text(obligation[key], f"{name}.obligations[{index}].{key}")
-                    for key in ("id", "requirement", "verification", "owner")
-                }
-                if normalized["id"] in ids:
-                    raise OperationalDocumentInvalid(
-                        f"{name}.obligations must not contain duplicate id"
-                    )
-                ids.add(normalized["id"])
-                obligations.append(normalized)
-            sections.append(
-                (
-                    name,
-                    {
-                        "applicability": applicability,
-                        "reason": reason,
-                        "obligations": obligations,
-                    },
-                )
+        defects = Defects(OperationalDocumentInvalid)
+        defects.take(
+            partial(
+                _keys,
+                root,
+                {"schema_version", "authority", "purpose", *_SECTIONS},
+                "input",
             )
-        return cls(heading, purpose, tuple(sections))
+        )
+        heading = (
+            defects.take(partial(_authority, root["authority"]))
+            if "authority" in root
+            else None
+        )
+        purpose = (
+            defects.take(partial(_text, root["purpose"], "purpose"))
+            if "purpose" in root
+            else None
+        )
+        sections = tuple(
+            (name, defects.take(partial(_section, root[name], name)))
+            for name in _SECTIONS
+            if name in root
+        )
+        defects.close()
+        return cls(heading, purpose, sections)  # type: ignore[arg-type]
 
     def facts(self, destination: str) -> dict[str, object]:
         return {

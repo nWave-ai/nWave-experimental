@@ -361,12 +361,8 @@ def test_ts_positive_only_string_call_names_are_not_misclassified(
     ``'returns ok'``) must NOT be swept up by the new word-based matcher --
     guards against an over-broad bare ``still``/``ok`` match.
 
-    Must stay green before AND after the fix: pre-fix the file scans to
-    zero cases (no negative AT to over-claim); post-fix it must scan two
-    POSITIVE cases and still report no negative AT. Either way the critical
-    scope (armed by --all-critical) has zero negative ATs, so the verdict
-    stays NegativeAtRefused throughout -- a flip to NegativeAtVerified here
-    would mean the fix false-positived on a positive name.
+    Native regex absence is incomplete evidence: it must not be promoted
+    either to negative proof or to a complete absence claim.
     """
     ts_file = tmp_path / "positive_only.test.ts"
     ts_file.write_text(_TS_POSITIVE_ONLY_STRING_CALL_FIXTURE)
@@ -374,12 +370,8 @@ def test_ts_positive_only_string_call_names_are_not_misclassified(
     exit_code = main(["--test-file", str(ts_file), "--all-critical"])
 
     event = _first_event(capsys)
-    assert exit_code == 1, (
-        f"expected NegativeAtRefused (1) -- no negative AT present -- got "
-        f"exit={exit_code} event={event!r}; a flip to NegativeAtVerified "
-        f"means a positive string-call name was misclassified as negative"
-    )
-    assert event["event"] == "NegativeAtRefused"
+    assert exit_code == 2
+    assert event["event"] == "NegativeAtIndeterminate"
 
 
 # --- Gap (D): Go/camelCase and PascalCase identifier idiom ------------------
@@ -508,12 +500,8 @@ def test_go_camelcase_positive_only_names_are_not_misclassified(
     against an over-broad match once the word-split lands (e.g. a bare
     ``still``/``ok`` token misread as negative intent).
 
-    Must stay green before AND after the fix: pre-fix neither name is
-    recognized as negative (no split at all yet); post-fix the split
-    (``['test','still','works']`` / ``['test','returns','ok']``) still
-    contains no negative-vocabulary word, so the verdict stays
-    NegativeAtRefused throughout -- a flip to NegativeAtVerified here would
-    mean the split over-matched.
+    Native regex absence is incomplete evidence: it must not be promoted
+    either to negative proof or to a complete absence claim.
     """
     go_file = tmp_path / "positive_only_test.go"
     go_file.write_text(_GO_POSITIVE_ONLY_CAMELCASE_FIXTURE)
@@ -521,12 +509,8 @@ def test_go_camelcase_positive_only_names_are_not_misclassified(
     exit_code = main(["--test-file", str(go_file), "--all-critical"])
 
     event = _first_event(capsys)
-    assert exit_code == 1, (
-        f"expected NegativeAtRefused (1) -- no negative AT present -- got "
-        f"exit={exit_code} event={event!r}; a flip to NegativeAtVerified "
-        f"means a positive PascalCase name was misclassified as negative"
-    )
-    assert event["event"] == "NegativeAtRefused"
+    assert exit_code == 2
+    assert event["event"] == "NegativeAtIndeterminate"
 
 
 def test_ts_camelcase_function_name_negative_idiom_is_detected_not_refused(

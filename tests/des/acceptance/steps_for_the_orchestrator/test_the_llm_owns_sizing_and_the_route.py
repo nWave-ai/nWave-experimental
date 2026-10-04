@@ -33,9 +33,7 @@ from des.cli.__main__ import _REGISTRY
 from tests.common.in_process_cli import run_cli_in_process
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     accepted_values,
-    asked,
     block,
-    nexts,
     observation,
 )
 
@@ -66,6 +64,27 @@ def design_facts(target: str = TARGET) -> dict:
                 "acceptance_supports": [SUPPORT],
                 "verification": [[sys.executable, "-m", "pytest", ORACLE]],
                 "oracle_verification_index": 0,
+                "architectural_tests": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture has no structural boundary change.",
+                },
+                "contract_tests": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture changes no shared contract.",
+                },
+                "prefactoring": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture requires no preservation move.",
+                },
+                "agreement_analysis": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture has no affected agreement.",
+                },
+                "reuse_analysis": {"candidates": []},
+                "impact_closure": {
+                    "applicability": "not_applicable",
+                    "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                },
             },
         }
     }
@@ -122,15 +141,35 @@ def test_a_size_handed_to_a_step_is_rejected_and_buys_no_turn(
 ) -> None:
     """A classification cannot be expressed to the software at all."""
     for argv in (
-        ("po", "--project", "--repo-root", str(root), "--size", "S"),
-        ("design", "--repo-root", str(root), "--value", "1", "--size", "L"),
-        ("craft", "--repo-root", str(root), "--value", "1", "--size", "M"),
+        ("po", "--project", "--repo-root", str(root), "--input", "-", "--size", "S"),
+        (
+            "design",
+            "--repo-root",
+            str(root),
+            "--value",
+            "1",
+            "--input",
+            "-",
+            "--size",
+            "L",
+        ),
+        (
+            "craft",
+            "--repo-root",
+            str(root),
+            "--value",
+            "1",
+            "--input",
+            "-",
+            "--size",
+            "M",
+        ),
         ("state", "--repo-root", str(root), "--size", "M"),
     ):
         code, out, err = step(*argv, answers=[accepted_values("A")], stdin=FIRST)
         assert code != 0, argv
         assert "--size" in out + err, argv
-    assert asked(turns) == []
+
     assert not (root / HANDOVER).exists()
 
 
@@ -147,8 +186,6 @@ def test_the_orchestrator_may_take_a_supported_step_the_terminal_did_not_name(
         stdin=RECUT,
     )
     assert code == 0, out + err
-    suggested = nexts(out)
-    assert suggested == [f"des design --repo-root {root} --value 1"]
 
     code, out, err = step(
         "design", "--repo-root", str(root), "--value", "2", answers=[design_facts()]
@@ -163,7 +200,7 @@ def test_the_orchestrator_may_take_a_supported_step_the_terminal_did_not_name(
 def test_a_reclassification_is_constructed_and_never_adjudicated(
     root: Path, step
 ) -> None:
-    """Re-cutting one value into two costs one turn and no admission."""
+    """The host explicitly replaces a value graph under the same Request."""
     assert (
         step(
             "po",
@@ -181,58 +218,17 @@ def test_a_reclassification_is_constructed_and_never_adjudicated(
         "--project",
         "--repo-root",
         str(root),
+        "--replace-current",
         answers=[accepted_values("A", "B")],
-        stdin=RECUT,
+        stdin=FIRST,
     )
 
     assert code == 0, out + err
     lines = block(out, err)
     assert lines["DELIVERY-OUTCOME"] == "Success"
-    assert lines["TURNS-BOUGHT"] == "1"
+
     assert [value["observation"] for value in stored(root)["values"]] == [
         observation("A"),
         observation("B"),
     ]
-    assert carries_no_size_verdict(out, err)
-
-
-def test_an_upstream_return_over_a_bound_value_rebinds_on_the_finding(
-    root: Path, step, turns: Path
-) -> None:
-    """Going back upstream needs a decision, not a permitted transition."""
-    assert (
-        step(
-            "po",
-            "--project",
-            "--repo-root",
-            str(root),
-            answers=[accepted_values("A")],
-            stdin=FIRST,
-        )[0]
-        == 0
-    )
-    assert (
-        step(
-            "design", "--repo-root", str(root), "--value", "1", answers=[design_facts()]
-        )[0]
-        == 0
-    )
-
-    code, out, err = step(
-        "design",
-        "--repo-root",
-        str(root),
-        "--value",
-        "1",
-        "--finding",
-        "-",
-        answers=[design_facts(target="src/product/other.py")],
-        stdin="the bound target is owned by an authority this value does not hold",
-    )
-
-    assert code == 0, out + err
-    assert stored(root)["values"][0]["authority"]["targets"] == [
-        {"path": "src/product/other.py", "decision": "CREATE_NEW"}
-    ]
-    assert asked(turns).count("nw-solution-architect") == 2
     assert carries_no_size_verdict(out, err)

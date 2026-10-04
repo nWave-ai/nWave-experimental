@@ -1,8 +1,12 @@
-"""Resolve the documentation preference ONCE at wave entry and build its offer.
+"""Resolve documentation density and the expansion offer once at wave entry.
 
-READ-ONLY. This step opens the selected global config for reading, resolves the
-existing density cascade, and prints the offer the assistant retains for the END
-of the wave. It writes no file, creates no directory and touches neither
+The default entry query is READ-ONLY. It opens the selected global config for
+reading, resolves the existing density cascade, and prints both the frozen
+density and the offer the assistant retains for the END of the wave. The
+explicit ``--complete`` mode instead consumes the captured entry and successful
+constructor terminals after the host attests that the whole wave completed. It
+does not reread configuration and uses the packaged renderer on the actual DES
+Markdown document. The entry query writes no file, creates no directory and touches neither
 ``.nwave/des/`` nor the config it read — accepting or ignoring the offer must
 leave the accepted documents and the DES execution exactly as they were.
 
@@ -40,9 +44,12 @@ most two topics the wave really produced, and the CHAT row when an
 unconditional question is put.
 ``INTERNAL-ACCEPTANCE`` appears only where a question can actually be accepted.
 
-The END of a wave invokes NO step and rereads NO configuration: the assistant
-already holds the sentence from this invocation. That is why the preference is
-resolved here and only here.
+The wave-end explanation invokes no step and rereads no configuration: the
+assistant already holds the sentence from entry. The local HTML view uses the
+separate explicit ``--complete`` invocation and the captured entry preference.
+DES has no whole-wave completion ledger. Calling that mode is the host's
+assertion that the whole wave completed, not a conclusion drawn from a lone
+successful DES step or a ``DOCUMENT`` row on an Indeterminate terminal.
 
 The step is outside the canonical delivery order, so it is never named by any
 ``NEXT`` line and prints ``NEXT: no step is owed``. It is deliberately NOT
@@ -74,11 +81,15 @@ This value promises no rejection grammar beyond that.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import os
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
+from des.adapters.driven.rendering import nwave_document
 from des.cli.step_terminal import (
     NOTHING_OWED,
     StepRefusal,
@@ -110,6 +121,155 @@ from des.domain.wave_end_offer import (
 
 
 STEP = "wave-entry"
+_BRAND_IDENTITY = "nwave-oss-neutral-v1"
+_DOCUMENT_CONSTRUCTING_WAVES = frozenset({"discuss", "design", "devops", "distill"})
+
+
+class _ViewIdentity(HTMLParser):
+    """Read only the packaged page's brand and source provenance as HTML."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.brands: list[str] = []
+        self.provenance_count = 0
+        self.sources: list[str] = []
+        self._provenance_depth = 0
+        self._source_depth = 0
+        self._source_text: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        if tag == "meta" and attributes.get("name") == "nwave-brand":
+            self.brands.append(attributes.get("content") or "")
+        if tag == "div" and "provenance" in (attributes.get("class") or "").split():
+            self.provenance_count += 1
+            self._provenance_depth = 1
+            return
+        if self._provenance_depth:
+            self._provenance_depth += 1
+            if tag == "code":
+                self._source_depth += 1
+                self._source_text = []
+
+    def handle_data(self, data: str) -> None:
+        if self._source_depth:
+            self._source_text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if not self._provenance_depth:
+            return
+        if tag == "code" and self._source_depth:
+            self.sources.append("".join(self._source_text))
+            self._source_depth = 0
+            self._source_text = []
+        self._provenance_depth -= 1
+
+
+def _capture(path: Path) -> dict[str, list[str]] | StepRefusal:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as error:
+        return _indeterminate(
+            "WaveResultUnavailable",
+            f"could not read captured terminal {path}: {error}; completion is unknown",
+            f"capture the real DES terminal at {path} and retry des {STEP} --complete",
+        )
+    rows: dict[str, list[str]] = {}
+    for line in lines:
+        label, separator, value = line.partition(": ")
+        if separator:
+            rows.setdefault(label, []).append(value)
+    return rows
+
+
+def _one(rows: dict[str, list[str]], label: str, capture: Path) -> str | StepRefusal:
+    values = rows.get(label, [])
+    if len(values) != 1:
+        return StepRefusal(
+            "WaveResultMalformed",
+            f"{capture} has {len(values)} {label} rows; exactly one is required",
+            f"capture one unmodified DES terminal with exactly one {label} row",
+        )
+    return values[0]
+
+
+def _safe_source(root: Path, locator: str) -> tuple[Path, Path] | StepRefusal:
+    relative_text, separator, heading = locator.partition("#")
+    parts = relative_text.split("/")
+    relative = Path(relative_text)
+    if (
+        not relative_text
+        or relative.is_absolute()
+        or relative.suffix != ".md"
+        or any(part in ("", ".", "..") for part in parts)
+        or "\\" in relative_text
+        or "://" in relative_text
+        or ":" in parts[0]
+        or (separator and not heading)
+    ):
+        return StepRefusal(
+            "WaveDocumentUnsafe",
+            f"DOCUMENT locator {locator!r} is not a safe repository-relative Markdown path",
+            "use the successful DES constructor's repository-relative .md DOCUMENT locator",
+        )
+    source = root / relative
+    try:
+        canonical_root = root.resolve(strict=True)
+        for parent in (
+            root / Path(*parts[:index]) for index in range(1, len(parts) + 1)
+        ):
+            if parent.is_symlink():
+                raise ValueError(f"symlink at {parent}")
+        canonical_source = source.resolve(strict=True)
+        if not canonical_source.is_relative_to(canonical_root) or not source.is_file():
+            raise ValueError("source is not a regular file under the repository root")
+    except (OSError, ValueError) as error:
+        return StepRefusal(
+            "WaveDocumentUnsafe",
+            f"DOCUMENT locator {locator!r} cannot be safely read: {error}",
+            "restore the real DES Markdown under the repository root without symlinks, then retry completion",
+        )
+    return source, source.with_suffix(".html")
+
+
+def _safe_existing_view(root: Path, source: Path, view: Path) -> StepRefusal | None:
+    if view.is_symlink() or (view.exists() and not view.is_file()):
+        return StepRefusal(
+            "WaveViewUnsafe",
+            f"HTML destination {view} is a symlink or not a regular file",
+            "remove the unsafe destination or choose a valid generated-view location before retrying",
+        )
+    if not view.exists():
+        return None
+    try:
+        identity = _ViewIdentity()
+        identity.feed(view.read_text(encoding="utf-8"))
+        identity.close()
+        recorded = identity.sources[0]
+        recorded_path = Path(recorded)
+        recorded_source = (
+            recorded_path if recorded_path.is_absolute() else root / recorded_path
+        ).resolve(strict=True)
+        same_source = recorded_source == source.resolve(strict=True)
+        owned = (
+            identity.brands == [_BRAND_IDENTITY]
+            and identity.provenance_count == 1
+            and len(identity.sources) == 1
+            and same_source
+        )
+    except (OSError, UnicodeError, ValueError, IndexError) as error:
+        return StepRefusal(
+            "WaveViewUnrecognized",
+            f"could not establish ownership of {view}: {error}",
+            "preserve the existing HTML and use a destination that is a verified nWave projection of this Markdown",
+        )
+    if not owned:
+        return StepRefusal(
+            "WaveViewUnrelated",
+            f"{view} is not one nWave projection of the same source {source}",
+            "preserve the existing HTML; move it aside only after inspection, then retry completion",
+        )
+    return None
 
 
 def _global_config_path(repo_root: Path) -> Result[Path, str]:
@@ -229,12 +389,22 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog=f"des {STEP}",
         description=(
-            "Resolve the documentation preference once at wave entry and emit "
-            "the wave-end expansion offer block. Read-only."
+            "Resolve documentation density and the wave-end expansion offer "
+            "once at wave entry; --complete renders an attested completed wave."
         ),
     )
     parser.add_argument("--repo-root", required=True, type=Path)
     parser.add_argument("--wave", required=True)
+    parser.add_argument(
+        "--complete",
+        action="store_true",
+        help=(
+            "host attests the whole wave completed; consume captured entry and "
+            "successful constructor terminals to render a full-density local view"
+        ),
+    )
+    parser.add_argument("--entry-result", type=Path)
+    parser.add_argument("--constructor-result", type=Path, action="append", default=[])
     return parser.parse_args(argv)
 
 
@@ -265,6 +435,182 @@ def _behaviour_rows(behaviour: WaveEndBehaviour) -> list[str]:
             return ["WAVE-END-OFFER: none"]
 
 
+def _complete_wave(
+    root: Path,
+    wave: CompletedWave,
+    entry_result: Path | None,
+    constructor_results: list[Path],
+) -> int:
+    """Render captured successful DES authorities after the host attests completion.
+
+    DES has no whole-wave ledger. Calling this mode is the host's assertion that
+    the whole wave completed; neither a DOCUMENT row nor a single successful
+    step terminal can establish that assertion on its own.
+    """
+    if entry_result is None:
+        return refuse(
+            StepRefusal(
+                "WaveEntryCaptureMissing",
+                "--complete has no --entry-result capture",
+                "capture the actual wave-entry Success terminal and pass --entry-result PATH",
+            ),
+            NOTHING_OWED,
+        )
+    entry = _capture(entry_result)
+    if isinstance(entry, StepRefusal):
+        return refuse(entry, NOTHING_OWED)
+    for label, expected in (("DELIVERY-OUTCOME", "Success"), ("WAVE", wave.name)):
+        actual = _one(entry, label, entry_result)
+        if isinstance(actual, StepRefusal):
+            return refuse(actual, NOTHING_OWED)
+        if actual != expected:
+            return refuse(
+                StepRefusal(
+                    "WaveEntryMismatch",
+                    f"{entry_result} records {label}={actual!r}, expected {expected!r}",
+                    "pass the real successful entry terminal for this selected wave",
+                ),
+                NOTHING_OWED,
+            )
+    density = _one(entry, "WAVE-DOCUMENTATION-DENSITY", entry_result)
+    if isinstance(density, StepRefusal):
+        return refuse(density, NOTHING_OWED)
+    if density not in ("full", "lean"):
+        return refuse(
+            StepRefusal(
+                "WaveDensityIllegal",
+                f"{entry_result} records unknown density {density!r}",
+                "pass an unmodified wave-entry terminal with full or lean density",
+            ),
+            NOTHING_OWED,
+        )
+
+    if wave.name in _DOCUMENT_CONSTRUCTING_WAVES and not constructor_results:
+        return refuse(
+            _indeterminate(
+                "WaveConstructorCaptureMissing",
+                f"{wave.name} completed-wave input has no captured DES constructor terminal; its document outcome is unknown",
+                "capture the successful DES constructor terminal and pass it with --constructor-result PATH",
+            ),
+            NOTHING_OWED,
+        )
+
+    locators: list[str] = []
+    for capture_path in constructor_results:
+        captured = _capture(capture_path)
+        if isinstance(captured, StepRefusal):
+            return refuse(captured, NOTHING_OWED)
+        outcome = _one(captured, "DELIVERY-OUTCOME", capture_path)
+        if isinstance(outcome, StepRefusal):
+            return refuse(outcome, NOTHING_OWED)
+        if outcome != "Success":
+            return refuse(
+                StepRefusal(
+                    "WaveConstructorNotSuccessful",
+                    f"{capture_path} records {outcome!r}; its DOCUMENT cannot attest a completed authority",
+                    "finish or repair that DES constructor, then capture its Success terminal before retrying the completed wave",
+                ),
+                NOTHING_OWED,
+            )
+        locators.extend(captured.get("DOCUMENT", []))
+
+    if wave.name in _DOCUMENT_CONSTRUCTING_WAVES and not locators:
+        return refuse(
+            _indeterminate(
+                "WaveDocumentEvidenceMissing",
+                f"{wave.name} has no DOCUMENT row in its captured successful constructor terminals",
+                "pass the actual successful DES document constructor terminal with its DOCUMENT row",
+            ),
+            NOTHING_OWED,
+        )
+
+    if density == "lean":
+        return succeed(
+            [
+                f"WAVE: {wave.name}",
+                "WAVE-DOCUMENTATION-DENSITY: lean",
+                "LOCAL-VIEW: not requested; authoritative DES documents and handoffs remain",
+            ],
+            NOTHING_OWED,
+        )
+
+    planned: list[tuple[Path, Path]] = []
+    seen: set[Path] = set()
+    for locator in locators:
+        checked = _safe_source(root, locator)
+        if isinstance(checked, StepRefusal):
+            return refuse(checked, NOTHING_OWED)
+        source, view = checked
+        if source in seen:
+            continue
+        seen.add(source)
+        destination_issue = _safe_existing_view(root, source, view)
+        if destination_issue is not None:
+            return refuse(destination_issue, NOTHING_OWED)
+        planned.append((source, view))
+
+    facts = [
+        f"WAVE: {wave.name}",
+        "WAVE-DOCUMENTATION-DENSITY: full",
+        "COMPLETION-EVIDENCE: host asserted whole-wave completion; captured DES terminals alone do not prove it",
+        *(f"DOCUMENT: {locator}" for locator in locators),
+    ]
+    if not planned:
+        facts.append("LOCAL-VIEW: no applicable DES Markdown authority")
+        return succeed(facts, NOTHING_OWED)
+
+    for source, view in planned:
+        rendered_stdout = io.StringIO()
+        rendered_stderr = io.StringIO()
+        try:
+            with (
+                contextlib.redirect_stdout(rendered_stdout),
+                contextlib.redirect_stderr(rendered_stderr),
+            ):
+                renderer_status = nwave_document.main([str(source), "--out", str(view)])
+        except (
+            OSError,
+            UnicodeError,
+            ValueError,
+            nwave_document.BrandAssetError,
+        ) as error:
+            return refuse(
+                _indeterminate(
+                    "WaveViewRenderFailed",
+                    f"packaged renderer failed for {source} -> {view}: {error}; an output may be partial",
+                    f"inspect {view} and the authority {source}, repair the cause, then retry des {STEP} --complete",
+                ),
+                NOTHING_OWED,
+                facts=facts,
+            )
+        if renderer_status != 0:
+            return refuse(
+                _indeterminate(
+                    "WaveViewRenderFailed",
+                    f"packaged renderer returned {renderer_status} for {source} -> {view}: {rendered_stderr.getvalue().strip()}",
+                    f"inspect {source} and {view}, repair the reported cause, then retry des {STEP} --complete",
+                ),
+                NOTHING_OWED,
+                facts=facts,
+            )
+        generated_issue = _safe_existing_view(root, source, view)
+        if generated_issue is not None:
+            return refuse(
+                _indeterminate(
+                    "WaveViewResultUnconfirmed",
+                    f"renderer returned success but {view} is not a confirmed view of {source}: {generated_issue.why}",
+                    f"inspect {view}, repair the renderer or destination, then retry des {STEP} --complete",
+                ),
+                NOTHING_OWED,
+                facts=facts,
+            )
+        facts.append(f"HTML: {view}")
+        if rendered_stderr.getvalue().strip():
+            diagnostic = " | ".join(rendered_stderr.getvalue().splitlines())
+            facts.append(f"RENDER-DIAGNOSTIC: {diagnostic}")
+    return succeed(facts, NOTHING_OWED)
+
+
 def main(argv: list[str] | None = None) -> int:
     """One read-only outcome: the offer block, or WHY none was built."""
     arguments = _parse(argv)
@@ -281,6 +627,20 @@ def main(argv: list[str] | None = None) -> int:
                 wave.error,
                 "pass one of the installed wave names as --wave: "
                 f"{', '.join(INSTALLED_WAVES)}",
+            ),
+            NOTHING_OWED,
+        )
+
+    if arguments.complete:
+        return _complete_wave(
+            root, wave.unwrap(), arguments.entry_result, arguments.constructor_result
+        )
+    if arguments.entry_result is not None or arguments.constructor_result:
+        return refuse(
+            StepRefusal(
+                "WaveCompletionArgumentsWithoutComplete",
+                "captured result paths were supplied without --complete",
+                "use --complete after the host has established whole-wave success, or omit the result paths at entry",
             ),
             NOTHING_OWED,
         )
@@ -307,11 +667,14 @@ def main(argv: list[str] | None = None) -> int:
     if isinstance(density, Failure):
         return refuse(density.error, NOTHING_OWED)
 
-    offer = build_offer(wave.unwrap(), density.unwrap())
+    selected_density = density.unwrap()
+    offer = build_offer(wave.unwrap(), selected_density)
     return succeed(
         [
             f"WAVE: {offer.wave}",
             f"GLOBAL-CONFIG: {path}",
+            f"WAVE-DOCUMENTATION-DENSITY: {selected_density.mode}",
+            f"WAVE-DOCUMENTATION-PROVENANCE: {selected_density.provenance}",
             *_behaviour_rows(offer.behaviour),
             *offer.internal,
         ],

@@ -53,7 +53,7 @@ def cross_platform_container():
     Mirrors Dockerfile.verify-cross-platform:
     - Copies source into container (volume mount here)
     - Installs nwave-ai from source via venv
-    - Runs installer (installs both Claude Code and OpenCode targets)
+    - Explicitly installs both Claude Code and OpenCode in a host-free container
     """
     from tests.e2e.conftest import _is_docker_available
 
@@ -82,7 +82,8 @@ def cross_platform_container():
             "rich typer pydantic 'pydantic-settings' httpx platformdirs pyyaml packaging && "
             f"pip install --quiet --no-deps {_CONTAINER_SRC} && "
             f"export PYTHONPATH={_CONTAINER_SRC} && "
-            "echo y | python -m nwave_ai.cli install"
+            "echo y | python -m nwave_ai.cli install --platform claude-code && "
+            "echo y | python -m nwave_ai.cli install --platform opencode"
         )
         code, out = exec_in_container(container, ["bash", "-c", setup_script])
         assert code == 0, f"Install failed (exit {code}).\nOutput:\n{out}"
@@ -259,10 +260,11 @@ class TestCrossPlatformPortability:
             "python -m venv /tmp/oc-venv && "
             "/tmp/oc-venv/bin/pip install pyyaml -q && "
             "VIRTUAL_ENV=/tmp/oc-venv "
-            f"PATH=/tmp/oc-venv/bin:$PATH python {_CONTAINER_SRC}/scripts/install/install_nwave.py 2>&1"
+            f"PATH=/tmp/oc-venv/bin:$PATH python {_CONTAINER_SRC}/scripts/install/install_nwave.py "
+            "--platform opencode 2>&1"
         )
         code, out = exec_in_container(cross_platform_container, ["bash", "-c", script])
-        assert "installed and healthy" in out or code == 0, (
+        assert code == 0, (
             f"OpenCode installer did not report success.\n"
             f"Exit: {code}, Output (last 400 chars):\n{out[-400:]}"
         )
@@ -284,11 +286,6 @@ class TestCrossPlatformPortability:
             count = int(count_out.strip())
         except ValueError:
             count = 0
-        if count == 0:
-            pytest.skip(
-                "~/.config/opencode/skills/ not present — "
-                "OpenCode plugin may not be enabled in this install configuration."
-            )
         assert count > 50, (
             f"Only {count} skill directories found under ~/.config/opencode/skills/.\n"
             "Expected > 50 skills for a complete OpenCode installation."
@@ -308,10 +305,6 @@ class TestCrossPlatformPortability:
             count = int(count_out.strip())
         except ValueError:
             count = 0
-        if count == 0:
-            pytest.skip(
-                "OpenCode skills directory not present — skipping SKILL.md format check."
-            )
         assert count > 0, (
             "No SKILL.md files found in ~/.config/opencode/skills/.\n"
             "OpenCode plugin must install skill files in SKILL.md format."
@@ -331,10 +324,6 @@ class TestCrossPlatformPortability:
                 "print('HAS_KEY' if 'installed_skills' in d else 'NO_KEY')",
             ],
         )
-        if "MISSING" in out:
-            pytest.skip(
-                "OpenCode manifest not present — OpenCode plugin may not be enabled."
-            )
         assert "HAS_KEY" in out, (
             "OpenCode manifest exists but missing 'installed_skills' key.\n"
             f"Manifest content check output:\n{out}"

@@ -64,6 +64,7 @@ REGION_SOURCE_OF_TRUTH: dict[str, str] = {
         "(ADR-CFG-001 Slice 2 -- ~/.nwave/config.json + .nwave/config.json)"
     ),
     "design-document-input": "des.domain.design_document.DesignDocument.input_description()",
+    "public-observations-input": "des.domain.public_observations.input_description()",
     "design-authority-locator": (
         "des.domain.design_authority_locator.design_authority_locator_description()"
     ),
@@ -154,6 +155,12 @@ def design_authority_locator_body(root: Path) -> str:
     return design_authority_locator_description()
 
 
+def public_observations_input_body(root: Path) -> str:
+    from des.domain.public_observations import input_description
+
+    return input_description()
+
+
 #: Regions renderable from an INSTALLED layout -- every input is present on a
 #: consumer machine. Adding a row here is a decision to ship that region's
 #: inputs too; a region whose inputs are dev/build-time-only belongs in
@@ -162,6 +169,7 @@ INSTALLABLE_RENDERERS: dict[str, Callable[[Path], str]] = {
     "communication-rules": communication_rules_body,
     "design-document-input": design_document_input_body,
     "design-authority-locator": design_authority_locator_body,
+    "public-observations-input": public_observations_input_body,
 }
 
 

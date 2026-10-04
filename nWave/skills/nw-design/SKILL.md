@@ -2,7 +2,7 @@
 name: nw-design
 description: "Establishes durable architecture, reuse, boundaries, cross-layer algebra, residual stress behavior, paradigm, and prefactoring decisions for deterministic minimal handover construction."
 user-invocable: true
-argument-hint: '[bounded design question] --paradigm=[auto|oop|fp] [--residuality]'
+argument-hint: '[bounded design question] --paradigm=[auto|oop|fp|procedural] [--residuality]'
 ---
 
 > **Code facts** — resolve structural facts through `des code-fact`; degrade
@@ -54,18 +54,24 @@ uncertainty in an existing value-level connection; it neither shrinks the
 requested architecture scope nor attests that feature DESIGN is complete, and it
 creates no technical-fragment cycle or additional delivery phase.
 
-Read `~/.claude/skills/nw-role-invocation/SKILL.md` before delegating. Use the
-exact installed role, natively or via `des design --repo-root ROOT --value N`
-(buys the solution architect); `--input -` constructs and buys no turn.
+Read `~/.claude/skills/nw-role-invocation/SKILL.md` before delegating. Invoke
+the exact installed architect natively; pass its complete manifest to
+`des design --repo-root ROOT --value N --input -`. DES constructs, not delegates.
 The outer `/nw-design` caller invokes the relevant installed specialist per
-that skill; the Required Design Pass, self-falsification and Handoff below are
-that architect's duties, and its returned facts feed `--input -`.
+that skill. The coordinating architect — the application/component architect
+by default, or the single lens owner when only that lens is in scope — owns the
+Required Design Pass, self-falsification, Handoff and the complete manifest fed
+to `--input -`. A consulted lens specialist contributes only the facts of its
+own lane and returns everything else, including prefactoring measurement runs,
+to the coordinating architect.
 
 Route application/component to `nw-solution-architect`, domain boundaries to
 `nw-ddd-architect`, scale/distribution to `nw-system-designer`, deployment to
 `nw-platform-architect`. Invoke only risk-required lenses. Algebra, certainty
 and formal verification are owner-scoped lenses, never replacement routes.
 Code-level structure stays downstream unless a public contract needs a boundary.
+
+For a selected independent operational review of the platform lens, the outer native caller follows `nw-role-invocation`'s selected-review branch and consumes `nw-platform-architect-reviewer`'s actual result. Use the current authority and bound facts; do not add a review-task/result field to the closed DESIGN manifest or treat constructor success as reviewer approval.
 
 **Consultation policy (short).** The application/component architect owns
 coherent design decisions by default — no fanout for routine work. Involve the
@@ -81,7 +87,7 @@ semantic and upstream of the constructor boundary below.
 
 ## Required Design Pass
 
-Performed by the invoked architect, not the outer host.
+Performed by the coordinating architect, not the outer host or a consulted lens.
 
 1. **Intent and constraints** — bind product identities/observations; name
    uncertainty, never invent a requirement.
@@ -91,14 +97,44 @@ Performed by the invoked architect, not the outer host.
    implementation independently deciding the same business rule/fact under a
    different name or shape — not only a textual/symbol match (see
    `nw-code-craftsmanship`). Gate: `CREATE_NEW` explains why no candidate
-   safely owns it.
-3. **Prefactoring** — before behavior, define the smallest observationally
-   preserving `GREEN_TO_GREEN` move and existing green oracle. Gate: no hidden
-   behavior change.
+   safely owns it. Record every candidate and the reason for it in
+   `reuse_analysis`, so a reviewer sees the reuse/`CREATE_NEW` rationale.
+   Close the responsibility's impact before freezing targets: implementation,
+   public interfaces, exports, every known consumer, tests/helpers/fixtures,
+   discovery/build/package metadata, manifest/lock and runtime. Record the
+   closure in `impact_closure`: one item per target path and per agreement
+   consumer locator with a language-neutral kind, a `CHANGED`, `MIGRATED` or
+   `UNCHANGED_COMPATIBLE` decision and a reason. Classify by this repository's
+   actual interface, build, manifest and lock artifacts, never by a fixed file
+   name; a locator left without a disposition refuses the manifest before
+   craft, and `not_applicable` is refused while any consumer is declared.
+   Compiler, LSP and native build facts are evidence; unsupported/noisy
+   code-fact output is unknown, never zero consumers or proof of closure.
+3. **Prefactoring** — decide applicability in the generated grammar below.
+   For an applicable minimal preserving move, select a genuinely GREEN existing
+   oracle and executable verification recipe. Observe it before the move and
+   on the after-move-before-behavior intermediate state with unchanged oracle,
+   support and runtime identities. See `nw-code-craftsmanship`; a declaration,
+   nonexistent selector or two runs after feature implementation is not evidence.
+   A shared preserving move must be assigned to the selected value's applicable
+   `prefactoring` declaration before measurement. Run
+   `des craft --value N --prefactoring-phase before-move` and, after the preserving
+   move, the same command with `--prefactoring-phase after-move-before-behavior`.
+   Shared authority alone records no measured
+   phase and does not waive a distinct unassigned move.
 4. **Ports and boundaries** — define driving/driven ports, dependency direction,
    ownership and failure translation. Gate: change requires durable amendment.
-5. **Paradigm** — select `functional` or `object_oriented` from repository and
-   problem, not taste; both consume the same laws/boundaries.
+5. **Paradigm** — preserve settled repository authority. Select
+   `functional`, `object_oriented` or `procedural` from repository and problem
+   evidence only when the application decision is genuinely open, not from
+   taste; all consume the same laws/boundaries. Preserve an evidenced imperative
+   transaction script as `procedural`, not FP merely because it exposes
+   functions. Do not introduce classes or new files to fit a label. Follow
+   `construction:design-paradigm-projection` for absent or contested authority,
+   or settled authority outside these three values: that is a bounded
+   representation gap, not permission to coerce its design or submit an
+   unsupported field. Read OO/FP design guidance only for its matching
+   paradigm; procedural does not force either specialized skill.
 6. **Cross-layer algebra** — for every affected layer name states, operations,
    observations and laws:
    - domain: legal states and transitions;
@@ -117,9 +153,23 @@ Performed by the invoked architect, not the outer host.
    declared/runtime state and literal argv.  If a required dependency is absent,
    include its architecture-grounded target delta; hand off only when it is both
    declared and present in the verification runtime.
-   Keep one oracle and at most two examples per obligation; select a property
-   test only for a broad or generated input domain, otherwise `NOT_APPLICABLE`.
-   Gate: DISTILL cannot invent ambient interpreter or boundary.
+   Choose native runner, test layout and PBT from repository evidence under
+   `nw-test-design-mandates`' language convention frame, including actual
+   manifest/build/test stanzas; no closed language allowlist or nWave adapter
+   prerequisite. Keep a minimal falsifier per obligation, native properties for
+   broad laws and native examples for finite/singular observations. Real storage,
+   synchronized crash/race/protocol integration and an identifiable feature E2E
+   remain when promised; a cheap model is not their replacement.
+   For warm verification, decide whether the native commands correctly invalidate
+   dependency/toolchain/flag/generated-input changes and freshly execute checks.
+   Project-only `verification.reuse.outputs` in `.nwave/config.json` declares
+   generated-directory ownership, not semantic cache validity; see `nw-throughput`.
+   The stable isolated workspace binds these directories to the principal repo,
+   so native layouts must support those bindings and finish without background
+   writers. No automatic toolchain duplication, language detection or universal
+   cache key. Unsupported recipes omit reuse for cold isolation. Use
+   `des verify --fresh` for a new observation, not a recovered `RECORDED` receipt.
+   Gate: DISTILL cannot invent an ambient interpreter or boundary.
 9. **Human projection** — state observations/equality, examples/counterexamples,
    alternatives/provenance, laws, consequences/trade-offs, failure handling and
    guarantee ceiling/exclusions in ordinary language. Ask only where an answer
@@ -142,6 +192,38 @@ Performed by the invoked architect, not the outer host.
     and a closed decision (`MIGRATED`, `UNCHANGED_COMPATIBLE`, or
     `INCOMPATIBLE`) and a reason. Gate: a change touching no shared contract
     must say so explicitly; it is never inferred from silence.
+11. **Architectural and contract test applicability** — supply both decisions
+    in the generated grammar below; a `not_applicable` reason names the
+    repository fact that makes the check unnecessary. An
+    architectural check applies when authority evidences a deliberate
+    dependency/boundary/owner law the change can reach; it falsifies that law
+    over the whole scope the law governs, including members added later and
+    transitive paths the law covers, not incidental AST
+    or style. A contract check applies when the parties can change apart —
+    another owner, deployable or release schedule, or persisted/wire data
+    outliving the producer's version. It runs the real producer output
+    through the real consumer and observes the promised outcomes, errors or
+    version compatibility, never mock echoes or hand-written producer records.
+    Callers inside one deployable that change in the same commit are covered
+    by the primary oracle, not a contract test.
+    Reuse sufficient native checks; do not mandate Pact/ArchUnit/import-linter.
+    Bind their test locators to declared verification selections and preserve
+    those obligations when DISTILL realigns its primary oracle.
+
+Resolve uncertain constructibility with a concrete consumer case and
+counterexample to the decision owner, batching related findings. Consult ATD
+for timing/public construction where needed, not a mandatory extra review
+at every layer. New ATD supports available before craft and future production
+targets have different timing. If implementation changes a prospective name
+or owner, reconcile this same authority and regenerate its projections; never
+create a competing decision document or rewrite chronology.
+
+Before craft, close the host/crafter agreement on committed versus uncommitted
+work, measured before/after revisions, staging ownership and install/hooks.
+Use scoped currentness to reuse unchanged adequate decisions; native remeasurement
+does not itself require semantic reauthoring. Contract/prerequisite changes may
+invalidate evidence with unchanged production. DES records identities and
+refusals, while the host decides compatibility, continuation and authorized repair.
 
 ## Result and constructor boundary
 
@@ -189,7 +271,7 @@ object with exactly:
     - `path`: repository-relative file path.
     - `decision`: `EXTEND` or `CREATE_NEW`
     - `reason`: non-empty text.
-- `paradigm`: `object_oriented` or `functional`
+- `paradigm`: `object_oriented` or `functional` or `procedural`
 - `decisions`: non-empty unique list of non-empty text.
 - `reuse_analysis`: object with exactly:
   - `candidates`: unique list of object with exactly:
@@ -201,9 +283,11 @@ object with exactly:
   - `applicable`:
     object with exactly:
     - `applicability`: `applicable`
-    - `existing_oracle`: a repository-relative DESIGN oracle locator: the whole file (`tests/verify_order.py`) or the file with an optional `::selector` (`tests/verify_order.py::Class::case`); a `:line` suffix is not accepted.
+    - `existing_oracle`: a repository-relative DESIGN oracle locator: the whole file (`test/orders.ml`) or the file with an optional `::selector` (`tests/orders.rs::reject_cancelled`); native runner targets select that file; a `:line` suffix is not accepted.
     - `move`: non-empty text.
     - `preserved_observation`: non-empty text.
+    - `verification`: non-empty unique list of non-empty argv list of non-empty text without NUL.
+    - `acceptance_supports`: unique list of repository-relative file path; never `existing_oracle`'s own file.
   - `not_applicable`:
     object with exactly:
     - `applicability`: `not_applicable`
@@ -217,6 +301,60 @@ object with exactly:
         - `role`: `producer` or `consumer`
         - `locator`: repository-relative path and positive line.
         - `decision`: `MIGRATED` or `UNCHANGED_COMPATIBLE` or `INCOMPATIBLE`
+        - `reason`: non-empty text.
+  - `not_applicable`:
+    object with exactly:
+    - `applicability`: `not_applicable`
+    - `reason`: non-empty text.
+- `architectural_tests`: tagged object on `applicability`:
+  - `applicable`:
+    object with exactly:
+    - `applicability`: `applicable`
+    - `obligations`: non-empty unique list of object with exactly:
+        - `obligation`: non-empty text.
+        - `oracle`: a repository-relative DESIGN oracle locator: the whole file (`test/orders.ml`) or the file with an optional `::selector` (`tests/orders.rs::reject_cancelled`); native runner targets select that file; a `:line` suffix is not accepted.
+        - `verification_index`: non-negative integer.
+  - `not_applicable`:
+    object with exactly:
+    - `applicability`: `not_applicable`
+    - `reason`: non-empty text.
+- `contract_tests`: tagged object on `applicability`:
+  - `applicable`:
+    object with exactly:
+    - `applicability`: `applicable`
+    - `obligations`: non-empty unique list of object with exactly:
+        - `obligation`: non-empty text.
+        - `contract`: non-empty text.
+        - `producer`: repository-relative path and positive line.
+        - `consumer`: repository-relative path and positive line.
+        - `observation`: non-empty text.
+        - `oracle`: a repository-relative DESIGN oracle locator: the whole file (`test/orders.ml`) or the file with an optional `::selector` (`tests/orders.rs::reject_cancelled`); native runner targets select that file; a `:line` suffix is not accepted.
+        - `verification_index`: non-negative integer.
+  - `not_applicable`:
+    object with exactly:
+    - `applicability`: `not_applicable`
+    - `reason`: non-empty text.
+- `adr` (optional): tagged object on `applicability`:
+  - `applicable`:
+    object with exactly:
+    - `applicability`: `applicable`
+    - `context`: non-empty text.
+    - `decision`: non-empty text.
+    - `alternatives`: non-empty unique list of non-empty text.
+    - `consequences`: non-empty unique list of non-empty text.
+    - `status`: `proposed` or `accepted` or `superseded` or `deprecated`
+  - `not_applicable`:
+    object with exactly:
+    - `applicability`: `not_applicable`
+    - `reason`: non-empty text.
+- `impact_closure`: tagged object on `applicability`:
+  - `applicable`:
+    object with exactly:
+    - `applicability`: `applicable`
+    - `items`: non-empty unique list with distinct locators of object with exactly:
+        - `kind`: `public_interface` or `consumer` or `test` or `fixture` or `export` or `discovery` or `build_metadata` or `manifest` or `lock` or `runtime`
+        - `locator`: repository-relative path, optionally followed by `:line`.
+        - `decision`: `CHANGED` or `MIGRATED` or `UNCHANGED_COMPATIBLE`
         - `reason`: non-empty text.
   - `not_applicable`:
     object with exactly:
@@ -242,10 +380,12 @@ object with exactly:
   - `stimulus`: non-empty text.
   - `expected`: non-empty text.
   - `falsifier`: non-empty text.
-- `oracle`: a repository-relative DESIGN oracle locator: the whole file (`tests/verify_order.py`) or the file with an optional `::selector` (`tests/verify_order.py::Class::case`); a `:line` suffix is not accepted.
-- `acceptance_supports`: unique list of repository-relative file path.
+- `oracle`: a repository-relative DESIGN oracle locator: the whole file (`test/orders.ml`) or the file with an optional `::selector` (`tests/orders.rs::reject_cancelled`); native runner targets select that file; a `:line` suffix is not accepted.
+- `acceptance_supports`: unique list of repository-relative file path; only acceptance-owned fixtures the oracle needs before craft: never the `oracle`'s own file and never a `targets` path (a production module the oracle imports is a target).
 - `verification`: non-empty unique list of non-empty argv list of non-empty text without NUL.
 - `oracle_verification_index`: non-negative integer.
+
+Impact closure rule: an applicable `impact_closure` must hold one item for every `targets` path and for every `agreement_analysis` consumer locator, each with its kind, decision and reason; `not_applicable` is refused while `agreement_analysis` declares a consumer.  A manifest with any locator undisposed is refused before craft, naming every missing locator at once.
 <!-- GENERATED:design-document-input END -->
 
 The Request's ordered value graph is decomposed once. Every independently
@@ -408,4 +548,18 @@ WHAT/WHY/HOW to the human.
 Say nothing about expansion before your final response for this wave, and only
 after the whole wave has really completed. The `WAVE-END-OFFER-INTERNAL-NOT-NOW`
 rows decide which situations carry no offer — a single DES step terminal of any
-outcome among them. Invoke no wave-end step: none exists.
+outcome among them. Invoke no wave-end expansion step; the local view has a
+separate completion port.
+
+## Completed-wave local view
+
+Read `nw-doc-as-artifact` and retain `WAVE-DOCUMENTATION-DENSITY` from wave
+entry. After this whole wave succeeds, invoke `des wave-entry --complete` with
+the captured entry and successful constructor terminals as that skill directs.
+For full density, the port renders each distinct successful DES Markdown
+`DOCUMENT:` authority after its path checks and reports the local HTML path. A DESIGN
+locator may include `#Heading`: retain it in the report and remove the fragment
+only for the renderer's filesystem source. Lean retains the document and
+handoff. A single successful DESIGN step or partial/stopped wave does not
+trigger rendering. Density does not alter optional explanation, provider/model
+selection or required checks.

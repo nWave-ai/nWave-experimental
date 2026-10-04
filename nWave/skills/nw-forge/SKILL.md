@@ -14,7 +14,7 @@ argument-hint: '[target] - New agent, existing agent, or existing SKILL.md; opti
 | Request condition | Internal procedure | Output |
 |---|---|---|
 | Create a new agent | `nw-ab-create-agent` | New agent and only needed skills |
-| Validate only an existing agent | `nw-ab-validate-spec` | 19-item verdict |
+| Validate only an existing agent | `nw-ab-validate-spec` | Per-item checklist verdict |
 | Migrate an existing agent monolith | `nw-ab-migrate-monolith` | Lean agent core plus routed skills |
 | Optimize one existing skill | `nw-ab-optimize-skill` | Measured optimization result or `NOT_ELIGIBLE` |
 
@@ -30,7 +30,7 @@ argument-hint: '[target] - New agent, existing agent, or existing SKILL.md; opti
 - Existing behavioral projections are immutable. Do not create a command, validator, grammar, compiler, hook, or gate for a route.
 - Safety by construction first; hooks last resort with a recorded reason (GDP-0).
 - Use `nw-ab-create-agent` for creation, `nw-ab-validate-spec` for validation, `nw-ab-migrate-monolith` for agent migration, and `nw-ab-optimize-skill` for skill optimization.
-- The validation route uses the 19-item checklist; do not maintain a second count here.
+- The validation route uses `nw-ab-validation-checklist`; do not restate its items or count here.
 
 ## Existing surfaces
 

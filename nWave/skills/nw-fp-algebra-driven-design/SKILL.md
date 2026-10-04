@@ -8,7 +8,9 @@ user-invocable: false
 # FP Algebra-Driven Design
 
 FP structure catalogue for API design; derive candidate API/observations via
-`nw-algebraic-design-protocol`.
+`nw-algebraic-design-protocol`. A crafter or reviewer uses the catalogue only to
+implement or judge preservation of laws the bound design already declares;
+deriving a new API, observation or law is DESIGN work returned to its owner.
 
 **Thin FP projection (ADR-SSOT-002 §6a).** The design METHOD — how to find
 observations, add constructors, and follow a contradiction to its carrier —

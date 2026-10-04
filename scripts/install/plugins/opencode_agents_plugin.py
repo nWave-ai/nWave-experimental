@@ -13,6 +13,9 @@ user-created ones.
 import json
 from pathlib import Path
 
+from des.adapters.driven.task_invocation.role_instructions import (
+    render_installed_role,
+)
 from des.domain.agent_capability import provider_tool_name, split_declared_tools
 from scripts.install.plugins.base import (
     InstallationPlugin,
@@ -151,7 +154,8 @@ def _transform_agent(content: str) -> str:
       4. Render frontmatter + body
 
     Args:
-        content: Full source agent file content (Claude Code format)
+        content: Full source agent file content (Claude Code format), with
+            its frontmatter skills already preloaded by the role renderer
 
     Returns:
         Transformed agent file content (OpenCode format)
@@ -255,7 +259,9 @@ class OpenCodeAgentsPlugin(InstallationPlugin):
                 if not is_public_agent(source_file.name, public_agents):
                     continue
                 agent_name = source_file.stem
-                content = source_file.read_text(encoding="utf-8")
+                # OpenCode has no skills preload: the shared renderer inlines
+                # each frontmatter skill once, as for Claude and Codex.
+                content = render_installed_role(source_file, "~/.claude/skills")
 
                 transformed = _transform_agent(content)
 

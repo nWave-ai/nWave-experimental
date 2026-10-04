@@ -34,8 +34,8 @@ Three port classes, each with default test treatment. Table = PROJECT-LEVEL: dec
 
 | Port type | Examples | Default in test |
 |---|---|---|
-| **Driving** (entry point) | HTTP API, CLI, in-process call, hook | **In-process via the `OutputPort`** — drive the real entry (`cli main(argv)` / application-service method) IN-PROCESS with a fake output port, no interpreter fork. **subprocess-e2e ONLY for `@walking_skeleton`** (ONE scenario per FEATURE that proves the installed artifact is wired). |
-| **Driven internal** (shared state) | Repository, read model, application cache | **In-memory fake by DEFAULT** (config-switch row below); a config parameter selects the real/prod-like mechanism (Testcontainers / dedicated env) for the CI-or-local prod-like run declared in the project Infrastructure Policy. |
+| **Driving** (entry point) | HTTP API, CLI, in-process call, hook | **In-process via the `OutputPort`** — drive the real entry (`cli main(argv)` / application-service method) IN-PROCESS with a fake output port, no interpreter fork. The ONE selected `@walking_skeleton` proves installed wiring; additional real-boundary observations require a separately declared integration need. |
+| **Driven internal** (shared state) | Repository, read model, application cache | **In-memory fake for focused acceptance scenarios.** The feature's one explicitly selected walking skeleton uses the real adapter; separately declared adapter-integration tests also exercise real I/O under `nw-tdd-methodology-walking-skeleton`. A project config selects the concrete real mechanism for those observations, not a real-I/O alternative for every focused scenario. |
 | **Driven external / non-deterministic** | Clock, email, SMS, push, payment, LLM, third-party API | Fake/stub with output capture (so a `Then` can observe the side effect) |
 
 Replaces the earlier per-feature Walking Skeleton Strategy A/B/C/D choice. Decision is structural — port CLASS implies port TREATMENT; per-project Infrastructure Policy specializes the mechanism per treatment.
@@ -57,14 +57,16 @@ The old caveat held that a CLI command can only be tested end-to-end (subprocess
 | **output-content / behaviour** | the command computes + emits the right output | **in-process** via the `OutputPort` (captured, asserted on the fake's buffer) |
 | **terminal-wiring** | the installed binary actually reaches a real terminal | **exactly one `@walking_skeleton`** per FEATURE (subprocess-e2e) |
 
-The content facet (the bulk of the ATs) drives in-process; the wiring facet is the single WS. A delivery therefore needs at most ONE subprocess AT, not one per scenario, slice or command. Route it through the primary user journey; the Examiner and final whole-delivery verification cover the remaining observable wiring.
+The content facet (the bulk of the ATs) drives in-process; the wiring facet is the single WS. Do not multiply subprocess ATs per scenario, slice or command. A separately declared adapter-integration observation may require another real process when the skeleton cannot observe the promised boundary property; it is not another walking skeleton.
 
 ### Config-switch — in-memory local default / testcontainers prod-like
 
-Driven-internal ports default to an **in-memory fake** (fast, local). A config parameter selects the prod-like mechanism (Testcontainers / dedicated env) for a CI-or-local run that exercises the real adapter. The switch resolves from the project Infrastructure Policy (`docs/architecture/atdd-infrastructure-policy.md`) per port:
+Driven-internal ports use an **in-memory fake** in focused acceptance scenarios. Within feature acceptance scenarios, real driven-internal I/O is reserved for the one explicitly selected walking skeleton. Separately declared adapter-integration observations exercise their real adapter boundary. A config parameter selects the concrete prod-like mechanism (Testcontainers / dedicated env) for these real-I/O observations; it does not switch focused acceptance scenarios away from their in-memory treatment. Resolve the mechanism from the project Infrastructure Policy (`docs/architecture/atdd-infrastructure-policy.md`) per port:
+
+The speed default never weakens a promised concurrency, atomicity, durability or recovery observation. If an in-memory fake cannot expose the declared failure, retain an explicitly declared real adapter-integration observation with the required process/resource boundary; do not relabel it as focused coverage, replace it with a fake, or omit it to meet a one-skeleton count.
 
 - **`@in-memory`** (default) — the in-memory double; runs everywhere, no container runtime needed.
-- **`@real-io` / prod-like** — Testcontainers or a dedicated env; opt-in via the config parameter. When no container runtime is present the prod-like leg degrades-LOUD to INDETERMINATE (`@requires_external`, skip-if-absent) — never silent-pass, never a hard-block on a container-less target. The gate asserts the switch EXISTS and the in-memory path runs; the prod-like path is exercised when the runtime is available.
+- **`@real-io` / prod-like** — the selected walking skeleton or a separately declared adapter-integration observation uses Testcontainers, a dedicated environment, or the declared local real adapter. Config selects its mechanism, not its applicability. When required external infrastructure is absent, report that observation INDETERMINATE (`@requires_external`, skip-if-absent), never a silent pass or an in-memory substitute for the real-I/O observation. Focused in-memory scenarios still run.
 
 This keeps the local loop fast (in-memory) while guaranteeing the prod-like path is reachable and exercised where the infrastructure exists.
 
@@ -97,12 +99,12 @@ Lives at `docs/architecture/atdd-infrastructure-policy.md` (project-local). Thre
 | Port | Mechanism | Note |
 |---|---|---|
 | HTTP API | WebApplicationFactory<Program> | |
-| CLI | subprocess from tmp_path | |
+| CLI | in-process main with captured output; installed subprocess for the selected walking skeleton or a separately declared process-boundary integration observation | Focused scenarios remain in-process. |
 
-## Driven internal (real)
+## Driven internal (in-memory default + prod-like leg)
 | Port | Mechanism | Note |
 |---|---|---|
-| IUserRepository (MongoDB) | Testcontainers.MongoDb, ONE instance per session, per-test db name | |
+| IUserRepository (MongoDB) | In-memory fake for focused scenarios; Testcontainers.MongoDb, ONE instance per session, per-test db name for selected real-I/O observations | Real adapter only in the selected walking skeleton or separately declared adapter-integration tests. |
 
 ## Driven external / non-deterministic (fake)
 | Port | Fake | Note |
@@ -118,20 +120,22 @@ Lives at `docs/architecture/atdd-infrastructure-policy.md` (project-local). Thre
 | Case | Action |
 |---|---|
 | File exists (default `--policy=inherit`) | read policy, apply recorded decisions; no renegotiation for ports already in table |
-| In-scope port missing from policy | soft prompt per missing port (`which mechanism for {port}?`) → **append row to policy** before generating scenarios; policy grows by accretion |
-| File absent | create empty skeleton, three section headers (`policy-bootstrap-template` expansion); treat every in-scope port as missing (row above) |
+| In-scope port missing from policy | Use a mechanism already established by the supplied design or project defaults; if a necessary mechanism is still unspecified, return the missing design fact through the result carrier below. Append a decided row only when policy writing is an authorized support. |
+| File absent | Only when the policy path is a declared support, create the three-section skeleton (`policy-bootstrap-template`); otherwise write no policy file. Treat in-scope ports as missing (row above). |
 
 Edited in place. No per-row versioning — git history = audit trail.
 
+Writing the policy file is a declared support write: the acceptance designer creates or appends it only when the dispatch names the policy path among its supports. Otherwise apply the Architecture of Reference defaults and write no policy file. The native oracle-author result is the closed `{outcome, diagnostic}` envelope: carry any missing-mechanism reason and concrete question for the DESIGN owner in its existing `diagnostic`, not an invented `questions`, `reason`, `finding`, or owner field. If the missing fact prevents a constructible public oracle, return `rejected` before changing oracle bytes and explain the port, missing mechanism, and required DESIGN clarification in that diagnostic. If the supplied design and defaults suffice, author the oracle and return `accepted`; a nonblocking policy-mechanism gap may be noted in the diagnostic, never turned into a new gate. The native caller relays the finding to the DESIGN owner; diagnostic prose does not select a software route.
+
 ### `--policy=fresh` flag
 
-`--policy=fresh`: ignore existing file this run; every in-scope port = missing (soft prompt per port); on completion rewrite file from scratch with newly agreed decisions. `fresh` = major refactors (stack swap, test-strategy overhaul). Otherwise `inherit`.
+`--policy=fresh`: ignore existing decisions this run; resolve every in-scope port as a missing row under the same design/default and diagnostic rules above. Rewrite only a declared policy support path with the resolved decisions. `fresh` = major refactors (stack swap, test-strategy overhaul). Otherwise `inherit`.
 
 ### Relationship to the Architecture of Reference
 
 Architecture of Reference: "what kind of treatment for this port class?" (real vs fake). Project Policy: "which concrete implementation for that treatment?" (Testcontainers vs dedicated env, which fake class).
 
-Policy CANNOT override port-class defaults: a driven-internal port cannot become fake via policy. Policy records **mechanism** per default treatment only.
+Policy CANNOT override port-class treatment: focused scenarios keep driven-internal ports in memory, the explicitly selected walking skeleton and separately declared adapter-integration observations use their real driven-internal adapter, and driven-external ports stay fake. Policy records the concrete mechanism for the applicable treatment; it cannot opt every focused scenario into real I/O.
 
 ### Expansion `policy-bootstrap-template`
 
@@ -146,7 +150,7 @@ Per `nw-distill-port-treatment-policy`. One file per project. Apply-if-exists; w
 | Port | Mechanism | Note |
 |---|---|---|
 
-## Driven internal (real)
+## Driven internal (in-memory default + prod-like leg)
 | Port | Mechanism | Note |
 |---|---|---|
 
@@ -157,7 +161,7 @@ Per `nw-distill-port-treatment-policy`. One file per project. Apply-if-exists; w
 
 ## Walking Skeleton Strategy + canonical definition
 
-The 4-way per-feature choice (Strategy A/B/C/D) is REPLACED by two structural decisions: the Architecture of Reference (port-class treatment, once per project) + the Project Infrastructure Policy (concrete mechanism, once per project). Per-feature, DISTILL reads policy (`--policy=inherit` default), appends missing rows, or rewrites (`--policy=fresh`).
+The 4-way per-feature choice (Strategy A/B/C/D) is REPLACED by two structural decisions: the Architecture of Reference (port-class treatment, once per project) + the Project Infrastructure Policy (concrete mechanism, once per project). Per-feature, DISTILL reads policy (`--policy=inherit` default); appending rows or rewriting (`--policy=fresh`) requires the policy path to be a declared support.
 
 ### Canonical definition (Cockburn / GOOS)
 

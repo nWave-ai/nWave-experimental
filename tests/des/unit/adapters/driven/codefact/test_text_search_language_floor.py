@@ -7,7 +7,7 @@ textually for every atom `_ATOM_DEFINITION` claims to recognize as a declaration
 prefixes.
 
 Floor law (one definition observation must never be interpreted as a call-site,
-`lyra-algebraic-design-protocol` / `lyra-property-driven-design`): a symbol S
+`external-algebraic-design-protocol` / `external-property-driven-design`): a symbol S
 declared exactly once, with no textual use anywhere else in the tree, MUST answer
 ``never_wired=True`` with zero ``call_sites`` -- the declaration line itself is not
 a call site.

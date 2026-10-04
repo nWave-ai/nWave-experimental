@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from des.adapters.driven.git.git_observation import observe_bytes
 from des.adapters.driven.task_invocation.model_envelope import decode_model_run
 from des.application.delivery_continuation import DeliveryContinuationRunner
-from des.application.delivery_steps import StepOutcome, _prepared
+from des.application.delivery_steps import StepOutcome, _from_blocked, _prepared
 from des.application.handover import (
     _facts_wire,
     _shared_wire,
@@ -22,6 +22,7 @@ from des.application.handover import (
     stored_candidate_handover,
     stored_handover,
 )
+from des.cli.role_packet_views import write_views
 from des.domain.distill_document import selected_revision_sha256
 from des.domain.expectation_charter import (
     ExpectationCharterInvalid,
@@ -34,6 +35,7 @@ from des.domain.public_observations import (
     WITHHELD,
     Defect,
     ObservationPacketRefused,
+    _strict_json,
     read_packet,
 )
 from des.ports.driven_ports.task_invocation_port import DesignFacts, ModelOutcome
@@ -103,150 +105,20 @@ def _write(path: Path, payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-#: Known interpreter basenames mapped to the flag(s) THEY use to accept code
-#: inline instead of a file path. Scoped narrowly -- only these named
-#: interpreters are recognized; an unknown interpreter's flags are never
-#: guessed at (see `_examiner_argv` docstring for that limitation).
-_INLINE_CODE_FLAGS_BY_INTERPRETER = {
-    "sh": frozenset({"-c"}),
-    "bash": frozenset({"-c"}),
-    "dash": frozenset({"-c"}),
-    "zsh": frozenset({"-c"}),
-    "ksh": frozenset({"-c"}),
-    "node": frozenset({"-e", "--eval"}),
-    "nodejs": frozenset({"-e", "--eval"}),
-    "ruby": frozenset({"-e"}),
-    "perl": frozenset({"-e"}),
-    "perl5": frozenset({"-e"}),
-}
-
-#: Any `python`, `python2`, `python3`, or versioned `python3.x` basename.
-_PYTHON_BASENAME = re.compile(r"^python[23]?(\.\d+)?$")
-
-#: Known interpreter options that consume a separate following argv token
-#: (their operand), so that operand must not be mistaken for a script path.
-_OPERAND_TAKING_FLAGS_BY_INTERPRETER = {
-    "python": frozenset({"-W", "-X"}),
-}
-
-
-def _inline_code_flags_for(executable: str) -> frozenset[str]:
-    """The inline-code flag(s) for a recognized interpreter, else empty."""
-    name = Path(executable).name
-    if _PYTHON_BASENAME.fullmatch(name):
-        return frozenset({"-c"})
-    return _INLINE_CODE_FLAGS_BY_INTERPRETER.get(name, frozenset())
-
-
-def _operand_taking_flags_for(executable: str) -> frozenset[str]:
-    """Flags of `executable` that take a separate operand token, else empty."""
-    name = Path(executable).name
-    if _PYTHON_BASENAME.fullmatch(name):
-        return _OPERAND_TAKING_FLAGS_BY_INTERPRETER["python"]
-    return frozenset()
-
-
-def _matches_inline_flag(token: str, inline_flags: frozenset[str]) -> bool:
-    """Whether `token` invokes an inline-code flag: exact, `--flag=VALUE`,
-    a short flag with an attached value (`-cCODE`), or bundled short flags
-    ending in it (`-Ic`, `-lc`).
-    """
-    for flag in inline_flags:
-        if token == flag:
-            return True
-        if flag.startswith("--"):
-            if token.startswith(f"{flag}="):
-                return True
-        elif (
-            len(flag) == 2
-            and token.startswith("-")
-            and not token.startswith("--")
-            and len(token) > 1
-        ):
-            letter = flag[1]
-            body = token[1:]
-            if body.startswith(letter):
-                return True
-            if body.endswith(letter) and body[:-1].isalpha():
-                return True
-    return False
-
-
-def _interpreter_argv_embeds_inline_code(argv: list[object]) -> bool:
-    """Whether `argv` invokes a recognized interpreter with inline code.
-
-    Scans only the interpreter's own option tokens, stopping at the script
-    path or at `-m` (the rest of argv becomes the named module's own public
-    arguments). A known operand-taking flag (`python -W ignore`) consumes its
-    following token without ending the scan. A flag that merely shares a
-    letter with an inline-code flag -- `go test -c`, `grep -e PATTERN` --
-    never matches because `go` and `grep` are not recognized interpreters.
-    """
-    if not argv or not isinstance(argv[0], str):
-        return False
-    inline_flags = _inline_code_flags_for(argv[0])
-    if not inline_flags:
-        return False
-    operand_taking = _operand_taking_flags_for(argv[0])
-    skip_next = False
-    for token in argv[1:]:
-        if not isinstance(token, str):
-            continue
-        if skip_next:
-            skip_next = False
-            continue
-        if token == "-m":
-            return False
-        if _matches_inline_flag(token, inline_flags):
-            return True
-        if token in operand_taking:
-            skip_next = True
-            continue
-        if not token.startswith("-"):
-            return False
-    return False
-
-
-def _examiner_argv(argv: object) -> object:
-    """Project one native `argv` for the source-blind examiner.
-
-    Most commands project verbatim as the examiner's public stimulus. An
-    argv invoking a recognized interpreter's own inline-code flag
-    (`python -c`, `sh -c`, `node -e`, ...) carries production/oracle source,
-    so it is replaced by an explicit withheld marker naming the reason
-    instead. `python -m tool -c ...` stays public: `-m` hands the rest of
-    argv to the named tool.
-
-    Limitation: only interpreters named in
-    `_INLINE_CODE_FLAGS_BY_INTERPRETER` (plus python) are recognized; an
-    unlisted interpreter's inline-code flag is not detected.
-    """
-    if not isinstance(argv, list) or not _interpreter_argv_embeds_inline_code(argv):
-        return argv
-    return {
-        "withheld": True,
-        "reason": (
-            "argv invokes a recognized interpreter with its inline-code "
-            "flag (such as python -c, sh -c, node -e); the source-blind "
-            "examiner is not shown production or oracle source text, so "
-            "this command is named as withheld rather than silently "
-            "omitted"
-        ),
-    }
-
-
 def _examiner_native_evidence(
     native: list[dict[str, object]],
 ) -> list[dict[str, object]]:
-    """Source-safe bounded projection of candidate-bound native evidence.
+    """Source-blind bounded projection of candidate-bound native evidence.
 
     Reuses the same candidate-bound records the reviewer receives (loaded by
     the caller from the sealed native evidence file); this function only
-    narrows which of their keys reach the examiner. `argv` and `cwd` are
-    included: they are the public stimulus DES actually ran, needed to join a
-    captured command with its captured output. `declared_environment` stays
-    withheld -- it is native metadata about the run, not the command or its
-    observation, and native metadata projection already bounds it elsewhere.
+    narrows which of their keys reach the examiner. `argv`, `stdout`,
+    `stderr` and `cwd` are the exact withheld marker: an argv names the
+    oracle file or a production entrypoint (a public program called `cli.py`
+    is also a declared path), and the streams echo test names and source, so
+    any of them would hand the source-blind examiner a production or oracle
+    locator. The examiner joins its own captured public events to the exit
+    status and timing that remain. `declared_environment` is not projected.
     A key absent from a historical record projects as `None` (unknown
     metadata), which is distinct from a key present with an empty value
     (`""`, `[]`) -- both survive `dict.get` unchanged.
@@ -257,8 +129,6 @@ def _examiner_native_evidence(
                 k: item.get(k)
                 for k in (
                     "exit",
-                    "stdout",
-                    "stderr",
                     "origin",
                     "incomplete",
                     "incomplete_what",
@@ -302,12 +172,62 @@ def _redact_repository_locators(
     return text, redacted
 
 
+def _redacted_fields(
+    source: object, names: tuple[str, ...], owned_paths: tuple[str, ...]
+) -> dict[str, object]:
+    """The named text fields with known locators withheld, and which were."""
+    projected: dict[str, object] = {}
+    redacted: list[str] = []
+    for name in names:
+        text, withheld = _redact_repository_locators(getattr(source, name), owned_paths)
+        projected[name] = text
+        if withheld:
+            redacted.append(name)
+    return {**projected, "redacted_fields": redacted}
+
+
+def _examiner_witness(
+    witness: list[dict[str, object]] | None,
+) -> list[dict[str, object]] | None:
+    """The witness verdict history without any oracle locator.
+
+    ``None`` stays ``None``: an unreadable record is unmeasured for the
+    examiner, never a verdict.
+    """
+    if witness is None:
+        return None
+    return [
+        {
+            "revision": entry.get("revision"),
+            "current": entry["current"],
+            "oracles": [
+                {key: oracle.get(key) for key in ("verdict", "axis", "exit", "counts")}
+                for oracle in entry.get("oracles", ())
+                if isinstance(oracle, dict)
+            ]
+            if isinstance(entry.get("oracles"), list)
+            else None,
+        }
+        for entry in witness
+    ]
+
+
 def _projected_selected_acceptance(
-    prepared: list[tuple[int, object]], owned_paths: tuple[str, ...]
+    prepared: list[tuple[str, object]],
+    owned_paths: tuple[str, ...],
+    witnesses: list[list[dict[str, object]] | None],
 ) -> list[dict[str, object]]:
-    """Project selected acceptance criteria for the source-blind examiner."""
+    """Project selected acceptance for the source-blind examiner.
+
+    Per value: the selected criteria, the DESIGN public oracle (observation,
+    stimulus, expected and the falsifier that names what would refute it), and
+    the oracle's witness verdict history. Every text field passes the same
+    known-locator redaction; no oracle path, argv or source reaches it.
+    """
     projected: list[dict[str, object]] = []
-    for position, (_observation, design) in enumerate(prepared, start=1):
+    for position, ((_observation, design), witness) in enumerate(
+        zip(prepared, witnesses, strict=True), start=1
+    ):
         obligations = design.acceptance_obligations
         criteria: list[dict[str, object]] | None = None
         if obligations:
@@ -315,21 +235,12 @@ def _projected_selected_acceptance(
             for obligation in obligations:
                 if any(path and path in obligation.id for path in owned_paths):
                     raise LocatorBearingCriterionId(obligation.id)
-                stimulus, stimulus_redacted = _redact_repository_locators(
-                    obligation.stimulus, owned_paths
-                )
-                expected, expected_redacted = _redact_repository_locators(
-                    obligation.expected, owned_paths
-                )
                 criteria.append(
                     {
                         "id": obligation.id,
-                        "stimulus": stimulus,
-                        "expected": expected,
-                        "redacted_fields": [
-                            *(("stimulus",) if stimulus_redacted else ()),
-                            *(("expected",) if expected_redacted else ()),
-                        ],
+                        **_redacted_fields(
+                            obligation, ("stimulus", "expected"), owned_paths
+                        ),
                     }
                 )
         projected.append(
@@ -338,6 +249,14 @@ def _projected_selected_acceptance(
                 "source": "DISTILL" if obligations else "DESIGN",
                 "revision_sha256": design.selected_revision_sha256,
                 "criteria": criteria,
+                "public_oracle": None
+                if design.public_oracle is None
+                else _redacted_fields(
+                    design.public_oracle,
+                    ("observation", "stimulus", "expected", "falsifier"),
+                    owned_paths,
+                ),
+                "oracle_witness": _examiner_witness(witness),
             }
         )
     return projected
@@ -497,14 +416,6 @@ def _load_and_bind(
     return path, payload, raw
 
 
-def load_prepared(
-    root: Path, role: str, candidate: str
-) -> tuple[Path, dict[str, object], bytes]:
-    """Load the legacy fixed-name sealed input and rebind current authority."""
-    path = root / ".nwave/des/logs/roles" / f"{candidate}-{role}-input.json"
-    return _load_and_bind(root, role, candidate, path)
-
-
 _CONTENT_ADDRESSED_INPUT = re.compile(
     r"^(?P<candidate>[0-9a-f]{40})-(?P<role>reviewer|examiner)-"
     r"(?P<digest>[0-9a-f]{64})-input\.json$"
@@ -514,7 +425,7 @@ _CONTENT_ADDRESSED_INPUT = re.compile(
 def load_prepared_at(
     root: Path, role: str, candidate: str, path: Path
 ) -> tuple[Path, dict[str, object], bytes]:
-    """Load one explicitly selected examiner input, content-addressed or legacy."""
+    """Load an explicitly selected role input and bind its native observation."""
     roles_dir = (root / ".nwave/des/logs/roles").resolve()
     try:
         # `des prepare-role` prints an INPUT relative to --repo-root. Resolve
@@ -707,6 +618,17 @@ def load_selected_revision_recovery(
     root: Path, value: int, path: Path
 ) -> tuple[Path, dict[str, object], bytes]:
     """Load one sealed input only while its exact authority binding is current."""
+    roles_dir = (root / ".nwave/des/logs/roles").resolve()
+    try:
+        path = (path if path.is_absolute() else root / path).resolve()
+    except OSError as error:
+        raise ValueError("prepared recovery input is unavailable") from error
+    try:
+        path.relative_to(roles_dir)
+    except ValueError:
+        raise ValueError(
+            "prepared recovery input must be inside the owned roles directory"
+        ) from None
     try:
         raw = path.read_bytes()
         payload = json.loads(raw)
@@ -749,14 +671,97 @@ def load_selected_revision_recovery(
     # binding, before a corrected finding needed its own distinct input).
     legacy = _recovery_path(root, value)
     legacy_binding_only = _recovery_path(root, value, binding_sha256)
-    if path not in {expected, legacy, legacy_binding_only}:
+    if path not in {
+        expected.resolve(),
+        legacy.resolve(),
+        legacy_binding_only.resolve(),
+    }:
         raise ValueError("prepared recovery input path differs from its binding")
     payload["payload_sha256"] = digest
     return path, payload, raw
 
 
+def _host_context(
+    path: Path | None,
+    request: str,
+    authority_locators: list[str],
+    role: str,
+) -> dict[str, object]:
+    """Carry caller-owned context, not a DES judgment of human authorization."""
+    request_sha256 = hashlib.sha256(request.encode("utf-8")).hexdigest()
+    naming: list[str] = []
+    amendments: list[dict[str, str]] = []
+    provenance: dict[str, object] = {
+        "origin": "not_supplied",
+        "authorization_verified_by_des": False,
+    }
+    if path is not None:
+        try:
+            with path.open("rb") as stream:
+                raw = stream.read(65_537)
+            if len(raw) > 65_536:
+                raise ValueError("host context exceeds 65536 bytes")
+            context = _strict_json(raw)
+        except (OSError, ValueError) as error:
+            raise ValueError(
+                f"host context is unavailable or malformed: {error}"
+            ) from error
+        if not isinstance(context, dict) or set(context) != {
+            "request_sha256",
+            "naming",
+            "scope_amendments",
+        }:
+            raise ValueError(
+                "host context must contain request_sha256, naming and scope_amendments"
+            )
+        if context["request_sha256"] != request_sha256:
+            raise ValueError("host context belongs to a different Request")
+        if not isinstance(context["naming"], list) or not all(
+            isinstance(item, str) and item.strip() for item in context["naming"]
+        ):
+            raise ValueError("host context naming must be an array of nonempty text")
+        naming = context["naming"]
+        if not isinstance(context["scope_amendments"], list):
+            raise ValueError("host context scope_amendments must be an array")
+        for item in context["scope_amendments"]:
+            if (
+                not isinstance(item, dict)
+                or set(item) != {"change", "authority", "evidence"}
+                or not all(
+                    isinstance(value, str) and value.strip() for value in item.values()
+                )
+            ):
+                raise ValueError(
+                    "each scope amendment needs change, authority and evidence text"
+                )
+            amendments.append(item)
+        provenance = {
+            "origin": "caller_supplied",
+            "context_sha256": hashlib.sha256(raw).hexdigest(),
+            "authorization_verified_by_des": False,
+        }
+    if role == "examiner":
+        return {
+            "scope_amendments": WITHHELD,
+            "provenance": provenance,
+            "naming": WITHHELD,
+            "authority_locators": WITHHELD,
+        }
+    return {
+        "request_sha256": request_sha256,
+        "scope_amendments": amendments,
+        "naming": naming,
+        "authority_locators": authority_locators,
+        "provenance": provenance,
+    }
+
+
 def prepare(
-    root: Path, role: str, candidate: str, observations: Path | None = None
+    root: Path,
+    role: str,
+    candidate: str,
+    observations: Path | None = None,
+    context: Path | None = None,
 ) -> tuple[str, str]:
     if observations is not None and role != "examiner":
         raise ObservationPacketRefused(
@@ -772,6 +777,9 @@ def prepare(
     stored = _stored_for_candidate(root, candidate, runner)
     if stored is None or not hasattr(stored, "request"):
         raise ValueError("handover unavailable")
+    authority_defect = runner.product_authority_defect(root, stored)
+    if authority_defect is not None:
+        raise SelectedRevisionUnavailable(_from_blocked(authority_defect))
     # The selected revision is judged FIRST: an incomplete or misaligned one
     # must name its own recovery, whatever else about the candidate is true.
     prepared = _prepared(runner, root, stored)
@@ -796,6 +804,19 @@ def prepare(
         "candidate_tree_sha": tree.stdout.strip(),
         "native_evidence_sha256": runner.native_evidence_sha256,
     }
+    common["host_context"] = _host_context(
+        context,
+        stored.request,
+        sorted(
+            {
+                facts.authority_locator
+                for value in stored.values
+                if isinstance(facts := value.authority, DesignFacts)
+                and facts.authority_locator
+            }
+        ),
+        role,
+    )
     changed = runner._changed_paths(root, f"{candidate}^", candidate)
     if changed is None:
         raise ValueError("candidate changed paths are unavailable")
@@ -823,9 +844,30 @@ def prepare(
         radius = radius_record["radius"]
     except (OSError, json.JSONDecodeError, ValueError):
         raise ValueError("candidate-bound native radius is unavailable")
+    # Historical snapshots predate witness retention: unknown, never a pass.
+    # Do not reconstruct from live refs, which may have changed or been released.
+    witnesses = radius_record.get("oracle_witnesses", [None] * len(prepared))
+    if (
+        not isinstance(witnesses, list)
+        or len(witnesses) != len(prepared)
+        or any(
+            witness is not None
+            and (
+                not isinstance(witness, list)
+                or not all(
+                    isinstance(entry, dict) and isinstance(entry.get("current"), bool)
+                    for entry in witness
+                )
+            )
+            for witness in witnesses
+        )
+    ):
+        raise ValueError("candidate-bound oracle witness history is unavailable")
     if role == "examiner":
         owned_paths = runner._request_owned_paths(prepared)
-        selected_acceptance = _projected_selected_acceptance(prepared, owned_paths)
+        selected_acceptance = _projected_selected_acceptance(
+            prepared, owned_paths, witnesses
+        )
         public_observations = None
         provenance = None
         if observations is not None:
@@ -864,16 +906,23 @@ def prepare(
             ),
         ).stdout
         approved = []
-        for _, design in prepared:
-            for path in design.acceptance_paths:
-                observed = runner._git(root, "show", f"{candidate}:{path}")
-                if observed.returncode:
-                    raise ValueError(f"candidate oracle {path} is unavailable")
-                approved.append([path, observed.stdout])
+        for path in runner._prepared_acceptance_paths(prepared):
+            observed = runner._git(root, "show", f"{candidate}:{path}")
+            if observed.returncode:
+                raise ValueError(f"candidate oracle {path} is unavailable")
+            approved.append([path, observed.stdout])
         payload = {
             **common,
             "diff": diff,
-            "values": runner._prepared_facts(prepared),
+            "values": [
+                {
+                    **facts,
+                    "oracle_witness": None if witness is None else list(witness),
+                }
+                for facts, witness in zip(
+                    runner._prepared_facts(prepared), witnesses, strict=True
+                )
+            ],
             **runner._shared(stored),
             "owned_paths": runner._request_owned_paths(prepared),
             "approved_oracles": approved,
@@ -883,16 +932,13 @@ def prepare(
     else:
         raise ValueError("role must be reviewer or examiner")
     raw = _sealed(payload, "role_input")
-    if role == "examiner":
-        digest = hashlib.sha256(raw).hexdigest()
-        path = (
-            root / ".nwave/des/logs/roles" / f"{candidate}-{role}-{digest}-input.json"
-        )
-    else:
-        path = root / ".nwave/des/logs/roles" / f"{candidate}-{role}-input.json"
+    digest = hashlib.sha256(raw).hexdigest()
+    path = root / ".nwave/des/logs/roles" / f"{candidate}-{role}-{digest}-input.json"
     relative = path.relative_to(root).as_posix()
     try:
-        return relative, _write(path, raw)
+        digest = _write(path, raw)
+        write_views(path, raw)
+        return relative, digest
     except ArtifactConflict as conflict:
         raise RoleInputAlreadyPrepared(relative, conflict.digest) from None
 
@@ -919,36 +965,25 @@ def record(
     root: Path,
     turn: RecordedRoleTurn,
     raw: bytes,
-    prepared_input: Path | None = None,
+    prepared_input: Path,
 ) -> tuple[str, str, str]:
     role = turn.role
     candidate = turn.candidate
     provider = turn.provider
     model = turn.model
     session = turn.session
-    if prepared_input is not None:
-        if role != "examiner":
-            raise ValueError("--prepared-input applies only to examiner revisions")
-        _input_path, prepared, input_raw = load_prepared_at(
-            root, role, candidate, prepared_input
-        )
-    elif role == "examiner":
-        try:
-            _input_path, prepared, input_raw = load_prepared(root, role, candidate)
-        except ValueError as error:
-            raise ValueError(
-                "no legacy fixed-name examiner input is available; select the "
-                "exact revision with --prepared-input PATH, using the INPUT "
-                "returned by des prepare-role"
-            ) from error
-    else:
-        _input_path, prepared, input_raw = load_prepared(root, role, candidate)
+    _input_path, prepared, input_raw = load_prepared_at(
+        root, role, candidate, prepared_input
+    )
     structured = json.loads(raw)["structured_output"]
     decode_model_run(
         structured,
         role_id="nw-software-crafter-reviewer"
         if role == "reviewer"
         else "nw-user-examiner",
+        defect_values=tuple(
+            value["observation"] for value in prepared.get("values", [])
+        ),
     )
     outcome = structured["outcome"]
     payload = {
@@ -970,88 +1005,31 @@ def record(
     identity = (
         hashlib.sha256(encoded).hexdigest()
         if role == "examiner"
-        else hashlib.sha256((session or "adapter").encode()).hexdigest()
+        else hashlib.sha256(
+            f"{session or 'adapter'}\0{payload['input_sha256']}".encode()
+        ).hexdigest()
     )
     path = root / ".nwave/des/logs/roles" / f"{candidate}-{role}-{identity}-result.json"
     return outcome, path.relative_to(root).as_posix(), _write(path, encoded)
 
 
 @dataclass(frozen=True)
-class ModelInvocation:
-    """The provider, model, and run to record for one completed role invocation."""
+class HostRoleResult:
+    """Declared host provenance and a decoded result; no execution is implied."""
 
     provider: str
     model: str
+    session: str
     run: ModelRun
-
-
-def record_model(
-    root: Path,
-    role: str,
-    candidate: str,
-    invocation: ModelInvocation,
-    input_path: Path | None = None,
-) -> tuple[str, str, str]:
-    """Persist the adapter's typed result without reconstructing an envelope."""
-    provider, model, run = invocation.provider, invocation.model, invocation.run
-    if input_path is not None:
-        _input_path, prepared, input_raw = _load_and_bind(
-            root, role, candidate, input_path
-        )
-    else:
-        _input_path, prepared, input_raw = load_prepared(root, role, candidate)
-    payload = {
-        "schema_version": 1,
-        "role": role,
-        "candidate_sha": candidate,
-        "input_sha256": hashlib.sha256(input_raw).hexdigest(),
-        "candidate_tree_sha": prepared.get("candidate_tree_sha"),
-        "request_digest": prepared.get("request_digest"),
-        "native_evidence_sha256": prepared.get("native_evidence_sha256"),
-        "actual_provider": provider,
-        "actual_model": model,
-        "outcome": run.outcome.value,
-        "diagnostic": run.diagnostic,
-        "issued": run.issued,
-        "exit_status": run.exit_status,
-        "retry_safe": run.retry_safe,
-    }
-    if run.accounting is not None:
-        payload["accounting"] = {
-            "total_cost_usd": run.accounting.total_cost_usd,
-            "num_turns": run.accounting.num_turns,
-            "input_tokens": run.accounting.input_tokens,
-            "output_tokens": run.accounting.output_tokens,
-            "cache_creation_input_tokens": run.accounting.cache_creation_input_tokens,
-            "cache_read_input_tokens": run.accounting.cache_read_input_tokens,
-            "session_id": run.accounting.session_id,
-        }
-    if run.review_defect is not None:
-        payload["review_defect"] = {
-            "owner": run.review_defect.owner.value,
-            "value": run.review_defect.value,
-        }
-    raw = _sealed(payload, "role_result")
-    identity = hashlib.sha256(raw).hexdigest()
-    path = root / ".nwave/des/logs/roles" / f"{candidate}-{role}-{identity}-result.json"
-    return run.outcome.value, path.relative_to(root).as_posix(), _write(path, raw)
 
 
 def record_selected_revision_recovery(
     root: Path,
     value: int,
-    invocation: ModelInvocation,
+    invocation: HostRoleResult,
     input_path: Path,
 ) -> tuple[str, str, str, str | None, str | None]:
-    """Persist one ATD recovery outcome and its accepted document verbatim.
-
-    The document is canonicalized by its domain owner once, written separately
-    from result metadata, and never reconstructed by the CLI.  Rejections and
-    indeterminate outcomes intentionally have no document path.  ``input_path``
-    mirrors :func:`record_model`'s own optional parameter: when the caller
-    supplies the exact prepared-input path it already validated, that binding
-    is honored rather than silently re-derived.
-    """
+    """Bind a host-supplied ATD recovery result to its exact prepared input."""
     provider, model, run = invocation.provider, invocation.model, invocation.run
     _path, prepared, input_raw = load_selected_revision_recovery(
         root, value, input_path
@@ -1085,13 +1063,11 @@ def record_selected_revision_recovery(
         "value": value,
         "request_digest": prepared["request_digest"],
         "input_sha256": hashlib.sha256(input_raw).hexdigest(),
-        "actual_provider": provider,
-        "actual_model": model,
+        "declared_provider": provider,
+        "declared_model": model,
+        "declared_session_id": invocation.session,
         "outcome": run.outcome.value,
         "diagnostic": run.diagnostic,
-        "issued": run.issued,
-        "exit_status": run.exit_status,
-        "retry_safe": run.retry_safe,
         "distill_document": (
             None
             if document_path is None

@@ -1904,7 +1904,6 @@ _TOP_LEVEL_TEST_ALLOWLIST: frozenset[str] = frozenset(
         "test_opencode_agents_skill_paths.py",
         "test_plugin_home_env_hardening.py",
         "test_python_path_resolution_in_skills.py",
-        "test_reinforce_skill_loading.py",
         # No canonical sibling — keep at top level until migrated.
         "test_docgen.py",
         # Detective-guard self-validation harness (Step 01-01 of

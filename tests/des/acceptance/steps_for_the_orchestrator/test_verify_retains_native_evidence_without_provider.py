@@ -20,7 +20,6 @@ from tests.common.in_process_cli import run_cli_in_process
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     PACKAGE_PARENT,
     accepted_values,
-    asked,
     block,
 )
 
@@ -36,7 +35,13 @@ RED_ORACLE = (
 )
 
 
-def _crafted(root: Path, step, *, verification: list[list[str]] | None = None) -> None:
+def _crafted(
+    root: Path,
+    step,
+    *,
+    verification: list[list[str]] | None = None,
+    public_oracle: dict[str, str] | None = None,
+) -> None:
     """Reach a real crafted state through explicit, pre-existing public steps."""
     assert (
         step(
@@ -70,6 +75,32 @@ def _crafted(root: Path, step, *, verification: list[list[str]] | None = None) -
                             "verification": verification
                             or [[sys.executable, "-m", "pytest", ORACLE]],
                             "oracle_verification_index": 0,
+                            "architectural_tests": {
+                                "applicability": "not_applicable",
+                                "reason": "The fixture has no structural boundary change.",
+                            },
+                            "contract_tests": {
+                                "applicability": "not_applicable",
+                                "reason": "The fixture changes no shared contract.",
+                            },
+                            "prefactoring": {
+                                "applicability": "not_applicable",
+                                "reason": "The fixture requires no preservation move.",
+                            },
+                            "agreement_analysis": {
+                                "applicability": "not_applicable",
+                                "reason": "The fixture has no affected agreement.",
+                            },
+                            "reuse_analysis": {"candidates": []},
+                            "impact_closure": {
+                                "applicability": "not_applicable",
+                                "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                            },
+                            **(
+                                {"public_oracle": public_oracle}
+                                if public_oracle is not None
+                                else {}
+                            ),
                         },
                     }
                 }
@@ -140,7 +171,6 @@ def test_verify_succeeds_without_a_provider_and_retains_the_native_observation(
     root: Path, step, turns: Path, tmp_path: Path
 ) -> None:
     _crafted(root, step)
-    turns_before_verify = asked(turns)
 
     code, out, err = run_cli_in_process(
         ["verify", "--repo-root", str(root)],
@@ -156,7 +186,6 @@ def test_verify_succeeds_without_a_provider_and_retains_the_native_observation(
     # The test setup bought its own explicit turns. Verify bought none: the
     # absence of a launcher is itself a counterexample to accidental review or
     # EXAMINE invocation, rather than a fake-port accounting assertion.
-    assert asked(turns) == turns_before_verify
 
     records = list(
         (root / ".nwave" / "des" / "logs" / "native").glob(f"{candidate}-*.json")

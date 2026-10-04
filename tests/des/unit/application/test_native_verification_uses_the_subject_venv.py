@@ -34,7 +34,6 @@ from des.adapters.driven.codefact.graphify_code_fact_adapter import (
 )
 from des.application.delivery_continuation import (
     DeliveryContinuationRunner,
-    DeliveryOutcome,
     NativeEvidence,
 )
 
@@ -263,47 +262,6 @@ def test_a_candidate_carrying_its_own_environment_is_never_overwritten(
     line = _runtime_line(capsys.readouterr().err)
     assert "subject-venv-link=skipped:candidate-declares-its-own" in line
     assert own.read_text(encoding="utf-8") == "#!/bin/sh\n"
-
-
-def _refusal(candidate: Path, subject: Path) -> DeliveryOutcome:
-    outcome = DeliveryContinuationRunner()._native(
-        candidate, (("nonexistent-tool", "--version"),), subject
-    )
-    assert isinstance(outcome, DeliveryOutcome), outcome
-    assert outcome.failure is not None
-    return outcome
-
-
-def test_the_refusal_promises_the_venv_relative_form_only_where_it_resolves(
-    tmp_path: Path,
-) -> None:
-    """A HOW that names a form which then dies at `execve` is a lying rejection.
-
-    The unconditional sentence promised the venv-relative form through "the link
-    the runner places in the candidate worktree", in a world where the link is
-    not always placed.  The promise is now a function of the measured property.
-    """
-    subject = _subject_with_venv(tmp_path, "SUBJECT-VENV-ANSWERED")
-    candidate = _candidate_tree(tmp_path / "candidate")
-
-    how = _refusal(candidate, subject).failure.how
-
-    assert "python -m pytest" in how
-    assert ".venv/bin/python -m pytest" in how
-
-
-def test_the_refusal_says_so_where_no_venv_relative_interpreter_resolves(
-    tmp_path: Path,
-) -> None:
-    """The other half of the same promise, in the world the link never reached."""
-    subject = tmp_path / "subject"
-    subject.mkdir()
-    candidate = _candidate_tree(tmp_path / "candidate")
-
-    how = _refusal(candidate, subject).failure.how
-
-    assert "python -m pytest" in how
-    assert "carries no `.venv`" in how
 
 
 def _git(root: Path, *args: str) -> None:

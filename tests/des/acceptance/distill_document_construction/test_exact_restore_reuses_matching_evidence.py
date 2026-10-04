@@ -18,7 +18,6 @@ from tests.des.acceptance.distill_document_construction.test_distill_document_co
     _blue_design,
     _call,
     _labels_of,
-    _provider_design,
     _Subject,
     _value_manifest,
 )
@@ -46,47 +45,53 @@ def _restored_design(subject: _Subject, decision: str | None = None) -> None:
     assert code == 0, out + err
 
 
-def _blue_partial_facts() -> dict[str, object]:
-    """Provider facts naming A's own oracle/argv: typed, but no full identity."""
+def _restore_with_changed_purpose(subject: _Subject) -> None:
+    """Restore A's projected facts, but not A's complete semantic identity."""
     import sys
 
-    return {
-        "structured_output": {
-            "outcome": "accepted",
-            "diagnostic": "typed facts",
-            "design_facts": {
-                "targets": [
-                    {
-                        "path": "src/widget.py",
-                        "decision": "EXTEND",
-                        "reason": "Widget already owns color.",
-                    }
-                ],
-                "paradigm": "object_oriented",
-                "decisions": ["Value one keeps color validation at construction."],
-                "oracle": BLUE_ORACLE,
-                "acceptance_supports": ["tests/support/blue_driver.py"],
-                "verification": [[sys.executable, "-m", "pytest", BLUE]],
-                "oracle_verification_index": 0,
-            },
-        }
-    }
+    manifest = _value_manifest()
+    manifest["purpose"] = (
+        "Expose the same public value under a corrected product purpose."
+    )
+    manifest["oracle"] = BLUE_ORACLE
+    manifest["acceptance_supports"] = ["tests/support/blue_driver.py"]
+    manifest["verification"] = [[sys.executable, "-m", "pytest", BLUE]]
+    code, out, err = _call(
+        subject.root, "design", json.dumps(manifest), value=1, replace_current=True
+    )
+    assert code == 0, out + err
+
+
+def _records(subject: _Subject) -> list[str]:
+    """The actual persisted oracle/craft evidence refs, not a provider log."""
+    return subprocess.check_output(
+        [
+            "git",
+            "-C",
+            str(subject.root),
+            "for-each-ref",
+            "--format=%(refname) %(objectname)",
+            "refs/nwave/turns",
+        ],
+        text=True,
+    ).splitlines()
 
 
 @pytest.mark.parametrize(
     "restore",
-    ("full-same-code", "full-target-code-changed", "partial-provider-facts"),
+    ("full-same-code", "full-target-code-changed", "full-semantic-content-changed"),
 )
 def test_exact_design_restore_reuses_evidence_only_when_every_identity_matches(
     tmp_path: Path, restore: str
 ) -> None:
     subject = _Subject(tmp_path, None, shared=False).designed()
     _blue_design(subject)  # complete constructor DESIGN A
+    original_value = json.loads((subject.root / HANDOVER).read_text())["values"][0]
     subject.select("blue")
     assert subject.oracle("blue")[0] == 0 and subject.craft("blue")[0] == 0
     recorded = {"oracle": "recorded", "craft": "recorded"}
     assert _labels_of(subject.state()) == recorded
-    kept, records = _acceptance_keys(subject.root), subject.rows()
+    kept, records = _acceptance_keys(subject.root), _records(subject)
 
     _restored_design(subject, "Intermediate B decision: validate at the boundary.")
     between = _labels_of(subject.state())
@@ -94,7 +99,9 @@ def test_exact_design_restore_reuses_evidence_only_when_every_identity_matches(
         "WHAT: DESIGN B showed A's oracle/craft as current. WHY: B is a "
         "different complete design. HOW: judge currentness by design identity."
     )
-    assert subject.rows() == records, "the intermediate B lost or bought records"
+    assert _records(subject) == records, (
+        "intermediate B altered historical evidence refs"
+    )
     assert _acceptance_keys(subject.root) == kept
 
     if restore == "full-target-code-changed":
@@ -107,25 +114,16 @@ def test_exact_design_restore_reuses_evidence_only_when_every_identity_matches(
             ["git", "-C", str(subject.root), "commit", "-qm", "target code moved"],
             check=True,
         )
-    if restore == "partial-provider-facts":
-        code, out, err = _provider_design(subject, _blue_partial_facts())
-        assert code == 0, out + err
+    if restore == "full-semantic-content-changed":
+        _restore_with_changed_purpose(subject)
     else:
         _blue_design(subject)  # exact restoration of complete DESIGN A
     assert _acceptance_keys(subject.root) == kept, "restoration rewrote B/A selection"
-    spent = len(subject.rows())
 
-    # `oracle=` and `craft=` are two DISTINCT native-git turn-record artifacts,
-    # never the same fact under two names. The oracle record witnesses only
-    # that an APPROVED oracle-authoring turn happened over the selected
-    # acceptance bytes and the selected-revision identity; it carries no claim
-    # about production target bytes, and no claim about a native pytest
-    # execution result (RED/GREEN native evidence is a separate artifact,
-    # produced by `des verify`, never read through `oracle=`/`craft=`). The
-    # craft record witnesses that a crafting turn happened over the mutable
-    # production targets TOGETHER WITH those same acceptance bytes. Moving
-    # only mutable target code therefore moves the craft record's tree but
-    # never the oracle record's: the two arms below diverge on exactly this.
+    # The oracle record binds acceptance bytes and their selected authority.
+    # The craft record additionally binds the mutable target bytes whose
+    # oracle was observed GREEN. Moving only target code therefore makes the
+    # craft record historical, without changing the oracle record's identity.
     labels = _labels_of(subject.state())
     if restore == "full-same-code":
         assert labels == recorded, (
@@ -135,10 +133,9 @@ def test_exact_design_restore_reuses_evidence_only_when_every_identity_matches(
             "are valid again. HOW: judge oracle/craft currentness by the matching "
             "design, revision and tree identities, never by history order."
         )
-        assert subject.rows()[: len(records)] == records
+        assert _records(subject) == records
         code, out, err, _new = subject.oracle("blue")
-        assert "SelectedRevisionRealignmentNeeded" not in out + err
-        assert spent == len(records), "restoration bought provider turns"
+        assert code == 0, out + err
         return
 
     if restore == "full-target-code-changed":
@@ -160,7 +157,7 @@ def test_exact_design_restore_reuses_evidence_only_when_every_identity_matches(
             "mutable targets plus acceptance bytes, and re-run `des craft` "
             "when they move."
         )
-        assert subject.rows()[: len(records)] == records, "old records were not kept"
+        assert _records(subject) == records, "old evidence refs were not kept"
         next_step = subject.state()
         assert "des craft --repo-root" in next_step, (
             f"WHAT: the canonical next step read {next_step!r}. WHY: the "
@@ -176,14 +173,15 @@ def test_exact_design_restore_reuses_evidence_only_when_every_identity_matches(
         f"craft={labels['craft']}. WHY: an identity differs or is unknown, so "
         "old evidence may not be current. HOW: reuse only on full identity match."
     )
-    assert subject.rows()[: len(records)] == records, "old records were not kept"
+    assert _records(subject) == records, "old evidence refs were not kept"
     value = json.loads((subject.root / HANDOVER).read_text())["values"][0]
-    assert "design_semantic_sha256" not in value
-    before = len(subject.rows())
+    assert value["authority"] == original_value["authority"]
+    assert value["design_semantic_sha256"] != original_value["design_semantic_sha256"]
+    before = _records(subject)
     code, out, err, _ = subject.oracle("blue")
     assert code != 0 and "SelectedRevisionRealignmentNeeded" in out + err
     assert "--replace-current" in out + err
-    assert len(subject.rows()) == before, "a misaligned selection bought a turn"
+    assert _records(subject) == before, "a misaligned selection changed evidence refs"
 
 
 def test_externally_weakened_oracle_is_never_relabeled_current_by_verify_refresh(

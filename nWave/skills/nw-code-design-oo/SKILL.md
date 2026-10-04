@@ -14,19 +14,20 @@ runner and hooks own build, test, and commit execution.
 
 ## Object Calisthenics
 
-9 design constraints for clean OO in the hexagonal core (Jeff Bay). Design domain
-and application types to satisfy these; enforced at GREEN+COMMIT by the crafter.
+These calisthenics are design heuristics for the OO core, not universal syntax,
+size or allocation gates. Apply them when they improve demonstrated ownership
+and invariants; native idioms and the concrete public contract govern.
 
 | # | Rule | Design intent | Layer |
 |---|------|---------------|-------|
 | 1 | One indentation level per method | Forces decomposition | Domain, Application |
 | 2 | No `else` keyword | Guard clauses, early returns | Domain, Application |
-| 3 | Wrap all primitives and strings | Value objects at boundaries | Domain |
-| 4 | First-class collections | Domain collection types | Domain |
+| 3 | Distinguish primitives when confusion/invalid state is a real risk | Prefer precise native types or zero-cost wrappers | Domain |
+| 4 | Give collections a domain owner when they own a law | No needless wrapper without a consumer/invariant | Domain |
 | 5 | One dot per line | Law of Demeter | Domain, Application |
 | 6 | No abbreviations | Intention-revealing names | All |
-| 7 | Small entities (<50 LOC classes, <10 LOC methods) | SRP | Domain, Application |
-| 8 | Max 2 instance variables per class | Promotes decomposition | Domain |
+| 7 | Keep cohesive small units | Responsibility clarity, not class/method LOC thresholds | Domain, Application |
+| 8 | Keep state cohesive | No fixed field-count gate or artificial decomposition | Domain |
 | 9 | No getters/setters | Tell, don't ask | Domain, Application |
 
 **Rule 9 relaxation** — getters allowed for: DTOs/response objects at port

@@ -20,6 +20,7 @@ from des.domain.config_merge import VERBOSITY_VALUES
 from .des_config import (
     _GLOBAL_CONFIG_ARTIFACT_TYPE,
     _GLOBAL_CONFIG_VERSIONING,
+    DESConfig,
     _translate_public_attribution,
 )
 
@@ -362,7 +363,19 @@ class ConfigWriter:
             raise ConfigMigrationError(f"{path}: documents must be an object")
         documents = {**documents, wave: {"destination": destination}}
         try:
-            merge_feature_destinations(feature_id, feature_documents=documents)
+            # Validate against the SAME effective cascade the reader resolves
+            # (feature_document_tiers), never the built-in defaults: a valid
+            # override under a declared project template must not be refused
+            # here, and an override the reader would refuse must not land.
+            global_documents, project_documents = DESConfig(
+                cwd=self._feature_config_root()
+            ).feature_document_tiers(feature_id)
+            merge_feature_destinations(
+                feature_id,
+                global_documents=global_documents,
+                project_documents=project_documents,
+                feature_documents=documents,
+            )
         except FeatureDocumentsInvalid as error:
             raise ValueError(f"{error.why}; {error.how}") from error
         self._atomic_write(path, self._json_bytes({**document, "documents": documents}))
@@ -386,7 +399,17 @@ class ConfigWriter:
             feature[wave] = {"destination": template}
             documents["feature"] = feature
             try:
-                merge_feature_destinations("probe", project_documents=documents)
+                # Same reader/writer tier kernel as set_feature_document: the
+                # declared global tier participates exactly as it will when
+                # the template resolves a real feature id.
+                global_documents, _ = DESConfig(
+                    cwd=self._feature_config_root()
+                ).feature_document_tiers("probe")
+                merge_feature_destinations(
+                    "probe",
+                    global_documents=global_documents,
+                    project_documents=documents,
+                )
             except FeatureDocumentsInvalid as error:
                 raise ValueError(f"{error.why}; {error.how}") from error
             document["documents"] = documents

@@ -16,14 +16,15 @@ maps each Dockerfile assertion to its testcontainers equivalent:
 | Dockerfile check | TestPyPIInstall equivalent |
 |-----------------|---------------------------|
 | ``pipx install nwave-ai`` succeeds | ``pipx install nwave-*.whl`` + ``package nwave`` in ``pipx list`` |
-| ``nwave-ai version`` contains expected string | ``pipx list`` contains version from ``pyproject.toml`` |
-| No stale ``nwave`` package alongside ``nwave-ai`` | No duplicate ``nwave`` package outside the pipx venv |
-| ``hook_definitions.py`` in wheel | ``find`` in pipx venv returns path |
-| ``nwave-ai install`` exits 0 | ``python -m nwave_ai.cli install`` via ``PYTHONPATH=/src`` exits 0 |
+| Installed package version matches source | ``pipx list`` contains version from ``pyproject.toml`` |
+| No stale global ``nwave`` package | No ``nwave`` package in the system interpreter |
+| ``hook_definitions.py`` in wheel | Isolated pipx Python imports it and DES from its own venv |
+| Source installer exits 0 | ``python -m nwave_ai.cli install`` via ``PYTHONPATH=/src`` exits 0 |
 
-The ``nwave_ai`` CLI module (``nwave_ai/cli.py``) ships separately from the
-``nwave`` dev wheel.  The installed CLI is exposed via ``PYTHONPATH=/src`` the
-same way ``test_fresh_install.py`` does it.
+The development wheel ships ``nwave_ai``, ``des``, and ``scripts/shared``.
+Import checks use its isolated pipx interpreter without the source checkout on
+``sys.path``. The installer still uses the mounted source tree for framework
+assets; the source-free distribution install is covered by the PyPI-shape suite.
 
 Uses shared helpers from ``tests/e2e/conftest.py``.
 
@@ -34,6 +35,7 @@ Step-Id: 01-01
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -60,6 +62,8 @@ from tests.e2e.conftest import (
 _REPO_ROOT = Path(__file__).parent.parent.parent
 _CONTAINER_SRC = "/src"
 _IMAGE = "python:3.12-slim"
+_PIPX_HOME = "/opt/pipx"
+_PIPX_PYTHON = f"{_PIPX_HOME}/venvs/nwave/bin/python"
 
 
 def _expected_version() -> str:
@@ -95,6 +99,7 @@ def pypi_install_container():
     container.with_volume_mapping(str(_REPO_ROOT), _CONTAINER_SRC, "ro")
     container.with_env("HOME", "/root")
     container.with_env("DEBIAN_FRONTEND", "noninteractive")
+    container.with_env("PIPX_HOME", _PIPX_HOME)
     # Keep container alive while tests run
     container._command = "tail -f /dev/null"
 
@@ -114,7 +119,8 @@ def pypi_install_container():
             "source /opt/nwave-venv/bin/activate && "
             # 2. Runtime deps + local wheel
             "pip install --quiet "
-            "rich typer pydantic 'pydantic-settings' httpx platformdirs pyyaml packaging && "
+            "rich typer pydantic 'pydantic-settings' httpx platformdirs "
+            "pyyaml packaging jsonschema && "
             f"pip install --quiet --no-deps {_CONTAINER_SRC} && "
             # 3+4. pipx (system-level) + build wheel + pipx install
             # pipx must be installed at system level so it can isolate the venv
@@ -126,14 +132,9 @@ def pypi_install_container():
             # 5. Minimal settings.json
             "mkdir -p /root/.claude && "
             'echo \'{"permissions": {}, "hooks": {}}\' > /root/.claude/settings.json && '
-            # 6. Run installer inside the venv.
-            # PYTHONPATH={_CONTAINER_SRC} is REQUIRED: nwave_ai/ is NOT
-            # in the wheel-packages whitelist (pyproject.toml:6 ships only
-            # src/des + scripts/install), so `pip install --no-deps /src`
-            # produces a venv without nwave_ai.  The read-only-write issue
-            # that PYTHONPATH=/src used to trigger was fixed in des_plugin
-            # (commits 010535c1 + 8647a8cc: OSError soft-skip).  Same
-            # pattern as tests/e2e/test_fresh_install.py:140-154.
+            # 6. Run the source installer inside the venv. The dev wheel ships
+            # the CLI, but this fixture uses the checkout's framework assets;
+            # the PyPI-shape suite owns the source-free distribution install.
             "source /opt/nwave-venv/bin/activate && "
             f"export PYTHONPATH={_CONTAINER_SRC} && "
             "echo y | python -m nwave_ai.cli install"
@@ -152,9 +153,9 @@ def pypi_install_container():
 @pytest.mark.e2e
 @require_docker
 class TestPyPIInstall:
-    """5 assertions migrated from Dockerfile.verify-install.
+    """Wheel installation, isolated imports, and source-install deployment.
 
-    Each test method maps to one numbered check in the Dockerfile bash script.
+    Extends the checks migrated from Dockerfile.verify-install.
     """
 
     def test_pipx_install_succeeds(self, pypi_install_container) -> None:
@@ -163,9 +164,8 @@ class TestPyPIInstall:
         Mirrors Dockerfile.verify-install section [1/5]: the pipx package
         version check confirms the wheel installed without error.
 
-        The local wheel is named ``nwave``; the published PyPI package is
-        ``nwave-ai``.  Both produce the same installed asset; the name differs
-        only because ``pyproject.toml[project.name]`` is ``nwave`` in this repo.
+        The local development wheel is named ``nwave``; the published
+        distribution is ``nwave-ai`` and has a separate curated asset layout.
         """
         code, out = exec_in_container(
             pypi_install_container,
@@ -184,8 +184,7 @@ class TestPyPIInstall:
         matches the published pipx package version.
 
         For the local wheel the version is read directly from ``pyproject.toml``
-        (the single source of truth) rather than via the ``nwave-ai`` binary
-        which is not shipped in the local wheel.
+        (the single source of truth) and compared with the pipx registration.
         """
         expected = _expected_version()
         code, out = exec_in_container(
@@ -238,95 +237,73 @@ class TestPyPIInstall:
             f"Output:\n{out}"
         )
 
-    def test_hook_definitions_importable_at_runtime(
+    def test_hook_definitions_importable_from_installed_wheel(
         self, pypi_install_container
     ) -> None:
-        """``hook_definitions`` must be importable at runtime via ``PYTHONPATH``.
+        """The pipx wheel supplies hook definitions and their DES dependency.
 
-        Mirrors Dockerfile.verify-install section [4/5]: the shared
-        hook_definitions module must be accessible to DES hooks at runtime.
-
-        In the dev wheel, ``hook_definitions.py`` is not bundled into the wheel
-        (it lives in ``scripts/shared/`` which is only included in the PyPI
-        distribution wheel built by ``build_dist.py``).  For the dev wheel
-        scenario the module is accessible via ``PYTHONPATH=/src``, which is the
-        same mechanism used by the installed DES hooks.  This test verifies
-        that the module is importable using that mechanism — proving the same
-        runtime contract as the Dockerfile.verify-install section [4/5].
+        Isolated Python ignores PYTHONPATH and the working directory. An
+        import from /src cannot stand in for a missing installed module.
         """
         check_script = (
-            f"PYTHONPATH={_CONTAINER_SRC} "
-            "python3 -c 'import scripts.shared.hook_definitions as hd; "
-            'print("OK:", hd.__file__)\''
+            "import json; from pathlib import Path; "
+            "import des; import scripts.shared.hook_definitions as hd; "
+            "print(json.dumps({"
+            "'hook_definitions': str(Path(hd.__file__).resolve()), "
+            "'des': str(Path(des.__file__).resolve())"
+            "}))"
         )
         code, out = exec_in_container(
             pypi_install_container,
-            ["bash", "-c", check_script],
+            [_PIPX_PYTHON, "-I", "-c", check_script],
         )
         assert code == 0, (
-            "hook_definitions is not importable via PYTHONPATH=/src.\n"
-            "The module must be present at scripts/shared/hook_definitions.py "
-            "in the repo root.\n"
-            f"Output:\n{out}"
+            f"The installed wheel cannot import hook definitions and DES:\n{out}"
         )
-        assert "OK:" in out, (
-            f"Unexpected output from hook_definitions import check.\n{out}"
-        )
+        origins = json.loads(out)
+        venv = Path(_PIPX_PYTHON).parent.parent
+        for module, origin in origins.items():
+            assert Path(origin).is_relative_to(venv), (
+                f"{module} resolved outside the installed pipx environment: {origin}"
+            )
 
     def test_state_delta_assert_state_delta_importable(
         self, pypi_install_container
     ) -> None:
-        """state_delta public surface must be importable after wheel install.
-
-        DoD #9 smoke import: verifies that assert_state_delta ships in the
-        nwave-ai wheel via the force-include map in patch_pyproject.py.
-
-        Uses PYTHONPATH=/src because the dev wheel (nwave) does not
-        package nwave_ai/ directly — same pattern as the other smoke tests.
-        """
+        """The installed wheel exports assert_state_delta without source fallback."""
         check_script = (
-            f"PYTHONPATH={_CONTAINER_SRC} "
-            "python3 -c '"
             "from nwave_ai.state_delta import assert_state_delta; "
-            'print("OK: assert_state_delta importable")\''
+            "assert callable(assert_state_delta)"
         )
         code, out = exec_in_container(
             pypi_install_container,
-            ["bash", "-c", check_script],
+            [_PIPX_PYTHON, "-I", "-c", check_script],
         )
         assert code == 0, (
-            "from nwave_ai.state_delta import assert_state_delta failed.\n"
-            "Ensure nwave_ai/state_delta is in the force-include map of "
-            "scripts/release/patch_pyproject.py.\n"
+            "The installed wheel cannot import nwave_ai.state_delta.assert_state_delta.\n"
             f"Output:\n{out}"
         )
-        assert "OK:" in out, f"Unexpected output from smoke import.\n{out}"
 
     def test_state_delta_path_strategy_importable(self, pypi_install_container) -> None:
         """strategies subpackage must be importable even without hypothesis.
 
-        DoD #9 smoke import: verifies the strategies subpackage ships and
-        that the lazy-hypothesis boundary is preserved — importing the module
-        does not require hypothesis (a dev-dep); only calling path_strategy()
-        would require it.
+        Importing the installed strategies module must not require hypothesis
+        (a dev-dependency); only calling path_strategy() would require it.
         """
         check_script = (
-            f"PYTHONPATH={_CONTAINER_SRC} "
-            "python3 -c '"
+            "from importlib.util import find_spec; "
+            "assert find_spec('hypothesis') is None; "
             "from nwave_ai.state_delta.strategies import path_strategy; "
-            'print("OK: path_strategy importable")\''
+            "assert callable(path_strategy)"
         )
         code, out = exec_in_container(
             pypi_install_container,
-            ["bash", "-c", check_script],
+            [_PIPX_PYTHON, "-I", "-c", check_script],
         )
         assert code == 0, (
-            "from nwave_ai.state_delta.strategies import path_strategy failed.\n"
-            "Ensure nwave_ai/state_delta is in the force-include map and that "
-            "path_strategy.py uses TYPE_CHECKING guard for SearchStrategy.\n"
+            "The installed wheel cannot import path_strategy without hypothesis.\n"
             f"Output:\n{out}"
         )
-        assert "OK:" in out, f"Unexpected output from strategies smoke import.\n{out}"
 
     def test_nwave_ai_install_succeeds(self, pypi_install_container) -> None:
         """``nwave-ai install`` (via dev CLI) must exit 0 and deploy assets.
@@ -334,9 +311,9 @@ class TestPyPIInstall:
         Mirrors Dockerfile.verify-install: the final end-user action after
         ``pipx install nwave-ai`` is running ``nwave-ai install``.
 
-        Because the dev wheel does not ship the ``nwave-ai`` entry point the
-        install CLI is invoked via ``python -m nwave_ai.cli`` with
-        ``PYTHONPATH=/src`` — the same pattern used in ``test_fresh_install.py``.
+        This fixture invokes the source CLI with ``PYTHONPATH=/src`` so it can
+        install the checkout's framework assets. The PyPI-shape suite covers
+        invoking the wheel's entry point without the source tree.
 
         Assertion: at least one DES shim is present in ``~/.claude/bin/`` after
         the install, which confirms the installer ran to completion.

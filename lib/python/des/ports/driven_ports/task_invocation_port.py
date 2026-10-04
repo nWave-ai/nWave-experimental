@@ -14,7 +14,7 @@ permission mode, no output format, no argv.  Those are adapter-local settings.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -142,6 +142,119 @@ class PublicOracle:
 
 
 @dataclass(frozen=True, slots=True)
+class UnassessedDesignDecision:
+    """Historical absence, never an architect's applicability decision."""
+
+    applicability: str = field(default="unassessed", init=False)
+
+
+@dataclass(frozen=True, slots=True)
+class NotApplicable:
+    reason: str
+    applicability: str = field(default="not_applicable", init=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ArchitecturalTestObligation:
+    obligation: str
+    oracle: str
+    verification_index: int
+
+
+@dataclass(frozen=True, slots=True)
+class ContractTestObligation:
+    obligation: str
+    contract: str
+    producer: str
+    consumer: str
+    observation: str
+    oracle: str
+    verification_index: int
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicableArchitecturalTests:
+    obligations: tuple[ArchitecturalTestObligation, ...]
+    applicability: str = field(default="applicable", init=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicableContractTests:
+    obligations: tuple[ContractTestObligation, ...]
+    applicability: str = field(default="applicable", init=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicablePrefactoring:
+    existing_oracle: str
+    move: str
+    preserved_observation: str
+    verification: tuple[tuple[str, ...], ...]
+    acceptance_supports: tuple[str, ...]
+    applicability: str = field(default="applicable", init=False)
+
+
+@dataclass(frozen=True, slots=True)
+class AgreementParty:
+    contract: str
+    role: str
+    locator: str
+    decision: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicableAgreementAnalysis:
+    parties: tuple[AgreementParty, ...]
+    applicability: str = field(default="applicable", init=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicableADR:
+    context: str
+    decision: str
+    alternatives: tuple[str, ...]
+    consequences: tuple[str, ...]
+    status: str
+    applicability: str = field(default="applicable", init=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ReuseCandidate:
+    symbol: str
+    locator: str
+    decision: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReuseAnalysis:
+    """The architect's reuse-versus-create-new analysis; an empty list is a claim."""
+
+    candidates: tuple[ReuseCandidate, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ImpactItem:
+    """One disposition of a thing a change can reach.
+
+    ``kind`` names the role the locator plays, never a language: the closure
+    rule needs the disposition, not an ecosystem's file names.
+    """
+
+    kind: str
+    locator: str
+    decision: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicableImpactClosure:
+    items: tuple[ImpactItem, ...]
+    applicability: str = field(default="applicable", init=False)
+
+
+@dataclass(frozen=True, slots=True)
 class DesignFacts:
     """Provider-neutral, minimum semantic design consumed by the runner."""
 
@@ -161,6 +274,26 @@ class DesignFacts:
     # manifest's public_oracle section, if present. Provider-authored facts and
     # handovers written before this field existed have public_oracle=None.
     public_oracle: PublicOracle | None = None
+    architectural_tests: ApplicableArchitecturalTests | NotApplicable = field(
+        kw_only=True
+    )
+    contract_tests: ApplicableContractTests | NotApplicable = field(kw_only=True)
+    prefactoring: ApplicablePrefactoring | NotApplicable = field(kw_only=True)
+    agreement_analysis: ApplicableAgreementAnalysis | NotApplicable = field(
+        kw_only=True
+    )
+    reuse_analysis: ReuseAnalysis | UnassessedDesignDecision = field(kw_only=True)
+    impact_closure: (
+        ApplicableImpactClosure | NotApplicable | UnassessedDesignDecision
+    ) = field(kw_only=True)
+    adr: ApplicableADR | NotApplicable | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LegacyDesignFacts(DesignFacts):
+    """Readable persisted history requiring explicit complete reconstruction."""
+
+    missing_decisions: tuple[str, ...] = field(kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

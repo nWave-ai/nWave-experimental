@@ -1,6 +1,6 @@
 # nw-test-optimization
 
-Methodology for minimizing test count while maximizing behavioral coverage - lean core composing behavior-counting, anti-patterns, consolidation, budget-gate, paradigm-match, coverage-validation, scope-selection modules
+Methodology for minimizing test count while maximizing behavioral coverage - lean core composing behavior-counting, anti-patterns, consolidation, paradigm-match, coverage-validation, scope-selection modules
 
 **Used by:** [nw-test-optimizer](../agents/nw-test-optimizer.md), [nw-test-optimizer-reviewer](../agents/nw-test-optimizer-reviewer.md)
 

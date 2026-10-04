@@ -22,7 +22,7 @@ Send one closed `OperationalDocumentInput v1` to
 `des devops --repo-root ROOT --feature FEATURE_ID --input -`, or select the
 configured project/epic/slice scope. The provider-free constructor publishes
 the configured authority and adjacent `.operational-facts.json`. Select that
-sidecar explicitly for PO with `des po --operational-facts PATH`; DISTILL then
+sidecar explicitly for the native PO and its DISCUSS manifest; DISTILL then
 uses the selected constraints to build executable observations. Do not invoke
 the retired `--authority`/`--section` role-writer form.
 

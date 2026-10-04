@@ -42,7 +42,10 @@ def test_status_shows_project_precedence_and_actionable_state(
     assert (
         "Retired update_check: ignored (global); no automatic update prompt." in output
     )
-    assert "Documentation density: diagnostic-only (global)" in output
+    assert (
+        "Documentation density: full (explicit_override; after an applicable "
+        "completed wave: local HTML from the completed wave's DES document)." in output
+    )
     assert "Wave-end explanation: smart (global; after completed waves only)." in output
     assert (global_path.read_bytes(), project_path.read_bytes()) == before
 
@@ -87,3 +90,41 @@ def test_attribution_status_respects_project_override_over_machine_preference(
     assert "Preference source: project." in output
     assert "Attribution is active for this repo." in output
     assert (global_path.read_bytes(), project_path.read_bytes()) == before
+
+
+def test_status_keeps_full_density_when_expansion_prompt_is_illegal(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    home = tmp_path / "home"
+    repo = tmp_path / "project"
+    global_path = home / ".nwave" / "config.json"
+    global_path.parent.mkdir(parents=True)
+    repo.mkdir()
+    global_path.write_text(
+        json.dumps(
+            {"documentation": {"density": "full", "expansion_prompt": "verbose"}}
+        )
+    )
+    monkeypatch.setenv("NWAVE_AGENTS_HOME", str(home))
+    monkeypatch.chdir(repo)
+    before = global_path.read_bytes()
+
+    assert main_with_argv(["status"]) == 0
+    output = capsys.readouterr().out
+    assert (
+        "Documentation density: full (explicit_override; after an applicable "
+        "completed wave: local HTML from the completed wave's DES document)." in output
+    ), (
+        "WHAT: illegal expansion prompt hid the effective full density; WHY: "
+        "the local view preference is independent of optional explanation; "
+        f"HOW: resolve and report density on its own (output={output!r})."
+    )
+    assert "Wave-end explanation: invalid" in output and "expansion_prompt" in output, (
+        "WHAT: status did not name the illegal expansion choice separately; "
+        "WHY: the user must repair that field without losing density status; "
+        f"HOW: report expansion_prompt under Wave-end explanation (output={output!r})."
+    )
+    assert global_path.read_bytes() == before, (
+        "WHAT: status changed global configuration; WHY: diagnosis must remain "
+        "read-only; HOW: report both choices without rewriting the file."
+    )

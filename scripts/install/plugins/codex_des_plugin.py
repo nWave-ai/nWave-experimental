@@ -332,7 +332,7 @@ def _session_start_launcher_source(
         '    kwargs = {"stdin": subprocess.DEVNULL}\n'
         "try:\n"
         "    completed = subprocess.run(\n"
-        "        argv, timeout=10, check=False, **kwargs\n"
+        "        argv, timeout=185, check=False, **kwargs\n"
         "    )\n"
         "except subprocess.TimeoutExpired:\n"
         "    sys.exit(0)\n"
@@ -431,7 +431,7 @@ def _build_session_start_hook_entry(launcher_path: Path) -> dict:
             {
                 "type": "command",
                 "command": command,
-                "timeout": 15,
+                "timeout": 200,
                 "statusMessage": "nWave orchestrator affordance...",
             }
         ],

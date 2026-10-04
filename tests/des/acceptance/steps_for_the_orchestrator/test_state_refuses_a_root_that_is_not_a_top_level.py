@@ -13,11 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
-    asked,
-    block,
-    nexts,
-)
+from tests.des.acceptance.steps_for_the_orchestrator.conftest import block, nexts
 
 
 def _refusal(step, turns: Path, path: Path) -> dict[str, str]:
@@ -26,8 +22,7 @@ def _refusal(step, turns: Path, path: Path) -> dict[str, str]:
     assert code == 1, stdout + stderr
     assert rows["DELIVERY-OUTCOME"] == "Refusal", stdout
     assert rows["WHAT"] == "InvalidRepositoryRoot", stdout
-    assert rows["TURNS-BOUGHT"] == "0", stdout
-    assert asked(turns) == []
+
     named = nexts(stdout)
     assert named, stdout
     assert all("des po" not in item for item in named), named

@@ -11,11 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
-    asked,
-    block,
-    nexts,
-)
+from tests.des.acceptance.steps_for_the_orchestrator.conftest import block
 
 
 def too_long_root(anchor: Path) -> Path:
@@ -49,9 +45,7 @@ def test_state_refuses_a_root_path_too_long_to_resolve(step, tmp_path, turns):
         rows["HOW"]
         == "pass the physical repository root as a path the filesystem can resolve"
     )
-    assert rows["TURNS-BOUGHT"] == "0"
-    assert nexts(stdout) == ["des state --repo-root <root> -- after the HOW above"]
+
     # The raw path is never echoed: no multi-kilobyte terminal line.
     assert str(raw) not in stdout + stderr
     assert all(len(line) < 1000 for line in stdout.splitlines())
-    assert asked(turns) == []

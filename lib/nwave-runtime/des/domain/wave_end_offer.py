@@ -3,8 +3,9 @@
 The assistant supplies the named wave at entry; this module validates that
 the name belongs to the installed wave set. The actual completion decision is
 made by the conversation host at the end, from the wave's result. This pure
-function maps (installed wave, resolved documentation preference) to a frozen
-:class:`WaveEndOffer`; the CLI shell prints it.
+function maps (installed wave, resolved expansion preference) to a frozen
+:class:`WaveEndOffer`; the CLI shell prints it. Density is carried separately
+by wave entry and never changes the expansion offer or required checks.
 
 The carrier is SPLIT, because the two audiences are different:
 
@@ -484,8 +485,10 @@ def _resolved_once_row() -> str:
         f"{INTERNAL_MARKER}-RESOLVED-ONCE: the preference on the mode row above "
         "was resolved here once, for this whole wave, from the configuration "
         "named on the GLOBAL-CONFIG row above. Do not read that configuration "
-        "again, do not run des wave-entry again, and invoke no wave-end step: "
-        "none exists."
+        "again, do not rerun the entry preference query, and invoke no "
+        "wave-end step to decide the expansion offer: none exists. The "
+        "separate des wave-entry --complete view effect consumes this captured "
+        "entry result only after the host confirms whole-wave completion."
     )
 
 

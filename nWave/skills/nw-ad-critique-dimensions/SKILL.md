@@ -13,27 +13,25 @@ Load when performing peer review of acceptance tests (during *handoff-develop).
 
 **Pattern**: Only successful scenarios, error paths missing.
 
-Detection: Count success vs error scenarios. Error should be at least 40%. Missing coverage examples: login success but no invalid password | Payment processed but no decline/timeout | Search results but no empty/error cases.
+Detection: compare promised distinguishable failure/recovery outcomes with actual falsifiers. No universal error-scenario percentage; missing a promised decline/timeout/refusal/preservation outcome is the defect.
 
 Severity: blocker (production error handling untested).
 
-## Dimension 2: GWT Format Compliance
+## Dimension 2: Business observation structure
 
-**Pattern**: Scenarios violate Given-When-Then structure.
-
-Violations: Missing Given context | Multiple When actions (split into separate scenarios) | Then with technical assertions instead of business outcomes. Each scenario: Given (context), When (single action), Then (observable outcome).
-
-Severity: high (tests not behavior-driven).
+Verify admitted context, business stimulus and observable outcome/falsifier.
+Given-When-Then is useful vocabulary, not mandatory Gherkin syntax or a required
+framework. Stateful journeys may involve multiple operations when the transition
+contract needs them. Severity follows a concrete ambiguous or absent observation.
 
 ## Dimension 3: Business Language Purity
 
-**Pattern**: Technical terms leak into acceptance tests.
-
-Flag: database, API, HTTP, REST, JSON, classes, methods, services, controllers, status codes (500, 404), infrastructure (Redis, Kafka, Lambda).
-
-Business alternatives: "Customer data is stored" not "Database persists record" | "Order is confirmed" not "API returns 200 OK" | "Payment fails" not "Gateway throws exception"
-
-Severity: high (tests coupled to implementation).
+**Pattern**: Incidental implementation choices replace business observations.
+Flag private classes, representations or plumbing asserted without a deliberate
+contract. Native business helpers hide technical drivers where helpful.
+HTTP/JSON/storage terms are valid when they are the user's actual public
+protocol or promised domain, not merely forbidden words. Severity: high for
+real coupling that prevents an equivalent implementation.
 
 ## Dimension 4: Coverage Completeness
 
@@ -96,19 +94,12 @@ Severity: high (tests coupled to implementation break on refactoring).
 
 **Pattern**: Scenarios exist without traceability to upstream wave artifacts.
 
-Two mandatory traceability checks:
-
-**Check A — Story-to-Scenario mapping**:
-1. Read `docs/feature/{feature-id}/discuss/user-stories.md`
-2. Extract ALL story IDs (e.g., US-01, US-02)
-3. For EACH story ID, verify at least one scenario references it (via tag or comment)
-4. Flag EVERY story ID with zero matching scenarios as BLOCKER
-
-**Check B — Environment-to-Scenario mapping**:
-1. Read `docs/feature/{feature-id}/devops/environments.yaml`
-2. If missing, use defaults: `clean`, `with-pre-commit`, `with-stale-config`
-3. For EACH environment, verify at least one walking skeleton includes a Given clause referencing that environment's preconditions
-4. Flag EVERY environment with zero matching Given clauses as HIGH
+Map the original agreed value and authorized scope amendments to selected
+criteria, native tests/properties and falsifiers per `nw-at-completeness-check`.
+Use actual configured authority destinations and bound headings, not hardcoded
+story/environment filenames, tags or guessed defaults. Environments matter
+only when selected authority promises a distinguishable observation there.
+Do not infer missing coverage from absent tags; inspect the actual behavior.
 
 **What this dimension does NOT cover**:
 - KPI measurability — that is PO-reviewer scope during DELIVER post-merge gate
@@ -198,8 +189,9 @@ Does the WS implementation match the port-class defaults from the Architecture o
 
 ### 9b: Adapter Integration Coverage
 
-Does every driven adapter have a real I/O integration test?
-- Missing adapter test: BLOCKER regardless of port treatment
+Require real I/O integration for the promised adapter boundary/law when a fake
+cannot distinguish it. Do not demand a separate test for every adapter merely
+by inventory count; reuse adequate real observations.
 
 ### 9c: Walking Skeleton Fixture Tier
 

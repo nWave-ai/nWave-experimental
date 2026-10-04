@@ -126,7 +126,6 @@ from scripts.install.attribution_utils import (  # noqa: E402
     migrate_legacy_settings_attribution,
     read_global_config,
     write_attribution_preference,
-    write_global_config,
 )
 from scripts.shared.install_paths import nwave_config_dir  # noqa: E402
 from scripts.shared.version import VersionResolutionError  # noqa: E402
@@ -138,13 +137,93 @@ def _refuse_version_resolution(exc: VersionResolutionError) -> int:
     return 1
 
 
-def _handle_update(args: list[str]) -> int:
+def _handle_update(args: list[str], *, wrapper_registration=None, replacement_lease=None) -> int:
     """Observe releases or apply an owner-bound update with explicit consent."""
+    if args[:2] == ["consent", "controlled-launch"]:
+        return _handle_controlled_launch_consent(args[2:])
+    if args[:1] == ["sessions"]:
+        return _handle_update_sessions(args[1:])
+    if len(args) in (3, 4) and args[0] == "consent":
+        permission, choice = args[1:3]
+        confirmation = args[3:]
+        if (
+            permission not in ("check", "install")
+            or choice not in ("on", "off")
+            or confirmation not in ([], [_CONFIRM_OLD_SESSIONS_CLOSED])
+            or (confirmation and (permission, choice) != ("install", "on"))
+        ):
+            print(
+                "Usage: nwave-ai update consent <check|install> <on|off> "
+                f"(install on: {_CONFIRM_OLD_SESSIONS_CLOSED} the first time)",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            config_dir = _require_mutating_config_dir()
+        except ValueError as error:
+            return _refuse_mutating_location(error)
+        from des.adapters.driven.config.config_writer import ConfigWriter
+
+        if (permission, choice) == ("install", "on"):
+            refused = _record_old_sessions_closed(
+                config_dir.parent, confirmed=bool(confirmation)
+            )
+            if refused:
+                return refused
+
+        def set_permission(document: dict) -> None:
+            previous = document.get("updates")
+            updates = dict(previous) if isinstance(previous, dict) else {}
+            updates["check"] = updates.get("check") is True
+            updates["install"] = updates.get("install") is True
+            updates[permission] = choice == "on"
+            document["updates"] = updates
+
+        try:
+            ConfigWriter(home_dir=config_dir.parent, repo_root=Path.cwd()).update_global(
+                set_permission
+            )
+        except Exception as error:
+            print(
+                f"WHAT: update consent was not written. WHY: {error}. "
+                "HOW: repair the selected global config and retry the consent command.",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"Automatic update {permission}: {choice}.")
+        if (permission, choice) == ("install", "on"):
+            from des.adapters.driven.activity.session_registry import ATTESTATION_RISK
+
+            print(f"Residual risk: {ATTESTATION_RISK}.")
+        return 0
+
     is_check = args == ["--check"]
     is_apply = len(args) == 3 and args[:2] == ["--yes", "--root"]
-    if not is_check and not is_apply:
-        print("Usage: nwave-ai update --check | --yes --root PATH", file=sys.stderr)
+    is_recovery = args == ["--recover", "--yes", "--confirm-stopped"]
+    if not is_check and not is_apply and not is_recovery:
+        print(
+            "Usage: nwave-ai update --check | --yes --root PATH | "
+            "--recover --yes --confirm-stopped | "
+            "consent <check|install> <on|off> | sessions [close KEY --confirm-closed]",
+            file=sys.stderr,
+        )
         return 1
+
+    from nwave_ai.update.service import UpdateService
+
+    if is_recovery:
+        print(
+            "Recovery acknowledgement: all previous updater/installer descendants "
+            "have stopped and affected host sessions are closed.",
+            flush=True,
+        )
+        outcome = UpdateService().recover(
+            on_stage=lambda stage, state: print(f"{stage}: {state}", flush=True),
+        )
+        return _report_update_outcome(outcome)
+    pending = UpdateService.pending_update()
+    if pending is not None:
+        return _report_update_outcome(pending)
 
     try:
         # This is the only current-version read: product identity remains owned
@@ -156,11 +235,42 @@ def _handle_update(args: list[str]) -> int:
     from packaging.version import InvalidVersion, Version
 
     from nwave_ai.update import ReleaseDiscoveryRefusal, discover_latest_stable_release
-    from nwave_ai.update.service import UpdateService
 
     try:
-        latest_version = discover_latest_stable_release()
         parsed_current_version = Version(current_version)
+        if (
+            parsed_current_version.is_prerelease
+            or parsed_current_version.is_devrelease
+            or parsed_current_version.local
+        ):
+            print(
+                "WHAT: the selected beta or dev release has no supported stable update path. "
+                "WHY: a PyPI stable release is a different channel and could remove "
+                "the selected assets. HOW: use the selected source or release channel's "
+                "explicit install instructions.",
+                file=sys.stderr,
+            )
+            return 1
+        if is_check:
+            install = read_global_config(_get_config_dir()).get("install")
+            if isinstance(install, dict) and install.get("dev_mode") is True:
+                print(
+                    "WHAT: the selected --dev install has no supported stable update check. "
+                    "WHY: PyPI stable release availability does not establish compatible "
+                    "private dev assets. HOW: inspect the source checkout's release "
+                    "route and reinstall with --dev for the selected host.",
+                    file=sys.stderr,
+                )
+                return 1
+        origin = UpdateService.release_origin()
+        if origin is not None:
+            print(
+                f"WHAT: update stopped at {origin.failed_stage}. WHY: {origin.cause}. "
+                f"Command: `no process`. HOW: {origin.recovery}.",
+                file=sys.stderr,
+            )
+            return 1
+        latest_version = discover_latest_stable_release()
     except ReleaseDiscoveryRefusal as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -184,29 +294,198 @@ def _handle_update(args: list[str]) -> int:
         print(f"Status: {state}")
         return 0
 
-    outcome = UpdateService().apply(
-        current_version=parsed_current_version,
-        discovered_version=latest_version,
-        root=Path(args[2]),
-    )
+    from nwave_ai.update.activity import ReplacementLease
+
+    # The exclusive update lock is taken only after every read-only preflight
+    # and held until the last stage ends, so session registration waits for
+    # the whole replacement and a refused preflight writes nothing.
+    lease = replacement_lease or ReplacementLease(wrapper_registration)
+    try:
+        outcome = UpdateService().apply(
+            current_version=parsed_current_version,
+            discovered_version=latest_version,
+            root=Path(args[2]),
+            on_stage=lambda stage, state: print(f"{stage}: {state}", flush=True),
+            before_replacement=lease.before_replacement,
+        )
+    finally:
+        lease.close()
+    return _report_update_outcome(outcome)
+
+
+def _report_update_outcome(outcome) -> int:
     if outcome.state == "up-to-date":
-        print(f"nwave-ai is up-to-date ({current_version}).")
+        print(f"nwave-ai is up-to-date ({outcome.version}).")
         return 0
     if outcome.state == "refused":
         stage = outcome.failed_stage or "package-owner"
         command = " ".join(outcome.command) if outcome.command else "no process"
+        recovery = outcome.recovery or "verify the running package owner and retry explicitly"
         print(
             f"WHAT: update stopped at {stage}. WHY: {outcome.cause}. "
-            f"HOW: repair the owner-bound command `{command}` and retry.",
+            f"Command: `{command}`. HOW: {recovery}.",
             file=sys.stderr,
         )
         return 1
 
-    for stage in outcome.completed_stages:
-        print(f"{stage}: completed")
     # ``succeeded`` is the only state that carries a completed target version.
     print(f"Updated nwave-ai to {outcome.version}.")
     return 0
+
+
+_CONFIRM_OLD_SESSIONS_CLOSED = "--confirm-old-sessions-closed"
+
+
+def _record_old_sessions_closed(agents_home: Path, *, confirmed: bool) -> int:
+    """Require, then record, the one-time closure attestation for old sessions.
+
+    Returns 0 when the acknowledgement is recorded (now or before), else the
+    exit code of a refusal that wrote nothing.
+    """
+    from des.adapters.driven.activity.session_registry import (
+        ATTESTATION_RISK,
+        SessionActivityRegistry,
+    )
+
+    registry = SessionActivityRegistry(agents_home)
+    if not registry.legacy_acknowledgement_problem():
+        return 0
+    if not confirmed:
+        print(
+            "WHAT: automatic installation consent was not written. "
+            "WHY: sessions that started before the global activity registry are not "
+            "recorded, so an update could replace the installation during their wave; "
+            f"{ATTESTATION_RISK}. "
+            "HOW: close every host session that uses this installation, "
+            f"then run `nwave-ai update consent install on {_CONFIRM_OLD_SESSIONS_CLOSED}`.",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        with registry.exclusive(10.0) as acquired:
+            if not acquired:
+                print(
+                    "WHAT: automatic installation consent was not written. WHY: an update "
+                    f"holds {registry.lock_file}. HOW: wait for it to finish, then retry.",
+                    file=sys.stderr,
+                )
+                return 1
+            registry.acknowledge_legacy_sessions_closed()
+    except OSError as exc:
+        print(
+            f"WHAT: automatic installation consent was not written. WHY: {exc}. "
+            "HOW: repair the selected agents home's .nwave/activity directory and retry.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+def _handle_controlled_launch_consent(args: list[str]) -> int:
+    if args not in (["on", "--confirm-controlled-launch"], ["off"]):
+        print("Usage: nwave-ai update consent controlled-launch on --confirm-controlled-launch | off", file=sys.stderr)
+        return 1
+    try:
+        config_dir = _require_mutating_config_dir()
+        from des.adapters.driven.config.config_writer import ConfigWriter
+
+        def set_commitment(document: dict) -> None:
+            previous = document.get("updates")
+            updates = dict(previous) if isinstance(previous, dict) else {}
+            updates["controlled_launch"] = args[0] == "on"
+            document["updates"] = updates
+
+        ConfigWriter(home_dir=config_dir.parent, repo_root=Path.cwd()).update_global(set_commitment)
+    except Exception as exc:
+        print(f"Controlled-launch commitment was not written: {exc}", file=sys.stderr)
+        return 1
+    print(f"Controlled-launch commitment: {args[0]}.")
+    if args[0] == "on":
+        print("You confirm that future sessions sharing this package use `nwave-ai run HOST -- ARGS`. Direct launches, disabled hooks and detached work are not covered: close that work before allowing automatic replacement.")
+    return 0
+
+
+def _handle_run(args: list[str]) -> int:
+    if len(args) < 2 or args[1] != "--":
+        print("Usage: nwave-ai run <claude-code|codex|opencode|copilot> -- [HOST_ARGS ...]", file=sys.stderr)
+        return 1
+    from nwave_ai.update.managed import run_host
+
+    return run_host(args[0], args[2:], update=_handle_update)
+
+
+def _handle_update_sessions(args: list[str]) -> int:
+    """List registered host sessions, or close one the operator attests ended."""
+    from des.adapters.driven.activity.session_registry import SessionActivityRegistry
+
+    registry = SessionActivityRegistry.selected()
+    if registry is None:
+        print(
+            "WHAT: the activity registry was not read. WHY: the selected agents home is "
+            "invalid. HOW: set NWAVE_AGENTS_HOME to an absolute path or unset it, then retry.",
+            file=sys.stderr,
+        )
+        return 1
+    from nwave_ai.update.package_activity import PackageActivityLease
+
+    package = PackageActivityLease.for_interpreter()
+    registries = [registry] + ([package.registry] if package is not None else [])
+    if not args:
+        try:
+            records = tuple(record for current in registries for record in current.sessions())
+        except OSError as exc:
+            print(
+                f"WHAT: the activity registry was not read. WHY: {exc}. "
+                f"HOW: repair {registry.root} and retry.",
+                file=sys.stderr,
+            )
+            return 1
+        problem = registry.legacy_acknowledgement_problem()
+        print(f"Older-session confirmation: {problem if problem else 'recorded'}.")
+        if not records:
+            print("Registered sessions: none.")
+        for record in {record.key: record for record in records}.values():
+            if record.problem:
+                print(f"{record.key}  UNKNOWN  {record.problem}")
+            else:
+                print(f"{record.key}  {record.host}  {record.cwd}  since {record.registered_at}")
+        return 0
+    if len(args) == 3 and args[0] == "close" and args[2] == "--confirm-closed":
+        try:
+            if package is not None and not package.acquire(exclusive=True):
+                print("No record closed: a controlled host or updater still uses this package.", file=sys.stderr)
+                return 1
+            closed = False
+            for current in registries:
+                with current.exclusive(10.0) as acquired:
+                    if not acquired:
+                        print(f"No record closed in {current.root}: its update lock is busy.", file=sys.stderr)
+                        return 1
+                    closed = current.close_session(args[1]) or closed
+        except OSError as exc:
+            print(
+                f"WHAT: no session record was closed. WHY: {exc}. "
+                f"HOW: repair {registry.root} and retry.",
+                file=sys.stderr,
+            )
+            return 1
+        finally:
+            if package is not None:
+                package.close()
+        if not closed:
+            print(
+                f"WHAT: no registered session is named {args[1]!r}. WHY: the key does not "
+                "match a registry entry. HOW: run `nwave-ai update sessions` and copy the key.",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"Closed session record {args[1]} on your confirmation that it ended.")
+        return 0
+    print(
+        "Usage: nwave-ai update sessions [close KEY --confirm-closed]",
+        file=sys.stderr,
+    )
+    return 1
 
 
 def _get_project_root() -> Path:
@@ -332,6 +611,10 @@ def _handle_install(args: list[str]) -> int:
     if "--help" in args or "-h" in args:
         return _run_script("install_nwave.py", ["--help"])
 
+    # The updater synchronizes installed assets without reenrolling project
+    # guidance that the project owner may have declined.
+    sync_project_guidance = "--no-project-guidance" not in args
+    args = [arg for arg in args if arg != "--no-project-guidance"]
     target, args, error = _extract_target_flag(args)
     if error is not None:
         print(f"nwave-ai: {error}", file=sys.stderr)
@@ -417,7 +700,7 @@ def _handle_install(args: list[str]) -> int:
     # by the preflight installer above (same `--platform` override, same
     # environment, resolved before any write), so this reads the decision the
     # run actually made rather than re-deriving it from post-install state.
-    if "claude_code" in ownership_preflight.effective_target_platforms:
+    if sync_project_guidance and "claude_code" in ownership_preflight.effective_target_platforms:
         try:
             _sync_project_claude_section(
                 "enable", caller_project_root, assume_yes=non_interactive
@@ -972,6 +1255,13 @@ def _print_usage(version: str) -> int:
     )
     print("  completion     Print a shell-completion script (bash/zsh)")
     print("  update --check Discover the latest stable public release")
+    print("  update consent <check|install> <on|off> Set separate startup permissions")
+    print("        install on requires --confirm-old-sessions-closed the first time;")
+    print("        sessions started before the activity registry rest on that confirmation")
+    print("  update sessions [close KEY --confirm-closed] List or close registered sessions")
+    print("  update --recover --yes --confirm-stopped Resume verified incomplete sync")
+    print("  update consent controlled-launch on --confirm-controlled-launch | off")
+    print("  run HOST -- ARGS  Controlled startup for claude-code, codex, opencode, copilot")
     print("  version        Show nwave-ai version")
     print()
     print("Install options:")
@@ -1200,13 +1490,28 @@ def _handle_mode(args: list[str]) -> int:
         config_dir = _require_mutating_config_dir()
     except ValueError as error:
         return _refuse_mutating_location(error)
-    config = read_global_config(config_dir)
-    activation = config.get("activation", {})
-    if not isinstance(activation, dict):
-        activation = {}
-    activation["mode"] = args[0]
-    config["activation"] = activation
-    write_global_config(config_dir, config)
+    from des.adapters.driven.config.config_writer import (
+        ConfigMigrationError,
+        ConfigWriter,
+    )
+
+    def set_mode(document: dict) -> None:
+        activation = document.get("activation")
+        activation = dict(activation) if isinstance(activation, dict) else {}
+        activation["mode"] = args[0]
+        document["activation"] = activation
+
+    try:
+        ConfigWriter(home_dir=config_dir.parent, repo_root=Path.cwd()).update_global(
+            set_mode
+        )
+    except ConfigMigrationError as error:
+        print(
+            f"WHAT: activation mode was not written. WHY: {error}. "
+            "HOW: repair the named configuration file and retry.",
+            file=sys.stderr,
+        )
+        return 1
     print(f"Global nWave activation mode set to '{args[0]}'.")
     return 0
 
@@ -1377,6 +1682,8 @@ def main() -> int:
         return _handle_doctor(sys.argv[2:])
     elif command == "update":
         return _handle_update(sys.argv[2:])
+    elif command == "run":
+        return _handle_run(sys.argv[2:])
     elif command == "outcomes":
         from nwave_ai.outcomes.cli import handle_outcomes
 

@@ -26,6 +26,8 @@ Applies the Refactoring Priority Premise (RPP) — 6-level hierarchy L1 Readabil
 3. **Run the test suite exactly ONCE**, at the very end, after all L1-L6 edits.
 4. **If RED after the batch**: diagnose the breakage and fix the **production** code. Do NOT modify tests to make them pass. A test that must change to pass means either (a) the refactor altered observable behavior — revert that transformation — or (b) the test encoded an implementation detail rather than behavior — flag this to the user explicitly before touching it. Tests changing during a refactor is a signal, not a step.
 
+**Inside a managed delivery** (a crafter changing one ready batch): the batch is limited to the batch's declared mutable production targets and its design obligations; never widen to a module, project, other file or test. The "test suite" run once at the end is the host-supplied verification command. A smell outside the declared targets, or a needed test change, is reported to its owner instead of edited. The scope, context-file and configuration defaults below apply only to a standalone `/nw-refactor` request.
+
 **Legacy incremental variant** (opt-in only): the `nw-progressive-refactoring` skill documents the incremental L1→test→L2→test cycle. It is NOT the default — use it only when explicitly requested. Anchor: `feedback_refactor_batch_when_test_suite_slow_2026_05_19` (the prior "only batch when suite slow" conditional is removed — batch is now unconditional).
 
 ## Context Files Required

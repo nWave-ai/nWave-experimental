@@ -16,7 +16,7 @@ Author caveman-curated: dry, declarative, tables and compact one-line bold-lead 
 
 1. **House style** — every created/modified asset is caveman-curated (above).
 2. **Reasoning-mandate injection** — every created/modified agent gets the `## Reasoning Mandate` block inserted verbatim. Depth from rigor, never padding.
-4. **Opportunistic retro-compression (measured-gain ≥20% or skip)** — on MODIFY: measure prose share first. Projected reduction ≥20% → compress with hard invariants (pre-existing blocks/tables byte-identical, `### Example N:` + NORMATIVE preserved, content-pin tests green). Below 20% → SKIP and report the measurement. Hash-pinned skills (md5 baseline in `tests/build/unit/test_skill_restructuring.py`): never silently edit; REPORT the required hash bump, do not bump it yourself.
+4. **Opportunistic retro-compression (measured-gain ≥20% or skip)** — on MODIFY, measure prose share and compress only for meaningful reduction while preserving deliberate public/machine contracts. Preserve `### Example N:` and normative machine content where consumed. Incidental wording/hash/content-pin tests are not authority: remove them rather than repin changed prose. Verify reachable role/skill references, constructor/generated contract consistency and actual rendered/installed consumer behavior; never bump a hash to sell semantic assurance.
 
 ## Reasoning Mandate block (inject verbatim)
 

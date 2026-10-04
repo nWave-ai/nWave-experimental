@@ -20,6 +20,17 @@ high-uncertainty socio-technical/business boundary; or explicit
 
 **Skip for**: stable, simple targets where none of the triggers above fire.
 
+**Role application**: apply only the steps inside the invoking role's owned lane.
+"Document" and "modify the architecture" mean supplying stressor rows and
+resilience rationale as semantic inputs to that role's DES-constructed design or
+operational authority; never edit a brief, ADR or Markdown file directly. Resilience
+pattern and infrastructure selection (Step 5, contagion fixes) belongs to the
+role that owns that infrastructure. A domain-only role contributes the Algebra
+Bridge rows for its own observations — preserved observation, allowed
+degradation, forbidden outcome — and returns any needed pattern or
+infrastructure change to its owner instead of choosing it. A reviewer judges
+these rows within its review lane and reports gaps as findings; it authors none.
+
 ### Stressor derivation (mechanical entry path)
 
 A stressor is the negation of a declared assumption. Derive the stressor
@@ -71,7 +82,7 @@ Generate a second, unseen stressor set. Apply to both naive and modified. Modifi
 ## Practical Tools
 
 ### Incidence Matrix
-Rows: stressors. Columns: components. Mark affected cells. Reveals vulnerable components (high column count), high-impact stressors (high row count) and coupling indicators. Not a new persisted artifact — a working aid folded into the existing architecture brief (Step 5's heuristic 7).
+Rows: stressors. Columns: components. Mark affected cells. Reveals vulnerable components (high column count), high-impact stressors (high row count) and coupling indicators. Not a new persisted artifact — a working aid folded into the existing design authority (heuristic 7).
 
 ### Adjacency Matrix
 Rows/columns: components. Mark direct connections. Coupling ratio = K/N is a relative indicator across this system's own stressor runs, not a universal threshold — compare naive vs modified architecture, never against a fixed cross-system number.
@@ -90,7 +101,7 @@ Select stressor, walk behavior step-by-step with team, identify attractors/resid
 4. **Minimize connections**: default loosely-coupled; tight only when essential
 5. **Design for business model attractor**: how revenue/cost constraints shape behavior under stress
 6. **Train through iteration**: iterative stress-test-modify beats upfront planning
-7. **Document stress context**: the existing architecture brief (ADR-SSOT-002 §6a) carries stressor analysis and resilience rationale — no separate stressor field or matrix artifact
+7. **Document stress context**: the existing DES-constructed design authority (ADR-SSOT-002 §6a) carries stressor analysis and resilience rationale, supplied through the owning role's constructor input — no separate stressor field or matrix artifact
 
 ## Integration with Other Practices
 

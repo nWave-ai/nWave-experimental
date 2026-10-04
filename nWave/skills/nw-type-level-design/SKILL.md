@@ -42,29 +42,29 @@ and untrusted input at their owning runtime boundary.
    constructor, or a result carrying a reason and validated value. Do not
    replace domain names with a clever encoding.
 3. For a phase or capability, name the finite stable states and each permitted
-   transition. Expose operations only through the state or evidence they need;
-   do not let clients forge a later phase through a public raw constructor.
+   transition. Expose operations only through the state or evidence they need:
+   an operation that may only receive validated input takes the validator's
+   evidence type as its parameter. Where the repository runs a checker,
+   re-checking inside the operation instead keeps the rule at runtime but
+   leaves the checker nothing to reject. Do not let clients forge a later
+   phase through a public raw constructor.
 4. Sketch one ordinary accepted call and one rejected or refused call. The
    accepted call must remain more legible than a value-level validation loop.
+   When implementing, demonstrate both as `nw-certainty-by-construction`
+   step 5 requires.
 5. State bypasses and residual obligations: deserialization, reflection,
    casts, database writers, foreign code, process failure, and other systems
    may remain outside the representation.
 6. Keep evidence through the boundary. Return a validated value, capability,
    or explicit outcome rather than a Boolean that discards what the next step
-   needs.
+   needs. A Boolean validator left beside the evidence path returns that
+   evidence instead, or is removed.
 
 ## Calibrate the guarantee
 
-| Environment | Honest claim |
-| --- | --- |
-| Proof assistant | The property follows from checked definitions and stated axioms. |
-| Strong static language | Typed paths reject modeled invalid calls; casts, reflection, serialization, and foreign writers remain boundaries. |
-| Mainstream OO or FP language | Construction is centralized and misuse is reduced; the compiler may not prove the predicate. |
-| Dynamic language, including Python | Runtime constructors, validators, and checks protect controlled boundaries; every writer must preserve the rule. |
-
-Do not call a wrapper, annotation, or nominal type a proof when the runtime can
-construct the same invalid value. Do not claim a static model guarantees
-external, temporal, concurrent, authorization, or persistence behavior.
+State the claim at the strength of the matching row of
+`nw-certainty-by-construction`'s calibration table, chosen by the checker the
+repository actually runs.
 
 ## State and evidence boundaries
 

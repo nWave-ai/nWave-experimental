@@ -232,7 +232,7 @@ _ROOT_SEGMENT = st.text(
 
 @given(segment=_ROOT_SEGMENT)
 @settings(deadline=None)
-def test_sandbox_home_never_resolves_under_the_real_home(
+def test_sandbox_home_is_derived_from_the_callers_root(
     tmp_path_factory: pytest.TempPathFactory, segment: str
 ) -> None:
     """The install target is a throwaway dir, never the caller's real home.
@@ -248,9 +248,12 @@ def test_sandbox_home_never_resolves_under_the_real_home(
 
     assert home is not None, "sandbox_home must return a usable path"
     assert home != Path.home()
-    assert Path.home() not in home.parents, (
-        f"sandbox_home({root!r}) resolved to {home!r}, which is nested "
-        "under the real home -- it must be derived from the caller's root."
+    # Derived from the caller's root, which is the property itself. "Not nested
+    # under the real home" was only a proxy for it, and it is false whenever the
+    # caller's throwaway root lives under HOME (e.g. TMPDIR=~/.cache/...).
+    assert home.is_relative_to(root), (
+        f"sandbox_home({root!r}) resolved to {home!r}, outside the caller's "
+        "root -- it must be derived from the caller's root, never Path.home()."
     )
 
 

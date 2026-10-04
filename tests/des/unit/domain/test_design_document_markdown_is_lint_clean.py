@@ -21,6 +21,14 @@ WIDTH = 80
 MANIFEST: dict[str, object] = {
     "schema_version": 1,
     "authority": {"heading": "Widget color"},
+    "architectural_tests": {
+        "applicability": "not_applicable",
+        "reason": "The fixture has no structural boundary change.",
+    },
+    "contract_tests": {
+        "applicability": "not_applicable",
+        "reason": "The fixture changes no shared contract.",
+    },
     "purpose": "Expose the selected widget color.",
     "constraints": ["Preserve existing callers."],
     "targets": [
@@ -42,11 +50,17 @@ MANIFEST: dict[str, object] = {
             }
         ]
     },
+    "impact_closure": {
+        "applicability": "not_applicable",
+        "reason": "The fixture reaches no public surface, consumer or build metadata.",
+    },
     "prefactoring": {
         "applicability": "applicable",
         "existing_oracle": "tests/test_widget.py::test_default_color",
         "move": "Extract the current default lookup without changing output.",
         "preserved_observation": "A default widget remains blue.",
+        "verification": [["pytest", "-q", "tests/test_widget.py::test_default_color"]],
+        "acceptance_supports": [],
     },
     "agreement_analysis": {
         "applicability": "applicable",

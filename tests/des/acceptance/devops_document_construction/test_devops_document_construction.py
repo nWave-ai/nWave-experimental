@@ -1,26 +1,22 @@
 """Public oracle for deterministic DEVOPS operational-document construction.
 
-The real ``des`` dispatcher is the sole production surface.  DEVOPS itself is
-provider-free; the controlled provider below is used only by the separately
-selected Product Owner consumer, where its recorded prompt makes the typed
-sidecar fact observable without interpreting the Markdown document.
+The real ``des`` dispatcher is the sole production surface. Hosts supply closed
+operational and product facts separately; neither constructor invokes a model
+or consumes the other document implicitly.
 """
 
 from __future__ import annotations
 
 import io
 import json
+import shlex
 import sys
 from pathlib import Path
 
 import pytest
 from tests.common.in_process_cli import run_cli_in_process
-from tests.des.acceptance import fake_provider
-from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
-    PACKAGE_PARENT,
-    base_repository,
-    hermetic_environment,
-)
+from tests.des._helpers.host_facts import product_manifest
+from tests.des.acceptance.steps_for_the_orchestrator.conftest import base_repository
 
 from des.application import operational_document_producer
 from des.application.handover import Blocked
@@ -136,9 +132,7 @@ def _corrected_input() -> dict[str, object]:
     return corrected
 
 
-def _seed_replaceable_operational_authority(
-    root: Path, tmp_path: Path
-) -> tuple[bytes, bytes, bytes]:
+def _seed_replaceable_operational_authority(root: Path) -> tuple[bytes, bytes, bytes]:
     """Construct A publicly, then surround its sole owned H2 with human bytes."""
     code, out, err = _devops(root, json.dumps(INPUT))
     assert code == 0, out + err
@@ -153,7 +147,7 @@ def _seed_replaceable_operational_authority(
     suffix = b"\n\n## Human appendix\n\nKeep this H2 byte-for-byte too.\n"
     authority.write_bytes(prefix + authority_a + suffix)
 
-    po_code, po_out, po_err, _prompt = _po_with_facts(root, tmp_path)
+    po_code, po_out, po_err = _po(root)
     assert po_code == 0, po_out + po_err
     return prefix, suffix, facts_a
 
@@ -207,58 +201,21 @@ def test_invalid_utf8_stdin_refuses_before_constructing_operational_artifacts(
     )
 
 
-def _po_with_facts(root: Path, tmp_path: Path) -> tuple[int, str, str, str]:
-    answers, turns, counter = (
-        tmp_path / "answers.json",
-        tmp_path / "turns.json",
-        tmp_path / "counter",
-    )
-    answers.write_text(
-        json.dumps(
-            [
-                {
-                    "structured_output": {
-                        "outcome": "accepted",
-                        "diagnostic": "decomposed",
-                        "values": [
-                            {
-                                "observation": (
-                                    "Widget deployments expose an operator-visible health "
-                                    "result after every release."
-                                )
-                            }
-                        ],
-                    }
-                }
-            ]
-        )
-    )
-    environment = hermetic_environment(
-        fake_provider.environment(
-            root,
-            launcher_dir=tmp_path / "bin",
-            results=answers,
-            log=turns,
-            counter=counter,
-            package_parent=PACKAGE_PARENT,
-        ),
-        tmp_path / "claude-config",
-    )
-    code, out, err = run_cli_in_process(
+def _po(root: Path, advice: str | None = None) -> tuple[int, str, str]:
+    manifest = product_manifest(
+        "Decompose the Widget release.",
         [
-            "po",
-            "--repo-root",
-            str(root),
-            "--project",
-            "--operational-facts",
-            str(SIDECAR),
+            "Widget deployments expose an operator-visible health result after every release."
         ],
+    )
+    return run_cli_in_process(
+        shlex.split(advice)[1:]
+        if advice is not None
+        else ["po", "--repo-root", str(root), "--project", "--input", "-"],
         cwd=root,
-        env=environment,
-        stdin_text="Decompose the Widget release.",
+        stdin_text=json.dumps(manifest),
         catch_all=True,
     )
-    return code, out, err, json.loads(turns.read_text())[0]["prompt"]
 
 
 def test_complete_input_projects_configured_document_and_matching_operational_facts(
@@ -339,74 +296,29 @@ def test_complete_input_projects_configured_document_and_matching_operational_fa
         f"(stdout={retry_out!r}, stderr={retry_err!r})"
     )
 
-    po_code, po_out, po_err, prompt = _po_with_facts(root, tmp_path)
+    po_code, po_out, po_err = _po(root, _terminal(out, err)["NEXT"])
     assert po_code == 0 and (root / HANDOVER).is_file(), (
-        "the existing public PO command must continue to create its ordinary handover "
-        f"when explicitly given a valid OperationalFacts sidecar (stdout={po_out!r}, stderr={po_err!r})"
+        "explicit host product facts must construct a handover without consuming "
+        f"or rewriting DEVOPS artifacts (stdout={po_out!r}, stderr={po_err!r})"
     )
-    prompt_facts = {
-        key: json.loads(value)
-        for line in prompt.splitlines()
-        for key, separator, value in [line.partition(": ")]
-        if separator
-    }
-    assert prompt_facts.get("operational_facts") == EXPECTED_FACTS, (
-        "explicit sidecar selection must supply its deserialized canonical facts to the "
-        "Product Owner prompt without deriving or comparing Markdown"
+    assert (authority.read_bytes(), facts.read_bytes()) == (
+        authority_before,
+        facts_before,
+    )
+    assert json.loads((root / HANDOVER).read_text())["values"][0]["observation"] == (
+        "Widget deployments expose an operator-visible health result after every release."
     )
 
     ordinary = _repository(tmp_path, "ordinary-po")
     ambient = ordinary / SIDECAR
     ambient.parent.mkdir(parents=True)
     ambient.write_text("not operational facts")
-    answers = tmp_path / "ordinary-answers.json"
-    turns = tmp_path / "ordinary-turns.json"
-    answers.write_text(
-        json.dumps(
-            [
-                {
-                    "structured_output": {
-                        "outcome": "accepted",
-                        "diagnostic": "ordinary",
-                        "values": [
-                            {
-                                "observation": (
-                                    "Product owners can decompose a request without selected "
-                                    "operational facts."
-                                )
-                            }
-                        ],
-                    }
-                }
-            ]
-        )
-    )
-    ordinary_environment = hermetic_environment(
-        fake_provider.environment(
-            ordinary,
-            launcher_dir=tmp_path / "ordinary-bin",
-            results=answers,
-            log=turns,
-            package_parent=PACKAGE_PARENT,
-        ),
-        tmp_path / "ordinary-claude-config",
-    )
-    ordinary_code, ordinary_out, ordinary_err = run_cli_in_process(
-        ["po", "--repo-root", str(ordinary), "--project"],
-        cwd=ordinary,
-        env=ordinary_environment,
-        stdin_text="Decompose without operational facts.",
-        catch_all=True,
-    )
+    ordinary_code, ordinary_out, ordinary_err = _po(ordinary)
     assert ordinary_code == 0 and (ordinary / HANDOVER).is_file(), (
-        "ordinary PO behavior must ignore malformed ambient DEVOPS files when no "
-        f"--operational-facts selection was made (stdout={ordinary_out!r}, stderr={ordinary_err!r})"
+        "product construction must ignore malformed ambient DEVOPS files: "
+        f"the host supplies its closed product facts (stdout={ordinary_out!r}, stderr={ordinary_err!r})"
     )
-    ordinary_prompt = json.loads(turns.read_text())[0]["prompt"]
-    assert "operational_facts:" not in ordinary_prompt, (
-        "without explicit selection, PO must not read ambient DEVOPS artifacts or add "
-        "an operational-facts prompt fact"
-    )
+    assert ambient.read_text() == "not operational facts"
 
 
 def test_public_devops_replace_current_replaces_only_its_section_and_facts(
@@ -414,7 +326,7 @@ def test_public_devops_replace_current_replaces_only_its_section_and_facts(
 ) -> None:
     """B needs an explicit opt-in; surrounding human and PO bytes are immutable."""
     root = _repository(tmp_path, "replace-current")
-    prefix, suffix, facts_a = _seed_replaceable_operational_authority(root, tmp_path)
+    prefix, suffix, facts_a = _seed_replaceable_operational_authority(root)
     authority, facts, handover = root / DESTINATION, root / SIDECAR, root / HANDOVER
     authority_a, handover_a = authority.read_bytes(), handover.read_bytes()
     section_b, facts_b = _public_b_projection(tmp_path)
@@ -468,7 +380,7 @@ def test_public_devops_sidecar_cas_loss_after_authority_replacement_is_indetermi
 ) -> None:
     """A second-file loss is observable as B authority with A facts, then retryable."""
     root = _repository(tmp_path, "sidecar-cas-loss")
-    prefix, suffix, facts_a = _seed_replaceable_operational_authority(root, tmp_path)
+    prefix, suffix, facts_a = _seed_replaceable_operational_authority(root)
     authority, facts, handover = root / DESTINATION, root / SIDECAR, root / HANDOVER
     handover_a = handover.read_bytes()
     section_b, facts_b = _public_b_projection(tmp_path)
@@ -543,7 +455,7 @@ def test_public_devops_refuses_before_mutating_when_required_sidecar_is_not_this
 ) -> None:
     """One existing sidecar is canonical only for its own destination and heading."""
     root = _repository(tmp_path, case)
-    _prefix, _suffix, facts_a = _seed_replaceable_operational_authority(root, tmp_path)
+    _prefix, _suffix, facts_a = _seed_replaceable_operational_authority(root)
     authority, facts, handover = root / DESTINATION, root / SIDECAR, root / HANDOVER
     if foreign_authority is None:
         facts.unlink()

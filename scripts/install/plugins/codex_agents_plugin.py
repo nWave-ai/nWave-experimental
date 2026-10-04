@@ -243,7 +243,8 @@ _CAPABILITY_GRANTS: tuple[tuple[frozenset[str], str], ...] = (
 )
 
 #: Denial lines, emitted for categories with no declared member and no
-#: Bash-implied equivalent (Bash subsumes reading and searching, not writing).
+#: Bash-implied equivalent (Bash subsumes reading and searching; for writing
+#: it implies only the disposable probe files of _BASH_PROBE_FILES_DENIAL).
 _CAPABILITY_DENIALS: tuple[tuple[frozenset[str], str], ...] = (
     (
         frozenset({"Read", "Bash"}),
@@ -267,6 +268,18 @@ _CAPABILITY_DENIALS: tuple[tuple[frozenset[str], str], ...] = (
         frozenset({"Glob", "Grep", "Bash"}),
         "- File and content search is NOT granted.",
     ),
+)
+
+#: Write denial for a role declaring bare Bash without Write/Edit. On Claude
+#: Code its Bash tool can create the disposable probe files a role body may
+#: authorize (for example a formal model handed to a checker); repository
+#: files stay denied, and a body that authorizes no probe gains nothing.
+_BASH_PROBE_FILES_DENIAL = (
+    "- Creating or modifying repository files is NOT granted. Only where your "
+    "role body authorizes disposable probes may the shell create probe files, "
+    "and only in a fresh invocation-local directory outside the repository or "
+    "in output your caller declared as not owned by you; remove your own probe "
+    "files before you finish."
 )
 
 
@@ -316,7 +329,9 @@ def _capability_preamble(frontmatter: dict) -> str:
             "others; the scope in each grant is part of the grant."
         )
     denials = [
-        line
+        _BASH_PROBE_FILES_DENIAL
+        if members == frozenset({"Write", "Edit"}) and "Bash" in declared_set
+        else line
         for members, line in _CAPABILITY_DENIALS
         if not members & declared_set
         and not (members == frozenset({"Bash"}) and scoped_shell)

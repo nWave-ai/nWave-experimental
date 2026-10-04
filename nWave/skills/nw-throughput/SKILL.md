@@ -66,6 +66,64 @@ The LLM selects the scope and the next commands from the observed failures. Do
 not add a controller, automatic retry, phase transition, or gate for this
 workflow.
 
+## Disk ownership and retention
+
+Are build outputs multiplying with each lane or verification? Keep one heavy
+local workload, reuse read-only toolchains and environments, and give each
+writable build directory one owner. Keep reusable generated outputs in the
+principal repository and bind the isolated verifier to them; do not copy build
+trees or environments into every lane. Cooperative verification across linked
+lanes holds one repository-wide lease. Other native writers must be stopped by
+the caller before using those shared outputs.
+
+- **Verification candidates:** without a project reuse declaration, verification
+  retains its isolated cold checkout lifecycle. Opt in in the principal project's
+  `.nwave/config.json` with
+  `"verification": {"reuse": {"outputs": ["build-output"]}}`.
+  These relative directories grant ownership/retention authority, not cache
+  validity. DES keeps isolated source at `lanes/.des-verification`, reconciles
+  candidate changes, removes undeclared residues, and binds only the declared
+  generated roots to the principal checkout. Never declare source, environments,
+  metadata, symlink escapes or a whole checkout as generated output.
+- **Native cache contract:** caller-declared commands own dependency, toolchain,
+  flags, generated-input and timestamp invalidation. They must execute the checks,
+  not replay cached test verdicts, and must finish all writers without daemonizing.
+  Native output layouts must support the controlled directory bindings; use a
+  project-native wrapper/configuration when needed. Unsupported recipes explicitly
+  omit reuse and use cold isolation; DES has no build-tool detection or universal
+  cache fingerprint. Managed reuse currently requires POSIX process-group
+  ownership; on other hosts omit the declaration and retain cold isolation.
+- **Freshness and evidence:** ordinary `des verify` may truthfully report
+  `RECORDED` without execution. `des verify --fresh` withdraws active approval
+  before measuring every declared check again, retaining historical receipts.
+  Preserve candidate-bound evidence outside the mutable checkout before releasing
+  its lease; reviewers must not depend on live generated files there.
+- **Retention and interruption:** the managed source workspace and declared
+  principal outputs survive verification success/failure. Do not apply disposable
+  candidate or blanket lane-build cleanup to those shared resources. An interrupted
+  native run leaves ownership metadata at `.nwave/des/verification-reuse.json`;
+  establish quiescence and preserve pending evidence before explicitly removing
+  only the owned source workspace and its metadata. Never remove principal output
+  roots or external caches merely because an inherited environment names them.
+  Other lane-only generated outputs may be removed once their users release them
+  and required evidence is preserved; prove ownership, not a familiar basename.
+- **Durable snapshots:** keep source and necessary `.nwave` state, plus the
+  minimal retained evidence that their consumers need. Exclude generated
+  builds, dependency environments and cache copies. A hash or a Git commit
+  cannot recover untracked evidence; retain its bytes and verify every retained
+  symlink target before removing its source checkout.
+- **Delivery lanes:** create them with `des lane open --repo-root ROOT
+  --name NAME` inside the user's `ROOT/lanes/NAME`, not under temporary or cache
+  directories. Their source survives until the lifecycle below is satisfied.
+  Existing registered external lanes are finalized in place only after their
+  work is preserved, never moved or discarded just to fit the new layout.
+- **Evidence boundary:** report measured allocation before/after and remaining
+  owned artifacts in existing delivery evidence. Distinguish source delivery,
+  preserved evidence and physical cleanup. EXAMINE may assess supplied public
+  disk/lifecycle observations when the Request promises those effects; it does
+  not inspect private paths or execute cleanup. Do not create a universal disk
+  quota, new manifest, automatic orchestrator or acceptance gate.
+
 ## Worktree lifecycle
 
 Use at lane creation, inheritance, finalization and resumed cleanup. Scope:
@@ -78,6 +136,22 @@ and evidence copies. Preserve other owners' work; this is no machine-wide sweep.
 - **Reconciliation** — Does the current inventory cover every owned/inherited
   lane and useful residual, or only the accepted feature? Refresh it from current
   bytes and assign each residual a disposition below before claiming closure.
+  `des lane status --repo-root ROOT` enumerates every registration Git holds in
+  one read-only pass — per lane the tip measured against the destination
+  (INTEGRATED), bytes no commit carries (CONTENT: uncommitted, untracked and
+  ignored, named), the registration's own state (AVAILABILITY: present, locked,
+  or missing — a missing registration consumes no disk), plus lane-directory
+  entries no registration owns (UNREGISTERED: disk with no Git fact, never
+  auto-removed). It never merges.
+- **Completion assertion** — Before any completion claim, assert the lanes the
+  claim names: `des lane status --repo-root ROOT --require-integrated PATH`
+  (repeatable) measures each named lane's actual tip against the destination and
+  refuses while any named tip remains outside it — so the claim stands on
+  ancestry, not on a clean worktree or a lane's own word; an unmeasurable tip
+  is INDETERMINATE, not pass. A retained integrated lane reports pending
+  cleanup (`finalize`), never completion. This enforces
+  `delivery:completion-claims-the-destination` in `nw-cross-cutting-invariants`;
+  the flag is opt-in per claim and replaces no judgement about review readiness.
 
 | Disposition | Required basis in existing task context |
 |---|---|
@@ -97,7 +171,11 @@ and evidence copies. Preserve other owners' work; this is no machine-wide sweep.
 - **Removal** — Evidence retention needs recoverable bytes, not a live checkout.
   Once reconciliation and no active use are established, invoke existing
   `des lane finalize --repo-root ROOT --worktree PATH` for clean reachable
-  lanes. For archive-only temporary copies or dirty/superseded historical
+  lanes. Finalize itself refuses to remove a lane whose only extra bytes are
+  IGNORED (a plain `git status` calls such a lane clean, and Git would delete
+  it without a word): it names the bytes and preserves the lane until they are
+  preserved or deliberately deleted. Never work around that refusal. For
+  archive-only temporary copies or dirty/superseded historical
   lanes, use explicitly authorized caller cleanup after verified preservation;
   report the archive disposition, never an invented integration. Report any
   remaining checkout with its purpose and concrete next action.

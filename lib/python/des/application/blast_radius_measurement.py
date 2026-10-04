@@ -284,23 +284,18 @@ def _boundary_files(
 
 
 def _consumer_counts(repo: Path, scope_paths: list[str]) -> dict[str, int | None]:
-    """`{"<module-stem>.<symbol>": <caller-count-or-None>}` for every touched .py file.
+    """Observed Python symbol caller counts; unsupported touched paths are null.
 
-    D1 key format: `"<module-stem>.<symbol-name>"`. D2: an unparseable touched
-    file keys on its repo-relative path with value `None`. Non-Python touched
-    files contribute no entries. ADR-LA-001 D9 slice (h), D6-R14: resolves
-    through the composed port's `Resolution` (`CodeFactChain.resolve`, never
-    the legacy `.query()` thin edge) so a real `Failed` degrades the SAME
-    way the payload's `unparseable` flag always has, and a zero
-    caller-count is recorded ONLY when LA1-L11's verified-zero holds (the
-    answering `Resolution.trace` entry shows no fault and no scope
-    degradation) -- an unrelated unparseable file elsewhere in the repo
-    must never let a genuinely-unverified zero read as a confident one.
+    Non-Python paths cannot be structurally enumerated by this adapter. A
+    path-keyed ``None`` records that limit, not a source symbol, an observed
+    count, or a zero-consumer claim. Python zero is recorded only when the
+    answering resolution's trace confirms complete, fault-free scope.
     """
     consumer_counts: dict[str, int | None] = {}
     repo_chain = CodeFactChain(root=repo)
     for rel_path in scope_paths:
         if not rel_path.endswith(".py"):
+            consumer_counts[rel_path] = None
             continue
         if not (repo / rel_path).exists():
             # D2: a deleted (staged) touched file has nothing on disk to

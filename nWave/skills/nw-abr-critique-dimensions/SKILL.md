@@ -56,13 +56,11 @@ Which producer could make the unsafe action unrepresentable — did the spec con
 
 ## Dimension 7: Skill Loading Effectiveness
 
-Does the agent ensure skills are actually loaded during execution?
+Does each skill reach the role exactly once, at the right time?
 
-**Check**: Skill Loading Strategy table present for agents with 3+ skills | Every frontmatter skill has matching `Load:` directive in workflow | Skills path documented (`~/.claude/skills/nw-{skill-name}/SKILL.md`) | Phase-gated loading (not "load everything at start")
+**Check**: Apply the source-aware Skill addressing procedure in `nw-agent-creation-workflow` to the actual candidate surface | Every frontmatter skill exists, is always needed and is not reloaded by the body | Each conditional skill has a precise reachable trigger in the single generated index | No handwritten loading section or duplicate directive.
 
-**Severity**: High — orphan skills (declared but never loaded ON-TRIGGER) mean sub-agents either waste context on unused eager preload or operate without domain knowledge. The `skills:` frontmatter field eagerly preloads full skill content into context; omit it and load ON-TRIGGER via Skill invocation instead.
-
-**Gold standard**: `nw-product-owner.md` — Skill Loading Strategy table mapping phases to skills with triggers + explicit `Load:` directives in each workflow phase.
+**Severity**: High — a missing declared asset, intended conditional knowledge with no reachable trigger, a repeated preload, or a duplicate index. An installed project's missing build-time registry is a source-capability limit, not an orphan finding. The absence of a duplicate body Load directive for a frontmatter skill is correct.
 
 ## Dimension 8: Token Efficiency
 
@@ -91,4 +89,4 @@ projection is materialized by existing CLI/software, never by the reviewer.
 
 ## Failure Conditions
 
-Review is not acceptable if: any high-severity dimension fails | 3+ medium-severity fail | Agent exceeds 400 lines without Skills extraction | Zero examples provided | Agent with 3+ skills missing Skill Loading Strategy table
+Review is not acceptable if: any high-severity dimension fails | 3+ medium-severity fail | Agent exceeds 400 lines without Skills extraction | Zero examples provided

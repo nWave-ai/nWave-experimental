@@ -12,11 +12,11 @@ from __future__ import annotations
 import hashlib
 import json
 import stat
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from des.adapters.driven.task_invocation.model_envelope import decode_model_run
 from des.application.handover import Blocked
 from des.application.whole_file_document_publisher import (
     PublishRefusalVocabulary,
@@ -35,7 +35,6 @@ from des.domain.expectation_charter import (
 from des.ports.driven_ports.task_invocation_port import (
     MalformedModelEnvelope,
     ModelOutcome,
-    TaskInvocationPort,
 )
 
 
@@ -48,7 +47,13 @@ if TYPE_CHECKING:
 _SEMANTIC_TASK = "expectation-charter"
 _ROLE = "nw-product-owner"
 _ADMITTED_KEYS = frozenset(
-    {"schema_version", "intent", "observation", "public_start_recipe"}
+    {
+        "schema_version",
+        "intent",
+        "observation",
+        "public_start_recipe",
+        "structured_output",
+    }
 )
 _SEMANTIC_FIELDS = ("intent", "observation", "public_start_recipe")
 
@@ -62,7 +67,6 @@ class CharterOutcome:
     why: str = ""
     how: str = ""
     path: str | None = None
-    turns_bought: int = 0
     diagnostic: str | None = None
 
 
@@ -84,7 +88,7 @@ def _no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
 def _decode_input(
     raw: str | None,
 ) -> tuple[dict[str, object] | None, CharterOutcome | None]:
-    """Parse `--input` bytes into the three admitted semantic keys, or refuse.
+    """Parse caller facts and a host-produced result, or refuse.
 
     Returns ``(document, None)`` on a syntactically admissible object, or
     ``(None, outcome)`` naming a malformed-input refusal. Absent semantic
@@ -106,16 +110,16 @@ def _decode_input(
             "refusal",
             "CharterInputMalformed",
             f"--input is not one strict UTF-8 JSON object: {error}",
-            "supply a single JSON object with schema_version, intent, observation, "
-            "and public_start_recipe",
+            "supply schema_version, intent, observation, public_start_recipe, "
+            "and the host PO structured_output",
         )
     if not isinstance(document, dict):
         return None, CharterOutcome(
             "refusal",
             "CharterInputMalformed",
             "--input top-level JSON value is not an object",
-            "supply a single JSON object with schema_version, intent, observation, "
-            "and public_start_recipe",
+            "supply schema_version, intent, observation, public_start_recipe, "
+            "and the host PO structured_output",
         )
     extra = sorted(set(document) - _ADMITTED_KEYS)
     if extra:
@@ -123,7 +127,7 @@ def _decode_input(
             "refusal",
             "CharterInputMalformed",
             f"--input carries unadmitted field(s): {', '.join(extra)}",
-            "supply exactly schema_version, intent, observation, and public_start_recipe",
+            "supply exactly schema_version, intent, observation, public_start_recipe, and structured_output",
         )
     if "schema_version" not in document:
         return None, CharterOutcome(
@@ -260,7 +264,6 @@ def _stored_observation(stored, value: int) -> str | None:
 
 def construct_or_reuse(
     root: Path,
-    port: TaskInvocationPort | Callable[[], TaskInvocationPort | object],
     stored,
     value: int,
     raw_input: str | Callable[[], str | CharterOutcome | None] | None,
@@ -334,59 +337,19 @@ def construct_or_reuse(
             "supply --input whose observation field is byte-identical to the "
             "selected value's persisted observation",
         )
-    intent = document["intent"]
     recipe = document["public_start_recipe"]
-    prompt = "\n".join(
-        f"{key}: {json.dumps(text, ensure_ascii=False)}"
-        for key, text in (
-            ("observation", stored_observation),
-            ("intent", intent),
-            ("public_start_recipe", recipe),
+    try:
+        run = decode_model_run(
+            document.get("structured_output", {}),
+            role_id=_ROLE,
+            semantic_task=_SEMANTIC_TASK,
         )
-    )
-    if callable(port):
-        port = port()
-    if not hasattr(port, "invoke"):
-        failure = getattr(port, "failure", None)
+    except (MalformedModelEnvelope, TypeError, AttributeError) as error:
         return CharterOutcome(
-            "indeterminate",
-            "CharterProviderUnavailable",
-            getattr(failure, "why", "selected Product Owner provider is unavailable"),
-            getattr(
-                failure, "how", "restore the selected role runtime before invoking"
-            ),
-        )
-    with tempfile.TemporaryDirectory(prefix="nwave-charter-po-") as private_cwd:
-        try:
-            run = port.invoke(
-                role_id=_ROLE,
-                prompt=prompt,
-                cwd=Path(private_cwd),
-                semantic_task=_SEMANTIC_TASK,
-            )
-        except MalformedModelEnvelope as error:
-            return CharterOutcome(
-                "indeterminate",
-                "ModelEnvelopeUnavailable",
-                str(error),
-                "observe the provider result",
-                turns_bought=1,
-            )
-    if not run.issued:
-        return CharterOutcome(
-            "indeterminate",
-            "ModelNotIssued",
-            run.diagnostic,
-            "repair the selected role runtime or its capability profile and retry",
-        )
-    turns_bought = 1
-    if run.exit_status:
-        return CharterOutcome(
-            "retry" if run.retry_safe else "indeterminate",
-            "ProviderTurnFailed",
-            run.diagnostic or "provider did not complete cleanly",
-            "inspect the measured provider effects before retrying",
-            turns_bought=turns_bought,
+            "refusal",
+            "CharterResultMalformed",
+            str(error),
+            "supply the source-blind host PO's structured_output alongside the value facts",
         )
     if run.outcome is ModelOutcome.Rejected:
         return CharterOutcome(
@@ -394,7 +357,6 @@ def construct_or_reuse(
             "CLARIFICATION_NEEDED",
             run.diagnostic,
             "supply clarified value facts and exact public start recipe through --input",
-            turns_bought=turns_bought,
         )
     if run.outcome is not ModelOutcome.Accepted or run.charter is None:
         return CharterOutcome(
@@ -402,7 +364,6 @@ def construct_or_reuse(
             "ExpectationCharterIndeterminate",
             run.diagnostic,
             "inspect the Product Owner result before retrying",
-            turns_bought=turns_bought,
         )
     charter = run.charter
     source_sha256 = source_fingerprint_sha256(stored_observation, scope, value)
@@ -435,16 +396,14 @@ def construct_or_reuse(
             "CharterConstructionInvalid",
             str(error),
             "repair the constructor or clarify ambiguous charter facts",
-            turns_bought=turns_bought,
         )
     current = _classify_namespace(root, scope, stored)
     if current.kind == "invalid" or current.observations != namespace.observations:
         return CharterOutcome(
             "refusal",
             "ExpectationCharterNamespaceChanged",
-            "the charter namespace changed or became invalid during the Product Owner turn",
+            "the charter namespace changed or became invalid during construction",
             "reclassify the namespace and retry",
-            turns_bought=turns_bought,
         )
     published = publish_whole_file(
         root,
@@ -462,11 +421,9 @@ def construct_or_reuse(
             published.what,
             published.why,
             published.how,
-            turns_bought=turns_bought,
         )
     return CharterOutcome(
         "constructed",
         path=member_path(scope, value),
-        turns_bought=turns_bought,
         diagnostic=run.diagnostic,
     )

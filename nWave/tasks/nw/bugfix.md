@@ -4,23 +4,25 @@ argument-hint: '[observed defect]'
 ---
 # NW-BUGFIX
 
-Interactive: invoke the first step, read its terminal, follow its `NEXT`.
+Load `nw-bugfix`, `nw-auto` and `nw-role-invocation`. Report the affected baseline
+before authoring the regression oracle or changing production code.
+
+Invoke the native installed Product Owner with the observed defect verbatim.
+Construct its complete DISCUSS v2 manifest:
 
 ```bash
-printf '%s' "$REQUEST" | des po --repo-root ROOT
+printf '%s' "$DISCUSS_MANIFEST" | des po --repo-root ROOT --feature FEATURE_ID --input -
 ```
 
-Autonomous: one composed run of the same path.
+Choose the explicit persisted scope. Applicable typed constructors write
+DISCUSS, DESIGN, DEVOPS and DISTILL authorities; roles supply semantic facts,
+not handwritten authority Markdown. Keep the defect and regression obligation
+on the same public observation. The native acceptance designer authors the
+oracle, then `des oracle --value N --input -` measures RED. The native crafter
+implements the fix, then `des craft --value N --input -` measures GREEN.
 
-```bash
-printf '%s' "$REQUEST" | des po --repo-root ROOT
-```
-`des po` writes no durable authority. The documents a bugfix owes come from
-the same typed producers a feature uses -- `des discuss`, `des design`,
-`des devops`, `des distill` -- under global configuration with project
-overrides, and the LLM writes none of them by hand. Keep the observed defect
-verbatim in the DISCUSS authority, keep the DISTILL obligation on the same
-observation the regression oracle answers, and keep the correction behind the
-oracle `des oracle` measured RED against the defect. Every wave stays optional.
-
-Then invoke the step each block names in its `NEXT` line. The floor holds for a fix as for anything else: `des craft` refuses a value whose oracle is not recorded, and the source-blind EXAMINE inside `des verify` is never skipped. Each step returns only `Success`, `Refusal`, `Retry`, or `Indeterminate`.
+The LLM evaluates advisory `NEXT`; DES neither chooses a route nor launches
+models. After native `des verify`, independently invoke the installed reviewer
+and fresh source-blind examiner on prepared evidence, then record their actual
+host results and provenance. EXAMINE is not inside verify and cannot be skipped.
+Public results remain `Success`, `Refusal`, `Retry`, and `Indeterminate`.

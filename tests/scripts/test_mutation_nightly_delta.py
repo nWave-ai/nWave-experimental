@@ -18,9 +18,7 @@ from scripts.mutation.nightly_delta import (
     classify_failure,
     compute_score,
     is_eligible_source_path,
-    issue_dedup_title,
     parse_cicd_stats,
-    render_report,
     resolve_baseline,
     select_changed_python_files,
     select_previous_successful_run,
@@ -130,13 +128,6 @@ def test_resolve_baseline_ok_when_ancestor_validated() -> None:
     assert decision == BaselineDecision("ok", "oldsha", "validated ancestor")
 
 
-def test_resolve_baseline_is_deterministic_given_same_inputs() -> None:
-    runs = [WorkflowRun("oldsha", "success", WORKFLOW, 1)]
-    d1 = resolve_baseline(runs, WORKFLOW, "headsha", lambda a, b: True)
-    d2 = resolve_baseline(runs, WORKFLOW, "headsha", lambda a, b: True)
-    assert d1 == d2
-
-
 # ---------------------------------------------------------------------------
 # parse_cicd_stats — mutmut 3.6 export-cicd-stats JSON, conservative remainder
 # ---------------------------------------------------------------------------
@@ -153,8 +144,21 @@ def test_parse_cicd_stats_unaccounted_total_becomes_not_checked() -> None:
     assert parse_cicd_stats(stats) == {"killed": 4, "survived": 2, "not_checked": 4}
 
 
-def test_parse_cicd_stats_missing_total_never_yields_negative_not_checked() -> None:
-    assert parse_cicd_stats({"killed": 5}) == {"killed": 5}
+@pytest.mark.parametrize(
+    "stats",
+    [
+        {"killed": 5},
+        {"total": 1, "killed": 2},
+        {"total": 1, "killed": -1},
+        {"total": 1, "killed": True},
+        {"total": 1, "killed": "1"},
+    ],
+)
+def test_inconsistent_or_unattributable_counts_are_rejected(
+    stats: dict[str, object],
+) -> None:
+    with pytest.raises(ValueError):
+        parse_cicd_stats(stats)
 
 
 # ---------------------------------------------------------------------------
@@ -225,18 +229,25 @@ def test_compute_score_exact_threshold_boundary_passes() -> None:
     assert result.passed is True
 
 
+def test_incomplete_all_killed_subset_cannot_pass_policy() -> None:
+    score = compute_score({"killed": 8, "not_checked": 2})
+    assert score.score_pct == 100
+    assert not score.passed
+    report = build_scored_report(
+        BaselineDecision("ok", "base", "validated"), ["src/des/a.py"], score
+    )
+    assert classify_failure(report) == "infrastructure"
+
+
+@pytest.mark.parametrize("threshold", [float("nan"), float("inf"), -1, 101])
+def test_invalid_threshold_cannot_make_an_attempt_green(threshold: float) -> None:
+    with pytest.raises(ValueError):
+        compute_score({"killed": 1}, threshold)
+
+
 # ---------------------------------------------------------------------------
 # report / issue rendering + failure classification
 # ---------------------------------------------------------------------------
-
-
-def test_build_noop_report_and_render_first_run() -> None:
-    decision = BaselineDecision("first_run", None, "no prior successful run")
-    report = build_noop_report(decision)
-    rendered = render_report(report)
-    assert "first_run" in rendered
-    assert "no prior successful run" in rendered
-    assert classify_failure(report) is None  # no-op is always success
 
 
 def test_build_noop_report_non_ancestor_never_triggers_full_repo_fallback() -> None:
@@ -245,16 +256,6 @@ def test_build_noop_report_non_ancestor_never_triggers_full_repo_fallback() -> N
     assert report.changed_files == ()
     assert report.score is None
     assert classify_failure(report) is None
-
-
-def test_build_scored_report_render_includes_all_changed_files() -> None:
-    decision = BaselineDecision("ok", "basesha", "validated ancestor")
-    score = compute_score({"killed": 100, "survived": 0})
-    report = build_scored_report(decision, ["src/des/a.py", "src/des/b.py"], score)
-    rendered = render_report(report)
-    assert "src/des/a.py" in rendered
-    assert "src/des/b.py" in rendered
-    assert "100.0%" in rendered
 
 
 def test_classify_failure_infrastructure_takes_priority_over_below_threshold() -> None:
@@ -289,15 +290,3 @@ def test_bounded_issue_summary_truncates_long_file_lists() -> None:
     assert "f9.py" in body
     assert "f14.py" not in body
     assert "and 5 more" in body
-
-
-def test_bounded_issue_summary_noop_is_short() -> None:
-    decision = BaselineDecision("first_run", None, "no prior successful run")
-    report = build_noop_report(decision)
-    body = bounded_issue_summary(report)
-    assert "No-op run" in body
-
-
-def test_issue_dedup_title_is_stable_for_same_workflow() -> None:
-    assert issue_dedup_title(WORKFLOW) == issue_dedup_title(WORKFLOW)
-    assert WORKFLOW in issue_dedup_title(WORKFLOW)

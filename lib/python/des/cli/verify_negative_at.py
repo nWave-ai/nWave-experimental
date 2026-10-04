@@ -6,13 +6,14 @@ tests but NOT weak ones: the eval's GS-8 legitimately went red once, then
 green forever while asserting almost nothing about the atomicity guarantee it
 claimed to cover. Weak assertions die only to negative ATs -- tests that
 assert the WRONG output is NOT produced. Empirical anchors: GS-8 (vacuous
-test on the atomicity guarantee) and lyra-tsunami's 4-of-4 features where
+test on the atomicity guarantee) and external-tsunami's 4-of-4 features where
 presence-only ATs passed every code-reading review and the negative case
 caught real defects.
 
-This gate is STATIC analysis (``ast`` for ``.py``, tag/name parsing for
-``.feature``) -- it verifies the negative assertion EXISTS; executing it is
-P0.2's job.
+This optional STATIC scanner observes naming/marker conventions, not negative
+assertions, business coverage or execution. Python AST and Gherkin parsing are
+bounded to those conventions. Other files receive lexical observations only;
+unknown native criticality or missing native evidence is indeterminate, not N/A.
 
 Negative-AT convention (the mechanical discriminator):
 
@@ -149,6 +150,7 @@ class _FileScan:
 
     path: Path
     cases: tuple[_Case, ...]
+    lexical_only: bool = False
 
     def critical_cases(self) -> tuple[_Case, ...]:
         return tuple(c for c in self.cases if c.critical)
@@ -347,24 +349,7 @@ def _scan_feature_file(path: Path) -> _FileScan | int:
 
 
 def _scan_generic_name_file(path: Path) -> _FileScan | int:
-    """Language-neutral scan for non-.py/.feature test files (e.g. .rs, .go,
-    .ts): no AST, no language-specific parser. Two independent scans, run
-    together so a file's negative AT is found via EITHER idiom:
-
-    1. Identifier scan -- test-declaration names via a keyword-prefixed
-       regex (``fn``/``func``/``function``/``def`` <name>), classified with
-       the SAME name-token discriminator the pytest scanner uses; a Rust
-       ``fn ..._still_errors()`` is detected exactly like a Python
-       ``def ..._still_errors()`` would be.
-    2. JS/TS string-call scan -- idiomatic ``test('name', ...)`` /
-       ``it('name', ...)`` / ``describe('name', ...)`` calls, where the test
-       name is a string literal rather than an identifier. The name is
-       classified by the shared word-based vocabulary (``_name_signals_negative``)
-       since it is space-separated, not underscore-joined.
-
-    Neither scan raises on malformed/binary/empty content -- a non-matching
-    regex simply yields zero cases from that arm, never a traceback.
-    """
+    """Bounded lexical name observations; never native syntax completeness."""
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
@@ -396,7 +381,7 @@ def _scan_generic_name_file(path: Path) -> _FileScan | int:
                 negative=_name_signals_negative(name),
             )
         )
-    return _FileScan(path=path, cases=tuple(cases))
+    return _FileScan(path=path, cases=tuple(cases), lexical_only=True)
 
 
 def _scan_file(path: Path) -> _FileScan | int:
@@ -493,27 +478,26 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="des verify-negative-at",
         description=(
-            "Verify every CRITICAL test scope carries >=1 negative AT -- an "
-            "assertion that the WRONG output is NOT produced (evidence "
-            "gate, evolution P0.3). Static analysis only; no test execution."
+            "Observe negative-intent names/markers in caller-declared scopes. "
+            "Optional convention check only; not assertion or execution proof."
         ),
         epilog=(
             "Negative-AT convention: pytest -- @pytest.mark.negative_at OR "
             "name contains _not_/_never_/_rejects_/_refuses_/_fails_/"
             "_still_errors/_still_requires/_still_flags/still_flags_/"
             "_negative_control; Gherkin -- @negative tag OR scenario name "
-            "contains 'not '/'never '/'reject'. Other languages (.rs/.go/"
-            ".ts/...) -- name-scanned with the same pytest tokens, no "
-            "AST. Critical: @pytest.mark.critical / @critical tag, or "
-            "--all-critical (whole file). A critical file needs >=1 "
-            "negative AT anywhere within it."
+            "contains 'not '/'never '/'reject'. Other files receive bounded "
+            "lexical observations only, not syntax or completeness claims. "
+            "Unknown native evidence stays indeterminate. Declare native "
+            "files literally via --test-file; run the project's real focused "
+            "recipe and let the host/reviewer assess negative obligations."
         ),
     )
     parser.add_argument(
         "--test-file",
         action="append",
         default=[],
-        help="Test file to analyze (.py or .feature); repeatable.",
+        help="Literal test file to inspect; repeatable. Native files are lexical-only.",
     )
     parser.add_argument(
         "--test-dir",
@@ -548,12 +532,28 @@ def main(argv: list[str] | None = None) -> int:
     offending: list[dict[str, object]] = []
     critical_scopes = 0
     negative_ats_found = 0
+    lexical_files: list[str] = []
     for path in files_or_exit:
         scan_or_exit = _scan_file(path)
         if isinstance(scan_or_exit, int):
             return scan_or_exit
         scan = scan_or_exit
         criticals = scan.critical_cases()
+        if scan.lexical_only:
+            lexical_files.append(str(path))
+            if not args.all_critical or not scan.negative_cases():
+                no_surface = (
+                    f"no scannable AT surface found in {path} (zero test-declaration "
+                    "tokens; check the file-scope was pointed at the right file/dir); "
+                    if not scan.cases
+                    else ""
+                )
+                return _indeterminate(
+                    what=f"native criticality/negative evidence is unknown for {path}",
+                    why=no_surface
+                    + "a bounded name regex cannot enumerate native cases or prove absent negative assertions.",
+                    how="declare critical/negative obligations to the host and execute the project's real focused native recipe against this literal file; retain genuine outcomes.",
+                )
         if not args.all_critical and not criticals:
             continue
         critical_scopes += 1
@@ -565,9 +565,8 @@ def main(argv: list[str] | None = None) -> int:
             kind = "weak"
             scope_what = f"critical scope {scan.path} has no negative AT"
             scope_why = (
-                "every AT in this scope asserts only that the expected "
-                "output appears (presence-only); none asserts the wrong "
-                "output is NOT produced."
+                "no test name/marker matches the declared negative-intent "
+                "convention; this does not inspect assertion semantics."
             )
             scope_how = _HOW_TO_FIX
         else:
@@ -606,6 +605,11 @@ def main(argv: list[str] | None = None) -> int:
                 "event": "NegativeAtNotApplicable",
                 "what": "no critical scopes found",
                 "files_scanned": len(files_or_exit),
+                "evidence_kind": "name-or-marker-convention",
+                "assertions_verified": False,
+                "directory_discovery": "pytest-names-and-feature-files-only"
+                if args.test_dir
+                else None,
             }
         )
         print(
@@ -618,11 +622,18 @@ def main(argv: list[str] | None = None) -> int:
             "event": "NegativeAtVerified",
             "critical_scopes": critical_scopes,
             "negative_ats_found": negative_ats_found,
+            "evidence_kind": "name-or-marker-convention",
+            "assertions_verified": False,
+            "native_scan_complete": False if lexical_files else None,
+            "lexical_files": lexical_files,
+            "directory_discovery": "pytest-names-and-feature-files-only"
+            if args.test_dir
+            else None,
         }
     )
     print(
-        f"✓ PASS — {critical_scopes} critical scope(s), "
-        f"{negative_ats_found} negative AT(s) found"
+        f"Convention observed — {critical_scopes} critical scope(s), "
+        f"{negative_ats_found} negative-intent name/marker(s); assertions unverified"
     )
     return _EXIT_VERIFIED
 

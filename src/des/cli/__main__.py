@@ -93,33 +93,17 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # projection function and never a fourth store (ADR-BOARD-001): it writes
     # the page and nothing the delivery owns.
     _SubcommandRow("project", "des.cli.project", "main"),
-    # ADR-SSOT-002 Section 4b: one Product Owner turn invoked ALONE. It records
-    # the accepted decomposition as owned state and returns; it never converts
-    # the role's local outcome into a verdict about the whole Request, which is
-    # the defect measured at 06:21:39 in run 20260905T062139Z-38400.
-    # F-DEVOPS-CONSTRAINTS-INTO-DISTILL: the OPTIONAL step upstream of `po`. It
-    # writes operational CONSTRAINTS into a section of a tracked authority file
-    # and proves the authority resolver can read them back, so the Product Owner
-    # can decompose them into observable values. No NEXT line names it: a
-    # project that deploys nothing is never handed this turn to refuse.
+    # Host specialists supply semantic facts; these commands construct documents.
     _SubcommandRow("devops", "des.cli.devops", "main"),
     _SubcommandRow("evolution", "des.cli.evolution", "main"),
     _SubcommandRow("discuss", "des.cli.discuss", "main"),
     _SubcommandRow("distill", "des.cli.distill", "main"),
     _SubcommandRow("po", "des.cli.po", "main"),
-    # ADR-SSOT-002 Section 4b: one architect turn for ONE value, invoked alone
-    # and repeatable. A second call with `--finding -` carries the current typed
-    # facts beside the finding and replaces them -- the correction the
-    # orchestrator decides on, never an edge the software takes.
+    # DESIGN binds a host-supplied manifest without executing its architect.
     _SubcommandRow("design", "des.cli.design", "main"),
-    # ADR-SSOT-002 Section 4b: one value's oracle authored (or corrected),
-    # MEASURED red, and independently judged -- one step, because between those
-    # three the orchestrator has no move to make. A refusal carries the owner
-    # the judge named as DATA and names both forms that could answer it.
+    # ORACLE measures the host-authored acceptance bytes.
     _SubcommandRow("oracle", "des.cli.oracle", "main"),
-    # ADR-SSOT-002 Section 4b: one crafter turn for one value's batch. A refusing
-    # turn's `blocked_by` word comes back as DATA on BLOCKED-BY -- the composed
-    # run spends a window on the role it names, a lone step never does.
+    # CRAFT measures and records the host-authored implementation.
     _SubcommandRow("craft", "des.cli.craft", "main"),
     # The whole-Request candidate is built from its base and its declared native
     # evidence is captured once. Host-selected review and examination consume
@@ -127,7 +111,6 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     _SubcommandRow("verify", "des.cli.verify", "main"),
     _SubcommandRow("prepare-role", "des.cli.prepare_role", "main"),
     _SubcommandRow("record-role-result", "des.cli.record_role_result", "main"),
-    _SubcommandRow("invoke-role", "des.cli.invoke_role", "main"),
     # ADR-SSOT-002 Section 4b: the one compare-and-swap, the owned-index
     # reconciliation, and the closure of the graph. It buys no turn.
     _SubcommandRow("integrate", "des.cli.integrate", "main"),
@@ -192,13 +175,7 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
 )
 
 
-#: The steps of one Request. Each may buy a role turn against a code tree the
-#: operator selected implicitly, so each declares WHICH tree before it works --
-#: the property the retired composed run carried and Section 11 sorts to the
-#: model (see `des.cli._runtime_identity`). The read-only projections and the
-#: analysis commands are excluded deliberately: they buy no turn, and hashing
-#: the package on every `des code-fact` would charge ~60 ms to a query that
-#: decides nothing.
+# Mutation and measurement operations declare the tree they affect.
 _DECLARES_ITS_RUNTIME = frozenset(
     {"devops", "po", "design", "oracle", "craft", "verify", "integrate"}
 )

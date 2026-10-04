@@ -267,15 +267,16 @@ def test_windows_observer_excludes_git_and_observes_regular_and_directory_links(
     (tmp_path / "ordinary").write_bytes(b"file")
     (tmp_path / "target").mkdir()
     (tmp_path / "directory-link").symlink_to("target", target_is_directory=True)
-    monkeypatch.setattr(
-        filesystem_projection,
-        "_git_index_modes",
-        lambda _: {b"ordinary": 0o100755},
-    )
-    monkeypatch.setattr(filesystem_projection.os, "name", "nt")
-    monkeypatch.delattr(filesystem_projection.os, "O_NOFOLLOW", raising=False)
+    with monkeypatch.context() as platform:
+        platform.setattr(
+            filesystem_projection,
+            "_git_index_modes",
+            lambda _: {b"ordinary": 0o100755},
+        )
+        platform.setattr(filesystem_projection.os, "name", "nt")
+        platform.delattr(filesystem_projection.os, "O_NOFOLLOW", raising=False)
 
-    observed = observe_workspace(tmp_path, ProjectionPolicy())
+        observed = observe_workspace(tmp_path, ProjectionPolicy())
 
     assert _state(observed, b".git/HEAD").kind == "absent"
     assert _state(observed, b"ordinary").mode == 0o100755

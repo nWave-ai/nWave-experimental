@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING, Any
 #: exported without a home or given a home without being exported.
 _EXPORTS: dict[str, str] = {
     # Driven adapters
-    "ClaudeCodeTaskAdapter": "des.adapters.driven",
     "EnvironmentConfigAdapter": "des.adapters.driven",
     "InMemoryConfigAdapter": "des.adapters.driven",
     "MockedTaskAdapter": "des.adapters.driven",
@@ -51,7 +50,6 @@ __all__: list[str] = sorted([*_EXPORTS, *_ALIASES])
 
 if TYPE_CHECKING:  # pragma: no cover - import-time cost is the whole point at runtime
     from des.adapters.driven import (
-        ClaudeCodeTaskAdapter,
         EnvironmentConfigAdapter,
         InMemoryConfigAdapter,
         MockedTaskAdapter,

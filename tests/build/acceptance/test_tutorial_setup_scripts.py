@@ -91,7 +91,7 @@ def _non_hidden_subdirs(directory: Path) -> list[Path]:
 def test_tutorial_setup_lifecycle(script: Path) -> None:
     """Per-tutorial validation that setup.sh behaves per the convention.
 
-    Consolidated lifecycle test (Lyra 2026-05-18 speedup): runs the full
+    Consolidated lifecycle test (External 2026-05-18 speedup): runs the full
     tutorial-setup contract in a single tmpdir with 3 subprocess
     invocations instead of 4 separate tests with 6 invocations. Net win
     on this file alone: 24 tests x ~25s avg ≈ 600s → 6 tests x ~12s ≈ 72s

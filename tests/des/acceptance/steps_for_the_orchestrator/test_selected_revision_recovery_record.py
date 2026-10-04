@@ -1,19 +1,11 @@
-"""Public oracle: acceptance-designer selected-revision-recovery is recordable.
-
-`des invoke-role --role acceptance-designer --task selected-revision-recovery`
-succeeds at the native role turn and then crashes recording it:
-`record_selected_revision_recovery()` is called by `invoke_role.py` with the
-prepared input's own path as a 6th positional argument, but the recorder in
-`role_artifacts.py` never declared a matching parameter. Every real component
-between the CLI edge and the recorder is exercised for real; only the paid
-provider (`claude`) is a stand-in.
-"""
+"""Host recovery results bind exact sealed inputs and retain canonical documents."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 
+from tests.common.in_process_cli import run_cli_in_process
 from tests.des.acceptance.distill_document_construction.test_distill_document_construction import (
     _call,
     _Subject,
@@ -64,7 +56,7 @@ def _recovery_document() -> dict[str, object]:
     }
 
 
-def test_stale_recovery_input_is_refused_before_any_provider_turn_or_write(
+def test_stale_recovery_input_is_refused_before_any_artifact_write(
     tmp_path,
 ) -> None:
     """Existing recovery machinery already refuses a stale prepared input.
@@ -99,9 +91,10 @@ def test_stale_recovery_input_is_refused_before_any_provider_turn_or_write(
         subject, "stdout is yellow and exit is zero."
     )  # moves again; input now stale
 
-    seen = len(subject.rows())
+    roles = subject.root / ".nwave/des/logs/roles"
+    before = {path.name: path.read_bytes() for path in roles.iterdir()}
     code, out, err = subject.step(
-        "invoke-role",
+        "record-role-result",
         "--repo-root",
         str(subject.root),
         "--role",
@@ -110,30 +103,39 @@ def test_stale_recovery_input_is_refused_before_any_provider_turn_or_write(
         "selected-revision-recovery",
         "--provider",
         "claude",
-        "--input",
+        "--value",
+        "1",
+        "--model",
+        "host-selected",
+        "--session-id",
+        "host-fixture",
+        "--prepared-input",
         stale_input,
-        answers=[],
+        "--input",
+        "-",
+        stdin=json.dumps(
+            {
+                "structured_output": {
+                    "outcome": "accepted",
+                    "diagnostic": "proposed realignment",
+                    "distill_document": _recovery_document(),
+                }
+            }
+        ),
     )
     assert code != 0, (
         "WHAT: a stale recovery input was accepted. WHY: it was "
         "sealed against a DESIGN state the selection no longer carries. HOW: "
-        "load_selected_revision_recovery must refuse before any provider turn."
+        "load_selected_revision_recovery must refuse before recording artifacts."
     )
     assert "authority binding differs" in out + err
-    assert subject.rows()[seen:] == [], "a refused stale input bought a provider turn"
+    assert {path.name: path.read_bytes() for path in roles.iterdir()} == before
 
 
 def test_accepted_recovery_records_its_typed_result_and_retains_the_exact_document(
     tmp_path,
 ) -> None:
-    """RED: the real CLI crashes recording an accepted recovery turn.
-
-    `invoke_role.py` passes the prepared input's own path to
-    `record_selected_revision_recovery(...)` as a 6th positional argument; the
-    recorder only declares 5. This drives every real component -- prepare-role,
-    invoke-role, the recorder, the DISTILL document constructor -- through the
-    actual CLI; only the paid provider `claude` is stubbed.
-    """
+    """Relative and absolute INPUTs bind from another cwd; escaped paths cannot."""
     subject = _Subject(tmp_path, None).designed()
     subject.select("blue")
     _misalign(subject, "stdout is green and exit is zero.")
@@ -160,42 +162,64 @@ def test_accepted_recovery_records_its_typed_result_and_retains_the_exact_docume
     assert hashlib.sha256(prepared_raw).hexdigest() == input_digest
 
     document = _recovery_document()
-    code, out, err = subject.step(
-        "invoke-role",
-        "--repo-root",
-        str(subject.root),
-        "--role",
-        "acceptance-designer",
-        "--task",
-        "selected-revision-recovery",
-        "--provider",
-        "claude",
-        "--input",
-        input_path,
-        answers=[
-            {
-                "structured_output": {
-                    "outcome": "accepted",
-                    "diagnostic": "the recovered selection is admissible",
-                    "distill_document": document,
-                }
+    supplied = json.dumps(
+        {
+            "structured_output": {
+                "outcome": "accepted",
+                "diagnostic": "the recovered selection is admissible",
+                "distill_document": document,
             }
-        ],
+        }
     )
-    assert code == 0, (
-        "WHAT: `des invoke-role` crashed instead of recording an accepted "
-        "acceptance-designer recovery. WHY: invoke_role.py:192 calls "
-        "record_selected_revision_recovery(root, value, provider, model, "
-        "run, expected) with the prepared input's own path as a 6th "
-        "positional argument, but role_artifacts.py:836 declares only 5 "
-        "parameters. HOW: role_artifacts.record_selected_revision_recovery "
-        "must accept that input path (mirroring record_model's own optional "
-        "input_path parameter) so the caller's binding is honored instead of "
-        "raising TypeError.\n--- actual stdout ---\n"
-        + out
-        + "\n--- actual stderr ---\n"
-        + err
-    )
+
+    def record_input(path):
+        return run_cli_in_process(
+            [
+                "record-role-result",
+                "--repo-root",
+                str(subject.root),
+                "--role",
+                "acceptance-designer",
+                "--task",
+                "selected-revision-recovery",
+                "--provider",
+                "claude",
+                "--value",
+                "1",
+                "--model",
+                "host-selected",
+                "--session-id",
+                "host-fixture",
+                "--prepared-input",
+                str(path),
+                "--input",
+                "-",
+            ],
+            cwd=tmp_path,
+            stdin_text=supplied,
+            catch_all=True,
+        )
+
+    roles = subject.root / ".nwave/des/logs/roles"
+    outside = tmp_path / "outside-recovery.json"
+    outside.write_bytes(prepared_raw)
+    escaped = roles / "escaped-input.json"
+    escaped.symlink_to(outside)
+    before = {path.name: path.read_bytes() for path in roles.iterdir()}
+    for path in (outside, escaped.relative_to(subject.root)):
+        code, out, err = record_input(path)
+        assert code != 0 and block(out, err)["WHAT"] == "RoleResultMalformed"
+        assert "inside the owned roles directory" in out + err
+        assert {path.name: path.read_bytes() for path in roles.iterdir()} == before
+
+    identities = []
+    for path in (input_path, subject.root / input_path):
+        code, out, err = record_input(path)
+        assert code == 0, out + err
+        recorded = block(out, err)
+        identities.append((recorded["RESULT"], recorded["RESULT-SHA256"]))
+    assert identities[0] == identities[1]
+    assert code == 0, out + err
     lines = block(out, err)
     assert lines["OUTCOME"] == "accepted"
     assert lines["TASK"] == "selected-revision-recovery"
@@ -213,7 +237,7 @@ def test_accepted_recovery_records_its_typed_result_and_retains_the_exact_docume
         "prepared input the caller invoked with. WHY: a recorder that "
         "re-derives without binding could silently accept a different input "
         "than the one the CLI validated. HOW: bind the recorded input digest "
-        "to the exact bytes read at invoke-role's own validation."
+        "to the exact prepared bytes supplied to record-role-result."
     )
 
     document_path = lines["DISTILL-DOCUMENT"]

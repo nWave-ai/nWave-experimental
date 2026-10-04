@@ -9,7 +9,6 @@ Vocabulary shared across the suite (all under
 ``tests/release/rc_smoke/acceptance/steps/``):
   * test_smoke_orchestration.py   (SmokeRunner orchestration + exit-code contract)
   * test_tool_contract_registry.py (per-tool ToolContract behaviour)
-  * test_platform_passthrough.py  (US-5 --platform contract)
   * test_unknown_tool_rejection.py (unregistered target diagnostic)
 
 This is a config-/orchestration-shaped feature (one smoke lane, finite tool

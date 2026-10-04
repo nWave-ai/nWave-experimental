@@ -11,9 +11,9 @@ interactive refinement with the human. Honor an already selected final-review
 or full-delegation mode; the LLM manages the dialogue and progression.
 
 Read `~/.claude/skills/nw-role-invocation/SKILL.md` before delegating. Invoke
-the installed `nw-product-owner` role natively for semantic facts; `des po
---repo-root ROOT --feature ID` buys decomposition only, and `des discuss --input`
-buys no turn.
+the installed `nw-product-owner` natively for semantic facts and decomposition;
+`des po --repo-root ROOT --feature ID --input -` and `des discuss --input -`
+construct its complete DISCUSS manifest without invoking a model.
 
 The Product Owner owns this conversation. Use `nw-product-owner` with its
 resident collaboration, JTBD, BDD and value-slicing knowledge. Do not treat
@@ -60,9 +60,11 @@ this Request. Do not imply replacement without that flag.
 
 ## Shared human view
 
-Read `nw-doc-as-artifact` and render the constructed product brief to local nWave
-HTML during meaningful refinement and at the agreed handoff. Use the document
-path reported by DES, which honors global/project configuration; never assume
+Read `nw-doc-as-artifact` and use a local nWave HTML view during meaningful
+refinement when it helps the conversation or the human asks for it. At the
+completed-wave handoff, regenerate the final view automatically only for full
+density; lean keeps the brief and handoff unless the human requested a view.
+Use the document path reported by DES, which honors global/project configuration; never assume
 `docs/product/brief.md`. The view serves human comprehension even for a short
 brief. Reuse the packaged renderer, not LLM-authored HTML. This is a working
 surface, not a publication requirement or DES progression gate. If rendering is
@@ -122,7 +124,21 @@ already resolved at this entry.
 Say nothing about expansion before your final response for this wave, and only
 after the whole wave has really completed. The `WAVE-END-OFFER-INTERNAL-NOT-NOW`
 rows decide which situations carry no offer — a single DES step terminal of any
-outcome among them. Invoke no wave-end step: none exists.
+outcome among them. Invoke no wave-end expansion step; the local view has a
+separate completion port.
 
 If `des wave-entry` refuses or returns `Indeterminate`, make no offer and do not
 invent one; report its WHAT/WHY/HOW to the human.
+
+## Completed-wave local view
+
+Read `nw-doc-as-artifact` and retain `WAVE-DOCUMENTATION-DENSITY` from wave
+entry. After this whole wave succeeds, invoke `des wave-entry --complete` with
+the captured entry and successful constructor terminals as that skill directs.
+For full density, the port renders the final successful DES `DOCUMENT:` Markdown
+after its path checks and reports the local HTML path. Reuse the same local view rendered
+during refinement above; regenerate it from the final authority instead of
+creating a second page. Lean retains the document and handoff. Never render
+because a single DES step succeeded, or after a stopped or partial wave.
+Density does not alter optional explanation, provider/model selection or
+required checks.

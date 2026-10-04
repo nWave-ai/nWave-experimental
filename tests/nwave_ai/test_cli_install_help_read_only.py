@@ -46,7 +46,7 @@ def test_install_help_exits_cleanly_without_changing_conflicting_config(
     }
     for install_args in (
         ["--help"],
-        ["--yes", "--density-only", "--help"],
+        ["--yes", "--help"],
         ["--target", str(home), "-h"],
     ):
         result = subprocess.run(

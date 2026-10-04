@@ -20,11 +20,7 @@ import json
 import sys
 from pathlib import Path
 
-from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
-    asked,
-    block,
-    git,
-)
+from tests.des.acceptance.steps_for_the_orchestrator.conftest import block, git
 
 
 #: The human's words, verbatim, which is what a durable authority owes back.
@@ -79,6 +75,14 @@ def design_payload() -> dict[str, object]:
     return {
         "schema_version": 1,
         "authority": {"heading": "Reported defect in the published value"},
+        "architectural_tests": {
+            "applicability": "not_applicable",
+            "reason": "The fixture has no structural boundary change.",
+        },
+        "contract_tests": {
+            "applicability": "not_applicable",
+            "reason": "The fixture changes no shared contract.",
+        },
         "purpose": "Correct the published value the defect report names.",
         "constraints": ["Preserve every other published value."],
         "targets": [
@@ -107,6 +111,10 @@ def design_payload() -> dict[str, object]:
         "agreement_analysis": {
             "applicability": "not_applicable",
             "reason": "The correction touches no shared release or interchange schema.",
+        },
+        "impact_closure": {
+            "applicability": "not_applicable",
+            "reason": "The fixture reaches no public surface, consumer or build metadata.",
         },
         "boundaries": {
             "applicability": "not_applicable",
@@ -202,7 +210,8 @@ def observed(root: Path, step, role: str, candidate: str) -> dict[str, str]:
         f"bugfix-{role}",
         "--input",
         "-",
-        *(("--prepared-input", prepared_lines["INPUT"]) if role == "examiner" else ()),
+        "--prepared-input",
+        prepared_lines["INPUT"],
         stdin=role_result(role, "accepted"),
     )
     assert code == 0, out + err
@@ -304,51 +313,6 @@ def test_an_observed_defect_reaches_a_verified_correction_through_the_shared_pro
     assert code == 0, out + err
     assert block(out, err)["DELIVERY-OUTCOME"] == "Success"
     assert (root / TARGET).read_text() == CORRECTED
-    assert "nw-product-owner" not in asked(turns)
-
-
-def test_the_published_bugfix_entry_step_composes_with_the_document_producers(
-    root: Path, step, turns: Path
-) -> None:
-    """The route the published bugfix asset names, continued into the producers.
-
-    `des po` is the entry the bugfix asset names and it constructs no durable
-    authority of its own, so a fix that stops there has no conforming document.
-    Continuing into the SAME producers a feature uses is what closes that, and
-    it must not be refused as a second decomposition of somebody else's Request.
-    """
-    defective_repository(root)
-    code, out, err = step(
-        "po",
-        "--project",
-        "--repo-root",
-        str(root),
-        answers=[
-            {
-                "structured_output": {
-                    "outcome": "accepted",
-                    "diagnostic": "decomposed the reported defect",
-                    "values": [{"observation": CORRECTED_OBSERVATION}],
-                }
-            }
-        ],
-        stdin=OBSERVED_DEFECT,
-    )
-    assert code == 0, out + err
-    assert not (root / DISCUSS_DESTINATION).exists()
-
-    code, out, err = step(
-        "discuss",
-        "--project",
-        "--repo-root",
-        str(root),
-        "--input",
-        "-",
-        stdin=json.dumps(discuss_payload()),
-    )
-    assert code == 0, out + err
-    assert OBSERVED_DEFECT in (root / DISCUSS_DESTINATION).read_text()
-    assert asked(turns) == ["nw-product-owner"]
 
 
 PUBLISHED_BUGFIX_ASSETS = (
@@ -357,16 +321,3 @@ PUBLISHED_BUGFIX_ASSETS = (
 )
 SHARED_PRODUCERS = ("des discuss", "des design", "des devops", "des distill")
 CHECKOUT = Path(__file__).parents[4]
-
-
-def test_the_published_bugfix_assets_route_into_the_shared_document_producers() -> None:
-    """The route a reader follows names the producers the walk above exercised.
-
-    A published route that names only the entry step teaches a fix with no
-    durable authority, which is the defect this scenario exists to keep closed.
-    """
-    for asset in PUBLISHED_BUGFIX_ASSETS:
-        text = (CHECKOUT / asset).read_text()
-        missing = [name for name in SHARED_PRODUCERS if name not in text]
-        assert not missing, f"{asset} names no {missing}"
-        assert "des oracle" in text

@@ -74,10 +74,9 @@ Named here because these are exactly the things it does NOT prove:
    inert runner answers both the same way. What that proves is the CHAIN over
    two comparable payloads; it does not exercise the DES step loop, because the
    inert agent invokes no `des` command. The step loop is proved separately and
-   at zero spend by
-   `tests/scripts/analysis/test_k4_inert_replay_drives_the_real_runner.py`,
-   which walks `des state` -> `po` -> `design` -> `oracle` -> `craft` ->
-   `verify` by following each step's own `NEXT` line against recorded envelopes.
+   at zero spend by `tests/des/acceptance/steps_for_the_orchestrator`, which
+   drives each step from `des state` to `des integrate` with host-authored
+   input, as the native host does: DES itself launches no model.
 """
 
 from __future__ import annotations
@@ -171,7 +170,7 @@ NOT_COVERED = (
     "the DES step loop. Offline the inert agent invokes no `des` command, so "
     "the nWave arm exercises the harness and not the steps. The step loop is "
     "proved separately at zero spend by "
-    "tests/scripts/analysis/test_k4_inert_replay_drives_the_real_runner.py.",
+    "tests/des/acceptance/steps_for_the_orchestrator.",
     "the judgment layer. Rubric scores come from a hash of the sealed packet, "
     "so the quality axis exercises the join and the arithmetic and says nothing "
     "about delivery quality.",

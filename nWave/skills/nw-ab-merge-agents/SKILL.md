@@ -17,7 +17,7 @@ Run these steps in order:
 3. **RELOCATE SKILLS** — Copy skill files from B's directory to A's. If B has a reviewer, copy its skills too. Update frontmatter skill references. Gate: all skills relocated, frontmatter updated.
 4. **CLEAN UP** — Delete deprecated agent file `nWave/agents/nw-{agent-b}.md`, deprecated reviewer, deprecated skill directories, deprecated command task files. Gate: zero deprecated files remain.
 5. **UPDATE REFERENCES** — Update `nWave/framework-catalog.yaml`, `nWave/README.md`, `nWave/templates/*.yaml`. Grep for remaining references to B's name. Gate: zero references remain (legacy/ exempt).
-6. **VALIDATE** — compose ▶ `nw-ab-validate-spec` on merged A. Gate: all 19 pass, zero anti-patterns.
+6. **VALIDATE** — compose ▶ `nw-ab-validate-spec` on merged A. Gate: every checklist item passes, zero anti-patterns.
 
 ## Composition
 

@@ -215,12 +215,6 @@ class TestTheProbeStatesWhatItDoesNotCover:
         assert any("ratio axes" in line for line in probe.NOT_COVERED)
         assert any("INDETERMINATE" in line for line in probe.NOT_COVERED)
 
-    def test_the_step_loop_is_declared_uncovered_and_points_at_its_own_proof(self):
-        named = [line for line in probe.NOT_COVERED if "step loop" in line]
-
-        assert named
-        assert "test_k4_inert_replay_drives_the_real_runner" in named[0]
-
     def test_the_judgment_layer_is_declared_uncovered(self):
         assert any("judgment layer" in line for line in probe.NOT_COVERED)
 

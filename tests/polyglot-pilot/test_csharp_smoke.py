@@ -3,7 +3,8 @@
 Marked ``polyglot_smoke`` (custom marker, registered in ``pyproject.toml``).
 Behaviour:
 
-- If ``dotnet`` is absent on PATH: SKIPPED (no toolchain).
+- If no .NET SDK is available (the smoke script's own toolchain probe):
+  SKIPPED (no toolchain).
 - Otherwise: subprocess-invokes ``scripts/polyglot/smoke_csharp_pilot.py``
   and asserts exit 0.
 
@@ -14,12 +15,13 @@ about the fact that no actual .NET suite ran.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+from scripts.polyglot.smoke_csharp_pilot import _toolchain_present
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -30,8 +32,8 @@ SMOKE_SCRIPT = REPO_ROOT / "scripts" / "polyglot" / "smoke_csharp_pilot.py"
 @pytest.mark.slow
 def test_csharp_polyglot_pilot_runs_green() -> None:
     """The C# pilot's xUnit suite must run GREEN end-to-end."""
-    if shutil.which("dotnet") is None:
-        pytest.skip("dotnet not on PATH — polyglot C# smoke deferred")
+    if not _toolchain_present():
+        pytest.skip("no .NET SDK available — polyglot C# smoke deferred")
 
     assert SMOKE_SCRIPT.is_file(), f"missing smoke script: {SMOKE_SCRIPT}"
 
@@ -50,3 +52,38 @@ def test_csharp_polyglot_pilot_runs_green() -> None:
             f"--- stdout ---\n{result.stdout}\n"
             f"--- stderr ---\n{result.stderr}"
         )
+
+
+@pytest.mark.parametrize("probe_exit, expected_exit", [(0, 0), (7, 2)])
+def test_empty_sdk_probe_distinguishes_absence_from_failure(
+    tmp_path, monkeypatch, probe_exit, expected_exit
+) -> None:
+    from scripts.polyglot import smoke_csharp_pilot as smoke
+
+    dotnet = tmp_path / "dotnet"
+    dotnet.write_text(f"#!{sys.executable}\nimport sys\nsys.exit({probe_exit})\n")
+    dotnet.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setattr(smoke, "PILOT_DIR", tmp_path)
+
+    assert smoke.main() == expected_exit
+
+
+@pytest.mark.parametrize(
+    "probe_error",
+    [OSError("cannot execute SDK host"), subprocess.TimeoutExpired("dotnet", 60)],
+)
+def test_unexecutable_sdk_probe_is_broken_not_absent(
+    tmp_path, monkeypatch, probe_error
+) -> None:
+    from scripts.polyglot import smoke_csharp_pilot as smoke
+
+    monkeypatch.setattr(smoke, "PILOT_DIR", tmp_path)
+    monkeypatch.setattr(smoke.shutil, "which", lambda _: "/broken/dotnet")
+
+    def cannot_execute(*args, **kwargs):
+        raise probe_error
+
+    monkeypatch.setattr(smoke.subprocess, "run", cannot_execute)
+
+    assert smoke.main() == smoke.EXIT_TOOLCHAIN_BROKEN

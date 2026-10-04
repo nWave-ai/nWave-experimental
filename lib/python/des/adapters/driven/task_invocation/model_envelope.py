@@ -20,6 +20,13 @@ from des.domain.design_authority_locator import (
     UNSAFE_LOCATOR_REFUSAL,
     is_design_authority_locator,
 )
+from des.domain.design_document import (
+    DesignDocumentInvalid,
+    decode_design_decisions,
+    design_decisions_defect,
+    design_decisions_schema,
+    without_absent_optional_decisions,
+)
 from des.domain.distill_document import DistillDocument, DistillDocumentInvalid
 from des.ports.driven_ports.task_invocation_port import (
     MINIMUM_OBSERVATION_CHARACTERS,
@@ -300,7 +307,7 @@ _SOLUTION_ARCHITECT_SCHEMA: dict[str, Any] = {
                 },
                 "paradigm": {
                     "type": "string",
-                    "enum": ["object_oriented", "functional"],
+                    "enum": ["object_oriented", "functional", "procedural"],
                 },
                 "decisions": {
                     "type": "array",
@@ -330,6 +337,7 @@ _SOLUTION_ARCHITECT_SCHEMA: dict[str, Any] = {
                 # section identity.  The constructor, never the provider,
                 # later replaces the empty value with its configured locator.
                 "authority_locator": {"type": "string"},
+                **design_decisions_schema()["properties"],
             },
             "required": [
                 "targets",
@@ -340,6 +348,7 @@ _SOLUTION_ARCHITECT_SCHEMA: dict[str, Any] = {
                 "verification",
                 "oracle_verification_index",
                 "authority_locator",
+                *design_decisions_schema()["required"],
             ],
             "additionalProperties": False,
         },
@@ -630,6 +639,115 @@ def _schema_for(
     )
 
 
+def codex_schema_for(
+    role_id: str,
+    max_product_values: int | None = None,
+    defect_values: tuple[str, ...] = (),
+    semantic_task: str | None = None,
+) -> dict[str, Any]:
+    """Project the semantic law into Codex strict nested-branch grammar.
+
+    Top-level conditionals become a required ``answer`` object's ``anyOf``.
+    The native host unwraps it before the shared decoder checks the same law.
+    This is schema construction, never model execution.
+    """
+    schema = json.loads(
+        _schema_for(role_id, max_product_values, defect_values, semantic_task)
+    )
+
+    def strictify(value: Any) -> Any:
+        if isinstance(value, list):
+            return [strictify(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        result = {
+            key: strictify(item)
+            for key, item in value.items()
+            # Codex rejects uniqueItems; the shared decoder retains uniqueness.
+            if key not in {"if", "then", "else", "uniqueItems"}
+        }
+        if "const" in result and "type" not in result:
+            literal = result["const"]
+            if literal is None:
+                result["type"] = "null"
+            elif isinstance(literal, bool):
+                result["type"] = "boolean"
+            elif isinstance(literal, int):
+                result["type"] = "integer"
+            elif isinstance(literal, float):
+                result["type"] = "number"
+            elif isinstance(literal, str):
+                result["type"] = "string"
+        properties = result.get("properties")
+        kind = result.get("type")
+        is_object = kind == "object" or (isinstance(kind, list) and "object" in kind)
+        if is_object and isinstance(properties, dict):
+            # Strict output lists every property.  A property the semantic law
+            # leaves optional is carried nullable, and the shared decoder
+            # normalizes null back to absence.
+            if "required" in result:
+                for name in set(properties) - set(result["required"]):
+                    declared = properties[name]
+                    properties[name] = {
+                        "anyOf": [
+                            *declared.get("anyOf", [declared]),
+                            {"type": "null"},
+                        ]
+                    }
+            result["required"] = list(properties)
+            result["additionalProperties"] = False
+        return result
+
+    def merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+        merged = dict(base)
+        for key, value in patch.items():
+            current = merged.get(key)
+            if isinstance(current, dict) and isinstance(value, dict):
+                merged_value = merge(current, value)
+                # A narrowed null branch must not retain a string enum.
+                if "type" in value and "enum" in current and "enum" not in value:
+                    merged_value.pop("enum", None)
+                merged[key] = merged_value
+            else:
+                merged[key] = value
+        return merged
+
+    condition = schema.pop("if")
+    then = schema.pop("then")
+    otherwise = schema.pop("else", {})
+    rule = condition["properties"]["outcome"]
+    true_outcomes = (rule["const"],) if "const" in rule else tuple(rule["enum"])
+    false_outcomes = tuple(
+        outcome.value for outcome in ModelOutcome if outcome.value not in true_outcomes
+    )
+
+    def branch(
+        outcomes: tuple[str, ...], constraints: dict[str, Any]
+    ) -> dict[str, Any]:
+        result = merge(schema, constraints)
+        properties = result["properties"]
+        properties["outcome"] = (
+            {"type": "string", "const": outcomes[0]}
+            if len(outcomes) == 1
+            else {"type": "string", "enum": list(outcomes)}
+        )
+        return strictify(result)
+
+    return {
+        "type": "object",
+        "properties": {
+            "answer": {
+                "anyOf": [
+                    *(branch((outcome,), then) for outcome in true_outcomes),
+                    *(branch((outcome,), otherwise) for outcome in false_outcomes),
+                ]
+            }
+        },
+        "required": ["answer"],
+        "additionalProperties": False,
+    }
+
+
 # Five of these six arguments are the CALL's own facts, not this decoder's
 # choices.  `role_id`, `max_product_values`, `defect_values` and `semantic_task`
 # are TaskInvocationPort.invoke's per-call declarations, re-stated here so an
@@ -820,8 +938,14 @@ def decode_model_run(  # noqa: PLR0913 - see the note above
                     verification,
                     oracle_verification_index,
                     authority_locator=authority_locator,
+                    **decode_design_decisions(
+                        without_absent_optional_decisions(raw_facts)
+                    ),
                 )
-            except (KeyError, TypeError):
+                defect = design_decisions_defect(design_facts)
+                if defect is not None:
+                    raise MalformedModelEnvelope(f"DesignFactsMalformed: {defect}")
+            except (KeyError, TypeError, DesignDocumentInvalid):
                 raise MalformedModelEnvelope("DesignFactsMalformed") from None
     charter: ExpectationCharterAnswer | None = None
     if charter_task:

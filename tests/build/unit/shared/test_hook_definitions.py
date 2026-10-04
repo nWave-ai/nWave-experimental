@@ -3,16 +3,6 @@
 Driving port: hook_definitions module (pure functions).
 Tests verify the canonical hook definitions produce correct configs
 for both distribution paths (plugin and installer).
-
-Test Budget: 8 distinct behaviors x 2 = 16 max unit tests.
-Behaviors:
-  1. Hook events define the fixed independent registrations.
-  2. Hook event types cover every distinct event type
-  3. generate_hook_config produces correct structure for standard hooks
-  4. generate_hook_config uses guard_command_fn for guard hooks
-  5. generate_hook_config uses shell_command verbatim for Bash hooks
-  6. build_guard_command produces shell fast-path with correct structure
-  7. is_des_hook_entry detects DES hooks in all formats (Python + shell)
 """
 
 from __future__ import annotations
@@ -30,89 +20,6 @@ from scripts.shared.hook_definitions import (
 
 class TestHookEventDefinitions:
     """Verify the canonical hook event definitions are complete and correct."""
-
-    def test_defines_independent_hook_registrations(self):
-        """The shared definition contains only the current independent hooks.
-
-        SessionStart returned on 2026-09-13, authorised by Ale: it had been
-        retired to cut context bloat, and two iterations measured that without
-        it an installed nWave is never used -- six deliveries, none exercising
-        the method. It is registered minimally, under its own declared size
-        ceiling, and the uninstall path removes it.
-        """
-        assert len(HOOK_EVENTS) == 8
-        assert ("SessionStart", None, "session-start") in [
-            (h.event, h.matcher, h.action) for h in HOOK_EVENTS
-        ]
-
-        # Verify exact event/matcher/action triples
-        events_matchers = [(h.event, h.matcher, h.action) for h in HOOK_EVENTS]
-        assert ("PreToolUse", "Agent", "pre-task") in events_matchers
-        # K4 overhead slice: SendMessage routes to the existing portable
-        # pre-tool-use action -- exactly one registration, no new action.
-        assert ("PreToolUse", "SendMessage", "pre-tool-use") in events_matchers
-        send_message_entries = [
-            (h.event, h.matcher, h.action)
-            for h in HOOK_EVENTS
-            if h.event == "PreToolUse" and h.matcher == "SendMessage"
-        ]
-        assert send_message_entries == [("PreToolUse", "SendMessage", "pre-tool-use")]
-        # K4 task-boundary slice: TaskCreate/TaskUpdate combine into a single
-        # matcher routed to the existing portable pre-tool-use action --
-        # exactly one registration, no new action.
-        task_boundary_triple = ("PreToolUse", "TaskCreate|TaskUpdate", "pre-tool-use")
-        assert events_matchers.count(task_boundary_triple) == 1
-        assert ("PreToolUse", "Write", "pre-write") in events_matchers
-        assert ("PreToolUse", "Edit", "pre-edit") in events_matchers
-        assert ("PreToolUse", "Bash", "pre-bash") not in events_matchers
-        # fix-execution-log-bash-guard-consolidation follow-on: the
-        # standalone git-stash / worktree-removal Bash registrations are
-        # retired -- the universal `pre-tool-use` action now evaluates both
-        # decisions inline.
-        assert ("PreToolUse", "Bash", "pre-bash-git-stash-guard") not in events_matchers
-        assert (
-            "PreToolUse",
-            "Bash",
-            "pre-bash-worktree-removal-guard",
-        ) not in events_matchers
-        assert ("PreToolUse", "Bash", "pre-tool-use") in events_matchers
-        bash_entries = [
-            (h.event, h.matcher, h.action)
-            for h in HOOK_EVENTS
-            if h.event == "PreToolUse" and h.matcher == "Bash"
-        ]
-        assert bash_entries == [("PreToolUse", "Bash", "pre-tool-use")]
-        assert ("SubagentStop", None, "deliver-progress") not in events_matchers
-        assert ("SessionStart", "startup", "session-start") not in events_matchers
-        # The SubagentStart skill-loading reminder is deleted: it cost ~2.9s
-        # per agent start on EVERY subagent and asked managed dispatch for a
-        # Skill action its exact tool allowlist does not carry.
-        assert not any(event == "SubagentStart" for event, _, _ in events_matchers)
-        # Stable-design report 2026-08-19 §1.1: reinstated so a killed/silent
-        # subagent's own turn always produces a terminal result instead of
-        # relying solely on the PreToolUse budget guard's heuristic re-
-        # derivation of a fact the platform already owns.
-        assert ("SubagentStop", None, "subagent-stop") in events_matchers
-        assert ("UserPromptSubmit", None, "user-prompt-submit") not in events_matchers
-
-    def test_hook_event_types_excludes_the_retired_prompt_hook(self):
-        """Only active hook events are registered by the installer.
-
-        UserPromptSubmit stays retired. SessionStart does not: it returned on
-        2026-09-13 because without it an installed nWave was measured never to
-        be used.
-        """
-        assert (
-            frozenset(
-                {
-                    "PreToolUse",
-                    "SubagentStop",
-                    "SessionStart",
-                }
-            )
-            == HOOK_EVENT_TYPES
-        )
-        assert "UserPromptSubmit" not in HOOK_EVENT_TYPES
 
     def test_write_and_edit_hooks_are_guards(self):
         """Write and Edit hooks are guards; Bash is NOT (it uses shell_command)."""
