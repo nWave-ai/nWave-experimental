@@ -2342,8 +2342,9 @@ class DESPlugin(InstallationPlugin):
     ) -> None:
         """Prepend the absolute DES bin path to settings.json env.PATH if not present.
 
-        Idempotent: skips prepend if des_bin_path is already a colon-delimited
-        segment of the current PATH value.
+        Idempotent: skips prepend if des_bin_path already names an entry of the
+        current PATH value, split on ``os.pathsep`` and compared after
+        normpath/normcase (trailing separators, case on Windows).
 
         When settings.json has no prior env.PATH, seeds it from the live
         install-time PATH (os.environ["PATH"]) so user-visible directories
@@ -2384,19 +2385,22 @@ class DESPlugin(InstallationPlugin):
         # Claude Code does not shell-expand env values, so $HOME must be resolved now.
         if existing_path and "$HOME" in existing_path:
             home = str(Path.home())
-            segments = [s.replace("$HOME", home) for s in existing_path.split(":")]
-            existing_path = ":".join(segments)
+            segments = [
+                s.replace("$HOME", home) for s in existing_path.split(os.pathsep)
+            ]
+            existing_path = os.pathsep.join(segments)
 
         # Auto-heal settings written by older installer versions: detect the
         # exact byte-for-byte signature of the prior fabricated value
         # (des_bin + SYSTEM_PATH_FALLBACK only) and rewrite from the live
         # install-time PATH. Probability of a user manually configuring
         # exactly this value is effectively zero, so this is safe to assume
-        # is installer-fabricated.
+        # is installer-fabricated. Those installers always joined with ":",
+        # so the signature keeps the literal colon on every platform.
         legacy_fabricated_path = f"{des_bin_path}:{self.SYSTEM_PATH_FALLBACK}"
         if existing_path == legacy_fabricated_path:
             live_path = os.environ.get("PATH") or self.SYSTEM_PATH_FALLBACK
-            config["env"]["PATH"] = des_bin_path + ":" + live_path
+            config["env"]["PATH"] = des_bin_path + os.pathsep + live_path
             self._record_settings_receipt(
                 context, path_before=path_before, path_written=config["env"]["PATH"]
             )
@@ -2404,7 +2408,12 @@ class DESPlugin(InstallationPlugin):
                 self._save_settings(settings_file, config, context)
             return
 
-        if des_bin_path in existing_path.split(":"):
+        target = os.path.normcase(os.path.normpath(des_bin_path))
+        if any(
+            os.path.normcase(os.path.normpath(entry)) == target
+            for entry in existing_path.split(os.pathsep)
+            if entry
+        ):
             if existing_path != config["env"].get("PATH", ""):
                 config["env"]["PATH"] = existing_path
                 if not context.dry_run:
@@ -2415,13 +2424,13 @@ class DESPlugin(InstallationPlugin):
             return
 
         if existing_path:
-            config["env"]["PATH"] = des_bin_path + ":" + existing_path
+            config["env"]["PATH"] = des_bin_path + os.pathsep + existing_path
         else:
             # Seed from the user's live install-time PATH so binaries reachable
             # from their shell (claude itself in ~/.local/bin, pnpm, node, etc.)
             # remain reachable inside Claude Code sessions and hooks.
             live_path = os.environ.get("PATH") or self.SYSTEM_PATH_FALLBACK
-            config["env"]["PATH"] = des_bin_path + ":" + live_path
+            config["env"]["PATH"] = des_bin_path + os.pathsep + live_path
 
         self._record_settings_receipt(
             context, path_before=path_before, path_written=config["env"]["PATH"]
