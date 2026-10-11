@@ -170,8 +170,15 @@ class TestPathEnvRemediationUsesResolvedPath:
     """Defect 5: path_env.py ENV_PATH_MISSING remediation."""
 
     def test_missing_path_key_remediation_names_resolved_bin(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """BEHAVIOUR: env.PATH absent and the resolved bin dir absent from the
+        inherited PATH -> the doctor fails, and its remediation names the
+        RESOLVED bin dir (never the literal ``~/.claude/bin``) and never sends
+        the user back to `nwave-ai install` (issue nWave-ai/nWave-experimental#5:
+        that remediation re-writes env.PATH and re-introduces the synced
+        settings bug)."""
+        monkeypatch.setenv("PATH", os.pathsep.join(["/usr/bin", "/bin"]))
         context = DoctorContext(home_dir=tmp_path)
         context.claude_dir.mkdir(parents=True, exist_ok=True)
         context.settings_path.write_text(json.dumps({}), encoding="utf-8")
@@ -182,6 +189,23 @@ class TestPathEnvRemediationUsesResolvedPath:
         expected_bin = str(context.claude_dir / "bin")
         assert expected_bin in result.remediation
         assert "~/.claude/bin" not in result.remediation
+        assert "nwave-ai install" not in result.remediation
+
+    def test_missing_path_key_passes_when_resolved_bin_on_inherited_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """BEHAVIOUR: env.PATH absent but the RESOLVED bin dir is on the
+        inherited PATH -> a session resolves the shims, so the doctor passes
+        (issue nWave-ai/nWave-experimental#5, case 1, on the resolved profile)."""
+        context = DoctorContext(home_dir=tmp_path)
+        expected_bin = str(context.claude_dir / "bin")
+        monkeypatch.setenv("PATH", os.pathsep.join(["/usr/bin", expected_bin]))
+        context.claude_dir.mkdir(parents=True, exist_ok=True)
+        context.settings_path.write_text(json.dumps({}), encoding="utf-8")
+
+        result = PathEnvCheck().run(context)
+
+        assert result.passed is True, result.message
 
 
 class TestDesModuleRemediationUsesResolvedPath:
