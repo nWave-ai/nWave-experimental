@@ -11,6 +11,7 @@ from scripts.install.context_detector import (
     _detect_claude_code,
     _detect_codex,
     _detect_cursor,
+    _detect_devin,
     detect_target_platforms,
 )
 
@@ -405,3 +406,94 @@ class TestTargetPlatformCursorEnum:
     def test_cursor_value(self):
         """TargetPlatform.CURSOR has value 'cursor'."""
         assert TargetPlatform.CURSOR.value == "cursor"
+
+
+class TestDetectDevinViaConfigDir:
+    """Verify Devin detection via ~/.config/devin/ directory existence."""
+
+    def test_detect_devin_via_config_dir(self, monkeypatch, tmp_path):
+        """detect_target_platforms() includes devin when ~/.config/devin/ exists."""
+        devin_dir = tmp_path / ".config" / "devin"
+        devin_dir.mkdir(parents=True)
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("DEVIN_CONFIG_DIR", raising=False)
+        monkeypatch.setenv("CLAUDE_CODE", "")
+        monkeypatch.setattr("shutil.which", lambda _cmd: None)
+
+        platforms = detect_target_platforms()
+
+        assert TargetPlatform.DEVIN in platforms
+
+
+class TestDetectDevinViaConfigDirEnvOverride:
+    """Verify Devin detection via DEVIN_CONFIG_DIR env override."""
+
+    def test_detect_devin_via_env_override(self, monkeypatch, tmp_path):
+        """detect_target_platforms() includes devin when DEVIN_CONFIG_DIR points to an existing dir."""
+        custom_dir = tmp_path / "custom-devin"
+        custom_dir.mkdir()
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("DEVIN_CONFIG_DIR", str(custom_dir))
+        monkeypatch.setenv("CLAUDE_CODE", "")
+        monkeypatch.setattr("shutil.which", lambda _cmd: None)
+
+        platforms = detect_target_platforms()
+
+        assert TargetPlatform.DEVIN in platforms
+
+
+class TestDetectDevinViaBinary:
+    """Verify Devin detection via devin binary in PATH."""
+
+    def test_detect_devin_via_binary(self, monkeypatch, tmp_path):
+        """detect_target_platforms() includes devin when the devin binary is found."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("DEVIN_CONFIG_DIR", raising=False)
+        monkeypatch.setenv("CLAUDE_CODE", "")
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda cmd: "/usr/local/bin/devin" if cmd == "devin" else None,
+        )
+
+        platforms = detect_target_platforms()
+
+        assert TargetPlatform.DEVIN in platforms
+
+
+class TestDetectDevinWithoutIndicator:
+    """Verify Devin does not auto-detect when no signal exists."""
+
+    def test_detect_devin_without_config_dir_or_binary(self, monkeypatch, tmp_path):
+        """detect_target_platforms() does not include devin without a signal."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("DEVIN_CONFIG_DIR", raising=False)
+        monkeypatch.setenv("CLAUDE_CODE", "")
+        monkeypatch.setattr("shutil.which", lambda _cmd: None)
+
+        platforms = detect_target_platforms()
+
+        assert TargetPlatform.DEVIN not in platforms
+
+
+class TestDetectDevinHelper:
+    """Verify direct _detect_devin helper behavior."""
+
+    def test_detect_devin_absent_config_dir_env_is_falsy(self, monkeypatch, tmp_path):
+        """_detect_devin() returns False when no config dir or binary exists."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("DEVIN_CONFIG_DIR", raising=False)
+        monkeypatch.setattr("shutil.which", lambda _cmd: None)
+
+        result = _detect_devin()
+
+        assert result is False
+
+
+class TestTargetPlatformDevinEnum:
+    """Verify TargetPlatform.DEVIN enum value."""
+
+    def test_devin_value(self):
+        """TargetPlatform.DEVIN has value 'devin'."""
+        assert TargetPlatform.DEVIN.value == "devin"

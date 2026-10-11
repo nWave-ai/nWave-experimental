@@ -44,13 +44,17 @@ class TestPlatformFlagResolution:
         """OMP must be selectable explicitly, not only via auto-detect."""
         assert _resolve_platform_override("omp") == {"omp"}
 
+    def test_devin_returns_singleton(self):
+        """Devin CLI must be selectable explicitly, not only via auto-detect."""
+        assert _resolve_platform_override("devin") == {"devin"}
+
     def test_all_includes_every_explicit_platform(self):
         """``--platform all`` must include every explicit platform target —
         otherwise users requesting "all" silently miss the absent target.
         """
         explicit = {
             _resolve_platform_override(flag).pop()
-            for flag in ("claude-code", "opencode", "codex", "cursor", "copilot", "omp")
+            for flag in ("claude-code", "opencode", "codex", "cursor", "copilot", "omp", "devin")
         }
         assert _resolve_platform_override("all") == explicit
 
