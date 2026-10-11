@@ -604,6 +604,21 @@ def _handle_install(args: list[str]) -> int:
     and other installer arguments pass through unchanged. ``--target`` selects
     a Claude Code profile, with ``$HOME`` refused as an unsafe target. An
     invalid active wave-end expansion preference refuses before installation.
+
+    Flags handled here:
+        --platform <tool>  target agentic tool to provision for
+                           (claude-code / codex / cursor / opencode). Forwarded
+                           unchanged to install_nwave.py; this is the
+                           entry point the cross-OS RC smoke matrix depends
+                           on (ADR-PLAT-007).
+        --target <path>    install into <path> instead of ~/.claude/
+                           (sets CLAUDE_CONFIG_DIR for the subprocess; see
+                           ADR-001). $HOME is refused with exit 2.
+        --yes              non-interactive (CI / silent default)
+        --density-only     run ONLY the density prompt and exit (test driving
+                           port for acceptance tests; never a user flag)
+
+    All other args (including --platform) pass through to install_nwave.py.
     """
     # The installer already owns this subcommand's public help text.  Dispatch
     # it before parsing targets or constructing any write-capable preflight so
@@ -1241,8 +1256,8 @@ def _print_usage(version: str) -> int:
     print("Usage: nwave-ai <command> [options]")
     print()
     print("Commands:")
-    print("  install        Install nWave framework to ~/.claude/")
-    print("  uninstall      Remove nWave framework from ~/.claude/")
+    print("  install        Install nWave framework to supported tool configs")
+    print("  uninstall      Remove nWave framework from supported tool configs")
     print("  doctor         Run diagnostics on the nWave installation")
     print("  attribution    Toggle commit attribution (on/off/status)")
     print("  model          Select the provider and model for DES roles")
@@ -1265,7 +1280,10 @@ def _print_usage(version: str) -> int:
     print("  version        Show nwave-ai version")
     print()
     print("Install options:")
-    print("  --platform <tool>  Target agentic tool: claude-code, codex, opencode")
+    print(
+        "  --platform <tool>  Target agentic tool: "
+        "claude-code, codex, cursor, opencode"
+    )
     print("  --dry-run       Preview without making changes")
     print("  --backup-only   Create backup only")
     print("  --restore       Restore from backup")

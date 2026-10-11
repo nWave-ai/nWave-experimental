@@ -1,6 +1,6 @@
 """Unit tests for platform auto-detection in context_detector module.
 
-Tests validate detection of target platforms (Claude Code, OpenCode)
+Tests validate detection of target platforms (Claude Code, OpenCode, Codex)
 based on filesystem markers, environment variables, and binary availability.
 """
 
@@ -9,6 +9,8 @@ from pathlib import Path
 from scripts.install.context_detector import (
     TargetPlatform,
     _detect_claude_code,
+    _detect_codex,
+    _detect_cursor,
     detect_target_platforms,
 )
 
@@ -118,6 +120,8 @@ class TestDetectBothPlatforms:
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.delenv("CLAUDE_CODE", raising=False)
         monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+        monkeypatch.delenv("CODEX_HOME", raising=False)
+        monkeypatch.delenv("CURSOR_HOME", raising=False)
         monkeypatch.setattr(
             "scripts.install.context_detector.shutil.which",
             lambda _cmd: None,
@@ -130,8 +134,64 @@ class TestDetectBothPlatforms:
         assert len(platforms) == 2
 
 
-class TestDetectNothingReturnsEmpty:
-    """An ambiguous environment must not silently select a host."""
+class TestDetectCodexViaHomeDir:
+    """Verify Codex detection via ~/.codex/ directory existence."""
+
+    def test_detect_codex_via_home_dir(self, monkeypatch, tmp_path):
+        """detect_target_platforms() includes codex when ~/.codex/ exists."""
+        codex_dir = tmp_path / ".codex"
+        codex_dir.mkdir()
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("CODEX_HOME", raising=False)
+        monkeypatch.setenv("CLAUDE_CODE", "")
+        monkeypatch.setenv("PATH", "/usr/local/bin")
+        monkeypatch.setattr(
+            "shutil.which", lambda _cmd: None,
+        )
+
+        platforms = detect_target_platforms()
+
+        assert TargetPlatform.CODEX in platforms
+
+
+class TestDetectCodexViaCodeXHome:
+    """Verify Codex detection via explicit CODEX_HOME override."""
+
+    def test_detect_codex_via_codex_home(self, monkeypatch, tmp_path):
+        """detect_target_platforms() includes codex when CODEX_HOME exists."""
+        codex_dir = tmp_path / "custom-codex"
+        codex_dir.mkdir()
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("CODEX_HOME", str(codex_dir))
+        monkeypatch.setenv("CLAUDE_CODE", "")
+        monkeypatch.setattr(
+            "shutil.which", lambda _cmd: None,
+        )
+
+        platforms = detect_target_platforms()
+
+        assert TargetPlatform.CODEX in platforms
+
+
+class TestDetectCodexWithoutIndicator:
+    """Verify Codex does not auto-detect when no signal exists."""
+
+    def test_detect_codex_without_home_or_binary(self, monkeypatch, tmp_path):
+        """detect_target_platforms() does not include codex without a signal."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("CODEX_HOME", raising=False)
+        monkeypatch.setenv("CLAUDE_CODE", "")
+        monkeypatch.setattr("shutil.which", lambda _cmd: None)
+
+        platforms = detect_target_platforms()
+
+        assert TargetPlatform.CODEX not in platforms
+
+
+class TestDetectNothingDefaultsToClaudeCode:
+    """Verify default to Claude Code when no platform signals found."""
 
     def test_detect_nothing_returns_empty_set(self, monkeypatch, tmp_path):
         """detect_target_platforms() leaves host choice to the CLI operator."""
@@ -140,6 +200,8 @@ class TestDetectNothingReturnsEmpty:
         monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
         monkeypatch.delenv("NWAVE_AGENTS_HOME", raising=False)
         monkeypatch.delenv("PI_CONFIG_DIR", raising=False)
+        monkeypatch.delenv("CODEX_HOME", raising=False)
+        monkeypatch.delenv("CURSOR_HOME", raising=False)
         monkeypatch.setattr(
             "scripts.install.context_detector.shutil.which",
             lambda _cmd: None,
@@ -256,3 +318,90 @@ class TestOmpTwoRootSplit:
         from scripts.shared.install_paths import omp_agent_dir, omp_skills_dir
 
         assert omp_skills_dir() == omp_agent_dir() / "skills"
+
+
+class TestDetectCodexHelper:
+    """Verify direct _detect_codex helper behavior."""
+
+    def test_detect_codex_empty_home_var_is_falsy(self, monkeypatch, tmp_path):
+        """_detect_codex() treats an empty CODEX_HOME as absent."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("CODEX_HOME", "")
+        monkeypatch.setattr("shutil.which", lambda _cmd: None)
+
+        result = _detect_codex()
+
+        assert result is False
+
+
+class TestDetectCursorViaHomeDir:
+    """Verify Cursor detection via ~/.cursor/ directory existence."""
+
+    def test_detect_cursor_via_home_dir(self, monkeypatch, tmp_path):
+        """detect_target_platforms() includes cursor when ~/.cursor/ exists."""
+        cursor_dir = tmp_path / ".cursor"
+        cursor_dir.mkdir()
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("CURSOR_HOME", raising=False)
+        monkeypatch.setenv("CLAUDE_CODE", "")
+        monkeypatch.setattr("shutil.which", lambda _cmd: None)
+
+        platforms = detect_target_platforms()
+
+        assert TargetPlatform.CURSOR in platforms
+
+
+class TestDetectCursorViaCursorHome:
+    """Verify Cursor detection via explicit CURSOR_HOME override."""
+
+    def test_detect_cursor_via_cursor_home(self, monkeypatch, tmp_path):
+        """detect_target_platforms() includes cursor when CURSOR_HOME exists."""
+        cursor_dir = tmp_path / "custom-cursor"
+        cursor_dir.mkdir()
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("CURSOR_HOME", str(cursor_dir))
+        monkeypatch.setenv("CLAUDE_CODE", "")
+        monkeypatch.setattr("shutil.which", lambda _cmd: None)
+
+        platforms = detect_target_platforms()
+
+        assert TargetPlatform.CURSOR in platforms
+
+
+class TestDetectCursorWithoutIndicator:
+    """Verify Cursor does not auto-detect when no signal exists."""
+
+    def test_detect_cursor_without_home_or_binary(self, monkeypatch, tmp_path):
+        """detect_target_platforms() does not include cursor without a signal."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("CURSOR_HOME", raising=False)
+        monkeypatch.setenv("CLAUDE_CODE", "")
+        monkeypatch.setattr("shutil.which", lambda _cmd: None)
+
+        platforms = detect_target_platforms()
+
+        assert TargetPlatform.CURSOR not in platforms
+
+
+class TestDetectCursorHelper:
+    """Verify direct _detect_cursor helper behavior."""
+
+    def test_detect_cursor_empty_home_var_is_falsy(self, monkeypatch, tmp_path):
+        """_detect_cursor() treats an empty CURSOR_HOME as absent."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("CURSOR_HOME", "")
+        monkeypatch.setattr("shutil.which", lambda _cmd: None)
+
+        result = _detect_cursor()
+
+        assert result is False
+
+
+class TestTargetPlatformCursorEnum:
+    """Verify TargetPlatform.CURSOR enum value."""
+
+    def test_cursor_value(self):
+        """TargetPlatform.CURSOR has value 'cursor'."""
+        assert TargetPlatform.CURSOR.value == "cursor"

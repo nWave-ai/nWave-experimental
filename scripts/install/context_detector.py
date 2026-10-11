@@ -214,6 +214,7 @@ class TargetPlatform(Enum):
     CLAUDE_CODE: Anthropic's Claude Code CLI
     OPENCODE: OpenCode AI coding assistant (Charm Bracelet, ~/.config/opencode/)
     CODEX: OpenAI Codex CLI (Rust, ~/.codex/)
+    CURSOR: Cursor IDE / agent (hooks under ~/.cursor/)
     COPILOT_CLI: GitHub Copilot CLI (@github/copilot, ~/.copilot/)
     OMP: oh-my-pi (omp, ~/.omp/)
     """
@@ -221,6 +222,7 @@ class TargetPlatform(Enum):
     CLAUDE_CODE = "claude_code"
     OPENCODE = "opencode"
     CODEX = "codex"
+    CURSOR = "cursor"
     COPILOT_CLI = "copilot"
     OMP = "omp"
 
@@ -272,16 +274,43 @@ def _detect_opencode() -> bool:
 def _detect_codex() -> bool:
     """Detect if Codex CLI is available for installation.
 
-    Checks two signals:
+    Checks three signals:
     - `codex` binary in PATH (via shutil.which)
+    - CODEX_HOME environment variable (if set)
     - ~/.codex/ directory exists
 
     Returns:
         True if any Codex CLI signal is detected.
     """
     codex_binary = shutil.which("codex") is not None
-    codex_config_exists = (Path.home() / ".codex").is_dir()
+    codex_config_override = os.environ.get("CODEX_HOME")
+    codex_config_exists = (
+        Path(codex_config_override).is_dir()
+        if codex_config_override
+        else (Path.home() / ".codex").is_dir()
+    )
     return codex_binary or codex_config_exists
+
+
+def _detect_cursor() -> bool:
+    """Detect if Cursor is available for installation.
+
+    Checks three signals:
+    - `cursor` binary in PATH (via shutil.which)
+    - CURSOR_HOME environment variable (if set)
+    - ~/.cursor/ directory exists
+
+    Returns:
+        True if any Cursor signal is detected.
+    """
+    cursor_binary = shutil.which("cursor") is not None
+    cursor_config_override = os.environ.get("CURSOR_HOME")
+    cursor_config_exists = (
+        Path(cursor_config_override).is_dir()
+        if cursor_config_override
+        else (Path.home() / ".cursor").is_dir()
+    )
+    return cursor_binary or cursor_config_exists
 
 
 def _detect_copilot() -> bool:
@@ -340,7 +369,8 @@ def detect_target_platforms() -> set[TargetPlatform]:
     Detection signals:
     - Claude Code: ~/.claude/ directory exists OR CLAUDE_CODE env var set
     - OpenCode: `opencode` binary in PATH (shutil.which) OR ~/.config/opencode/ exists
-    - Codex CLI: `codex` binary in PATH OR ~/.codex/ directory exists
+    - Codex CLI: `codex` binary in PATH OR `CODEX_HOME` OR ~/.codex/ exists
+    - Cursor: `cursor` binary in PATH OR `CURSOR_HOME` OR ~/.cursor/ exists
     - Copilot CLI: COPILOT_CLI env set OR $COPILOT_HOME/~/.copilot/ exists OR
       `copilot` binary in PATH
     - OMP: `omp` binary in PATH OR the OMP native agent directory exists
@@ -360,6 +390,9 @@ def detect_target_platforms() -> set[TargetPlatform]:
 
     if _detect_codex():
         platforms.add(TargetPlatform.CODEX)
+
+    if _detect_cursor():
+        platforms.add(TargetPlatform.CURSOR)
 
     if _detect_copilot():
         platforms.add(TargetPlatform.COPILOT_CLI)

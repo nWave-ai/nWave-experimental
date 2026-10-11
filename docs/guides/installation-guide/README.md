@@ -1,8 +1,9 @@
 # Installation Guide
 
-This beta installs **from a local clone**, not a package index. Choose Claude Code
-or Codex explicitly, then enable nWave in the project where you intend to work.
-Installation writes host-wide files; it does **not** opt every project in.
+This beta installs **from a local clone**, not a package index. Choose Claude Code,
+Codex, or Cursor explicitly, then enable nWave in the project where you intend to work.
+Installation writes host-wide files to `~/.claude/` (Claude Code), `~/.codex/` (Codex),
+or `~/.cursor/` (Cursor); it does **not** opt every project in.
 
 The public `nwave-ai` package, GitHub prerelease wheels, and the experimental
 source preview follow separate publishing workflows. The experimental
@@ -24,8 +25,9 @@ If you upgrade from an earlier version, run the installer again to clean up old 
 
 **Requirements:** Python 3.10+, Git, and [uv](https://docs.astral.sh/uv/)
 (recommended), or Python's `venv` and `pip`. Install the coding host separately:
-[Claude Code](https://claude.com/product/claude-code) or
-[Codex CLI](https://developers.openai.com/codex/cli). On Windows, use WSL.
+[Claude Code](https://claude.com/product/claude-code),
+[Codex CLI](https://developers.openai.com/codex/cli), or
+[Cursor](https://cursor.com/). On Windows, use WSL.
 The older package-index commands (`uv tool install nwave-ai`,
 `pipx install nwave-ai`, `pip install nwave-ai`) and remote bootstrap
 one-liners are **not available for this beta**; do not run them.
@@ -93,6 +95,34 @@ Claude-specific failures do not diagnose a Codex-only install. Check that the
 Codex installer reports success, then inspect `~/.codex/hooks.json` and
 `~/.codex/.nwave-des-manifest.json` and reopen Codex. Do not infer from the
 presence of a hook file alone that a live hook has fired.
+
+For **Cursor-only** installs, check `~/.cursor/hooks.json` and
+`~/.cursor/.nwave-des-manifest.json` after install; reopen Cursor. See
+**[Installing for Cursor](../installing-cursor.md)** for the full checklist.
+
+## Installing for Codex CLI
+
+nWave integrates with the [OpenAI Codex CLI](https://platform.openai.com/docs/guides/codex) via pre-tool-use hooks. Once installed, every Bash and file-edit action fires nWave's DES validation.
+
+**Explicit Codex installation:**
+```bash
+nwave-ai install --platform codex
+```
+
+For detailed setup and workflow, see **[Installing for Codex CLI](../installing-codex.md)**.
+
+## Installing for Cursor
+
+nWave integrates with [Cursor](https://cursor.com/) via global user hooks in
+`~/.cursor/hooks.json`. Once installed, the wiring applies across all Cursor
+projects on the machine.
+
+**Explicit Cursor installation:**
+```bash
+nwave-ai install --platform cursor
+```
+
+For detailed setup and workflow, see **[Installing for Cursor](../installing-cursor.md)**.
 
 ### Activate your project and start
 

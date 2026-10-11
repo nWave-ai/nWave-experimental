@@ -6,7 +6,7 @@ This source preview helps you turn a request into a result you can inspect. Use 
 
 ## Start in your project
 
-You need Python 3.10+, Git, [uv](https://docs.astral.sh/uv/), and either [Claude Code](https://claude.com/product/claude-code) or [Codex CLI](https://developers.openai.com/codex/cli). On Windows, use WSL. Install your chosen coding host separately.
+You need Python 3.10+, Git, [uv](https://docs.astral.sh/uv/), and one of [Claude Code](https://claude.com/product/claude-code), [Codex CLI](https://developers.openai.com/codex/cli), or [Cursor](https://cursor.com/). On Windows, use WSL. Install your chosen coding host separately.
 
 ```bash
 git clone https://github.com/nWave-ai/nWave-experimental.git nWave-experimental

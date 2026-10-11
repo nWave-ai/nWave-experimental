@@ -7,7 +7,23 @@ tree. Restart Codex after installation so it loads the new assets.
 ## Install from a published package
 
 ```bash
-uv tool install nwave-ai
+uv tool install nwave-ai     # recommended
+# or, as a fallback:
+pipx install nwave-ai
+```
+
+### Step 2: Install into Codex
+
+The installer automatically detects Codex and wires the DES PreToolUse hook
+globally in `~/.codex/`. Run:
+
+```bash
+nwave-ai install
+```
+
+**Explicit Codex installation** (if auto-detect doesn't find Codex):
+
+```bash
 nwave-ai install --platform codex
 ```
 
@@ -27,6 +43,31 @@ uv run python -m nwave_ai.cli install --platform codex
 
 This installs from the checked-out revision. Keep the checkout if you plan to
 run its CLI again.
+
+### Codex global install checklist
+
+After install, run the checklist once to confirm global scope:
+
+```bash
+test -f "$HOME/.codex/hooks.json"
+test -f "$HOME/.codex/.nwave-des-manifest.json"
+test -d "$HOME/.codex/agents"
+test -d "$HOME/.claude/lib/python/des"
+test -f "$HOME/.claude/des-audit.jsonl"
+nwave-ai doctor
+```
+
+Expected outcome:
+
+- All `test -f` / `test -d` checks pass.
+- `nwave-ai doctor` returns `9/9 checks passed, 0 failed`.
+- `~/.codex/hooks.json` contains a `PreToolUse` hook entry.
+
+One-shot copy/paste:
+
+```bash
+nwave-ai install --platform codex --yes && test -f "$HOME/.codex/hooks.json" && test -f "$HOME/.codex/.nwave-des-manifest.json" && test -d "$HOME/.codex/agents" && test -d "$HOME/.claude/lib/python/des" && test -f "$HOME/.claude/des-audit.jsonl" && python3 -c "import json,os; d=json.load(open(os.path.expanduser('~/.codex/hooks.json'))); assert isinstance(d,dict) and 'PreToolUse' in d.get('hooks', {})" && nwave-ai doctor
+```
 
 ## Enable a project
 

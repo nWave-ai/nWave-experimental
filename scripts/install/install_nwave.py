@@ -187,6 +187,7 @@ try:
     )
     from scripts.install.plugins.commands_plugin import CommandsPlugin
     from scripts.install.plugins.copilot_des_plugin import CopilotDESPlugin
+    from scripts.install.plugins.cursor_des_plugin import CursorDESPlugin
     from scripts.install.plugins.des_plugin import DESPlugin
     from scripts.install.plugins.omp_agents_plugin import OmpAgentsPlugin
     from scripts.install.plugins.omp_commands_plugin import OmpCommandsPlugin
@@ -240,6 +241,7 @@ except ImportError:
     )
     from plugins.commands_plugin import CommandsPlugin
     from plugins.copilot_des_plugin import CopilotDESPlugin
+    from plugins.cursor_des_plugin import CursorDESPlugin
     from plugins.des_plugin import DESPlugin
     from plugins.omp_agents_plugin import OmpAgentsPlugin
     from plugins.omp_commands_plugin import OmpCommandsPlugin
@@ -1467,6 +1469,11 @@ class NWaveInstaller:
             codex_des = CodexDESPlugin()
             codex_des.set_dependencies(["des", "codex-skills"])
             registry.register(codex_des)
+        # Cursor plugins (registered when cursor detected)
+        if target_platforms and "cursor" in target_platforms:
+            cursor_des = CursorDESPlugin()
+            cursor_des.set_dependencies(["des"])
+            registry.register(cursor_des)
         # Copilot CLI plugins (registered when copilot detected)
         if target_platforms and "copilot" in target_platforms:
             copilot_des = CopilotDESPlugin()
@@ -2188,7 +2195,7 @@ def show_help():
     help_text = f"""
 {B}DESCRIPTION:{N}
     Installs the nWave methodology framework to your global AI coding host
-    config directory (Claude Code, OpenCode, Codex, Copilot, OMP).
+    config directory (Claude Code, OpenCode, Codex, Cursor, Copilot, OMP).
     This makes all specialized agents and commands available across all projects.
 
 {B}USAGE:{N}
@@ -2233,6 +2240,13 @@ def show_help():
     ~/.nwave/runtime/      # Host-neutral Python DES runtime (Python >=3.10 required)
     PI_CODING_AGENT_DIR relocates OMP skills, commands and extensions.
     {OMP_GUARD_CEILING}
+    # OMP installs no hooks: OMP extension events differ from Claude Code
+    # hooks, so DES guard enforcement is not projected onto OMP.
+    ~/.codex/hooks.json      # Codex PreToolUse hook configuration (if codex enabled)
+    ~/.agents/skills/        # Codex SKILL.md registry (if codex enabled)
+    ~/.codex/agents/         # Codex TOML agents (if codex enabled)
+    ~/.cursor/hooks.json     # Cursor preToolUse hook configuration (if cursor enabled)
+    ~/.cursor/agents/        # Cursor agents directory (if cursor enabled)
 
 For more information: https://github.com/nWave-ai/nWave
 """
@@ -2244,7 +2258,7 @@ def _resolve_platform_override(platform_flag: str) -> set[str] | None:
 
     Args:
         platform_flag: One of "auto", "claude-code", "opencode", "codex",
-            "copilot", "omp", "all".
+            "cursor", "copilot", "omp", "all".
 
     Returns:
         None for auto-detect, or a set of platform string values.
@@ -2254,9 +2268,10 @@ def _resolve_platform_override(platform_flag: str) -> set[str] | None:
         "claude-code": {"claude_code"},
         "opencode": {"opencode"},
         "codex": {"codex"},
+        "cursor": {"cursor"},
         "copilot": {"copilot"},
         "omp": {"omp"},
-        "all": {"claude_code", "opencode", "codex", "copilot", "omp"},
+        "all": {"claude_code", "opencode", "codex", "cursor", "copilot", "omp"},
     }
     return platform_map[platform_flag]
 
@@ -2275,7 +2290,16 @@ def main():
     parser.add_argument("--help", "-h", action="store_true", help="Show help")
     parser.add_argument(
         "--platform",
-        choices=["auto", "claude-code", "opencode", "codex", "copilot", "omp", "all"],
+        choices=[
+            "auto",
+            "claude-code",
+            "opencode",
+            "codex",
+            "cursor",
+            "copilot",
+            "omp",
+            "all",
+        ],
         default="auto",
         help="Target platform (default: auto-detect)",
     )
