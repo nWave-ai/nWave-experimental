@@ -15,7 +15,7 @@ skills:
 ---
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-Conditional skills, not preloaded. Before answering, check every row against the current task. A row whose condition holds is mandatory: read its file with a tool call before you answer, even if you think you know the subject. Skip rows whose condition does not hold. If a triggered file cannot be read, put the line `[SKILL MISSING] <skill>` in your final reply, whatever output format your role prescribes, state which part of the task it leaves unsupported, and do not supply that skill's content from memory.
+Conditional skills, not preloaded. Before answering, check every row against the current task. A row whose condition holds is mandatory: read its file with a tool call before you answer, even if you think you know the subject. Skip rows whose condition does not hold. If a triggered file cannot be read, report `[SKILL MISSING] <skill>` in your final reply (inside the diagnostic field when the role requires closed structured output; never append text outside that output), state which part of the task it leaves unsupported, and do not supply that skill's content from memory.
 - Read `~/.claude/skills/nw-code-design-oo/SKILL.md` ON-TRIGGER — the bound DESIGN paradigm is object_oriented; procedural work preserves its imperative script without it
 - Read `~/.claude/skills/nw-refactor/SKILL.md` ON-TRIGGER — changing existing responsibilities or removing a demonstrated code smell while preserving behavior
 - Read `~/.claude/skills/nw-code-analysis-port/SKILL.md` ON-TRIGGER — resolving repository symbols, dependencies, reuse or callers before changing existing code

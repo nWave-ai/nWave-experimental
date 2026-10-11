@@ -649,3 +649,26 @@ class TestRealTreeInvokeSkillReferencesSurviveStrip:
         dangling = check_references(target / "nWave")
 
         assert dangling == [], f"skill references dangling after strip(): {dangling}"
+
+
+def test_release_strip_preserves_public_alias_owner_and_removes_private_owner(tmp_path):
+    import yaml
+
+    from scripts.release.strip_private_agents import strip
+
+    catalog = (
+        "agents:\n  software-crafter:\n    public: true\n"
+        "  workshopper:\n    public: false\n"
+        "commands:\n  mutation_test:\n    agents: [software_crafter, workshopper]\n"
+        "  refactor:\n    agents: [systematic_refactorer]\n"
+        "  private-command:\n    agents: [workshopper]\n"
+    )
+    target = _create_target(
+        tmp_path,
+        catalog,
+        agents={"software-crafter": None, "workshopper": None},
+    )
+    strip(target)
+    result = yaml.safe_load((target / "nWave/framework-catalog.yaml").read_text())
+    assert set(result["commands"]) == {"mutation_test"}
+    assert result["commands"]["mutation_test"]["agents"] == ["software_crafter"]

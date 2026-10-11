@@ -189,6 +189,8 @@ try:
     from scripts.install.plugins.copilot_des_plugin import CopilotDESPlugin
     from scripts.install.plugins.des_plugin import DESPlugin
     from scripts.install.plugins.omp_agents_plugin import OmpAgentsPlugin
+    from scripts.install.plugins.omp_commands_plugin import OmpCommandsPlugin
+    from scripts.install.plugins.omp_des_plugin import OMP_GUARD_CEILING, OmpDESPlugin
     from scripts.install.plugins.omp_skills_plugin import OmpSkillsPlugin
     from scripts.install.plugins.opencode_agents_plugin import OpenCodeAgentsPlugin
     from scripts.install.plugins.opencode_commands_plugin import OpenCodeCommandsPlugin
@@ -240,6 +242,8 @@ except ImportError:
     from plugins.copilot_des_plugin import CopilotDESPlugin
     from plugins.des_plugin import DESPlugin
     from plugins.omp_agents_plugin import OmpAgentsPlugin
+    from plugins.omp_commands_plugin import OmpCommandsPlugin
+    from plugins.omp_des_plugin import OMP_GUARD_CEILING, OmpDESPlugin
     from plugins.omp_skills_plugin import OmpSkillsPlugin
     from plugins.opencode_agents_plugin import OpenCodeAgentsPlugin
     from plugins.opencode_commands_plugin import OpenCodeCommandsPlugin
@@ -1468,16 +1472,15 @@ class NWaveInstaller:
             copilot_des = CopilotDESPlugin()
             copilot_des.set_dependencies(["des"])
             registry.register(copilot_des)
-        # OMP plugins (registered when omp detected). No OMP DES hook exists:
-        # OMP extension events differ from Claude Code hooks, and this
-        # installer does not fake enforcement -- the agents plugin reports
-        # the unsupported hook surface explicitly instead.
+        # OMP's tool_call event accepts returned refusals; Python owns decisions.
         if target_platforms and "omp" in target_platforms:
             omp_skills = OmpSkillsPlugin()
             registry.register(omp_skills)
             omp_agents = OmpAgentsPlugin()
             omp_agents.set_dependencies(["omp-skills"])
             registry.register(omp_agents)
+            registry.register(OmpCommandsPlugin())
+            registry.register(OmpDESPlugin())
         return registry
 
     def install_framework(self) -> bool:
@@ -1581,6 +1584,7 @@ class NWaveInstaller:
                 from scripts.shared.agent_catalog import (
                     build_ownership_map,
                     detect_command_skills,
+                    load_private_skills,
                 )
                 from scripts.shared.install_paths import omp_agents_dir, omp_skills_dir
                 from scripts.shared.skill_distribution import (
@@ -1595,6 +1599,9 @@ class NWaveInstaller:
                     logger=self.logger,
                     project_root=self.project_root,
                     framework_source=self.framework_source,
+                    dev_mode=self.dev_mode,
+                    dry_run=True,
+                    target_platforms=set(target_platforms),
                 )
                 omp_public_agents = (
                     set()
@@ -1618,6 +1625,7 @@ class NWaveInstaller:
                             omp_public_agents,
                             build_ownership_map(self.project_root / "nWave" / "agents"),
                             detect_command_skills(omp_skills_source),
+                            load_private_skills(self.project_root / "nWave"),
                         )
                     omp_skill_count = len(omp_entries)
                 self.logger.info(
@@ -1628,10 +1636,16 @@ class NWaveInstaller:
                     f"  🚨 [DRY RUN] Would install {omp_agent_count} OMP agents to "
                     f"{omp_agents_dir()}"
                 )
+                commands_plan = OmpCommandsPlugin().install(omp_context)
+                extension_plan = OmpDESPlugin().install(omp_context)
                 self.logger.info(
-                    "  🚨 [DRY RUN] OMP gets no DES hook: OMP extension events differ "
-                    "from Claude Code hooks; guard enforcement is not projected"
+                    f"  🚨 [DRY RUN] Would install DES Python runtime to "
+                    f"{DESPlugin._runtime_python_dir(omp_context)}"
                 )
+                for plan in (commands_plan, extension_plan):
+                    if not plan.success:
+                        self.logger.error(plan.message)
+                        return False
 
             return True
 
@@ -2141,20 +2155,21 @@ def show_installation_summary(
         logger.info(
             "  💡 In the activated project, ask /nw-buddy in Claude Code or $nw-buddy in Codex."
         )
+    elif omp_selected and target_platforms == frozenset({"omp"}):
+        logger.info("  💡 In the activated project, ask /nw-buddy what to do first.")
     else:
         logger.info(
             "  ⚠️  Quit and reopen Claude Code to load the new agents, skills, and commands."
         )
         logger.info("  💡 In the activated project, ask /nw-buddy what to do first.")
     if omp_selected:
-        logger.info("  ⚠️  Quit and reopen OMP to load the new task agents and skills.")
+        logger.info(
+            "  ⚠️  Quit and reopen OMP to load agents, skills, commands and the DES extension."
+        )
         logger.info(
             "  💡 In OMP, dispatch nw-* task agents via Task, or invoke /skill:nw-<name>."
         )
-        logger.info(
-            "  ⚠️  OMP installs no DES hooks: OMP extension events differ from "
-            "Claude Code hooks, so guard enforcement is not projected."
-        )
+        logger.info(f"  ⚠️  {OMP_GUARD_CEILING}")
     logger.info("  📚 Docs: https://github.com/nWave-ai/nWave")
 
 
@@ -2185,7 +2200,8 @@ def show_help():
     --dry-run         Show what would be installed without making any changes.
                       Also surfaces Codex ownership-collision refusals safely,
                       before a real install -- run this first if unsure.
-    --dev             Install ALL agents and skills (including private/unreleased)
+    --dev             Install ALL agents, skills and OMP commands (including private)
+    --platform omp    Install public OMP agents, skills, /nw-* commands and DES extension
     --adopt-legacy-codex-dev
                       With --dev --platform codex only, quarantine safely
                       backed-up legacy unmanifested Codex nWave assets
@@ -2211,8 +2227,12 @@ def show_help():
     ~/.claude/templates/    # TDD cycle schema templates
     ~/.omp/agent/agents/    # OMP: nWave task agents (native)
     ~/.omp/agent/skills/    # OMP: nWave skills (native; PI_CONFIG_DIR renames .omp)
-    # OMP installs no hooks: OMP extension events differ from Claude Code
-    # hooks, so DES guard enforcement is not projected onto OMP.
+    ~/.omp/agent/commands/  # OMP: /nw-* slash commands
+    # OMP commands project nWave/tasks/nw/*.md through the public catalog.
+    ~/.omp/agent/extensions/nwave-des.ts  # OMP: DES tool_call bridge
+    ~/.nwave/runtime/      # Host-neutral Python DES runtime (Python >=3.10 required)
+    PI_CODING_AGENT_DIR relocates OMP skills, commands and extensions.
+    {OMP_GUARD_CEILING}
 
 For more information: https://github.com/nWave-ai/nWave
 """

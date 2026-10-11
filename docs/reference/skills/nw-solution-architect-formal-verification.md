@@ -1,6 +1,6 @@
 # nw-solution-architect-formal-verification
 
-PROCEDURE — verify one separately selected formal DESIGN obligation and state its runtime refinement boundary.
+PROCEDURE — formally verify every design's algebraic claims with need-selected checkers and explicit host-relayed installation or human waiver.
 
 **Used by:** [nw-solution-architect](../agents/nw-solution-architect.md)
 

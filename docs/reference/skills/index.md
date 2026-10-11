@@ -610,7 +610,7 @@
 
 ## nw-solution-architect-formal-verification
 
-- [nw-solution-architect-formal-verification](nw-solution-architect-formal-verification.md) — PROCEDURE — verify one separately selected formal DESIGN obligation and state its runtime refinement boundary.
+- [nw-solution-architect-formal-verification](nw-solution-architect-formal-verification.md) — PROCEDURE — formally verify every design's algebraic claims with need-selected checkers and explicit host-relayed installation or human waiver.
 
 ## nw-source-verification
 

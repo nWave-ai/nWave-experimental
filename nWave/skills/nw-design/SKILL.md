@@ -10,9 +10,9 @@ argument-hint: '[bounded design question] --paradigm=[auto|oop|fp|procedural] [-
 
 # NW-DESIGN
 
-Read `~/.claude/skills/nw-human-collaboration/SKILL.md` to offer and conduct
-interactive refinement with the human. Honor an already selected final-review
-or full-delegation mode; the LLM manages the dialogue and progression.
+Use `nw-human-collaboration` for interactive refinement with the human.
+Honor an already selected final-review or full-delegation mode; the LLM
+manages the dialogue and progression.
 
 
 ## Authority
@@ -45,6 +45,10 @@ delta and still carries inherited common constraints and feature
 walking-skeleton obligations; it does not attest feature completeness. This paragraph is the sole owner
 of this rule; other roles and skills reference it.
 
+Resolve cited `Proposed` decisions by confirming or changing them with a reason.
+For each `Open` item assigned to DESIGN, supply its decision or the reason it
+remains open and its owner. Preserve the product's original actors and scope.
+
 When an uncertain boundary needs exercise, orient the existing delegation toward
 one concrete producer-to-consumer connection: semantic input through the DES
 constructor to an executable oracle on the real public port. Let that consumer's
@@ -54,7 +58,7 @@ uncertainty in an existing value-level connection; it neither shrinks the
 requested architecture scope nor attests that feature DESIGN is complete, and it
 creates no technical-fragment cycle or additional delivery phase.
 
-Read `~/.claude/skills/nw-role-invocation/SKILL.md` before delegating. Invoke
+Use `nw-role-invocation` before delegating. Invoke
 the exact installed architect natively; pass its complete manifest to
 `des design --repo-root ROOT --value N --input -`. DES constructs, not delegates.
 The outer `/nw-design` caller invokes the relevant installed specialist per
@@ -90,7 +94,10 @@ semantic and upstream of the constructor boundary below.
 Performed by the coordinating architect, not the outer host or a consulted lens.
 
 1. **Intent and constraints** — bind product identities/observations; name
-   uncertainty, never invent a requirement.
+   uncertainty, never invent a requirement. Carry every cited input bound,
+   range and explicit absence of a bound into `constraints`; explain each
+   narrower or wider design as a deviation, never silently adapt the authority
+   to a storage representation or generator.
 2. **Code facts and reuse** — map responsibilities/callers/ports/dependencies;
    choose evidence-backed `REUSE`, `EXTEND`, `REPLACE` or `CREATE_NEW` for each.
    Check specifically for a SEMANTIC duplicate authority or a parallel
@@ -110,6 +117,9 @@ Performed by the coordinating architect, not the outer host or a consulted lens.
    craft, and `not_applicable` is refused while any consumer is declared.
    Compiler, LSP and native build facts are evidence; unsupported/noisy
    code-fact output is unknown, never zero consumers or proof of closure.
+   Retain each code-fact query, subject, answering provider, confidence and
+   scan-scope/degradation in the semantic evidence. A failed or unsupported
+   query remains unknown; label any Glob/Grep/manual fallback and its limits.
 3. **Prefactoring** — decide applicability in the generated grammar below.
    For an applicable minimal preserving move, select a genuinely GREEN existing
    oracle and executable verification recipe. Observe it before the move and
@@ -123,7 +133,9 @@ Performed by the coordinating architect, not the outer host or a consulted lens.
    Shared authority alone records no measured
    phase and does not waive a distinct unassigned move.
 4. **Ports and boundaries** — define driving/driven ports, dependency direction,
-   ownership and failure translation. Gate: change requires durable amendment.
+   ownership and failure translation. Name the native type/record and owning
+   module for decisions, effects, errors and per-process state.
+   Gate: change requires durable amendment.
 5. **Paradigm** — preserve settled repository authority. Select
    `functional`, `object_oriented` or `procedural` from repository and problem
    evidence only when the application decision is genuinely open, not from
@@ -136,18 +148,30 @@ Performed by the coordinating architect, not the outer host or a consulted lens.
    unsupported field. Read OO/FP design guidance only for its matching
    paradigm; procedural does not force either specialized skill.
 6. **Cross-layer algebra** — for every affected layer name states, operations,
-   observations and laws:
+   observations, equality and falsifiable laws:
    - domain: legal states and transitions;
    - application/ports: explicit success, refusal and retry outcomes;
    - adapter/integration: protocol, decoding, concurrency and dependency failures;
    - infrastructure/recovery: timeout, partial failure, replay, recovery and loss.
-   Use native types/patterns; do not impose FP syntax.
-7. **Residuality** — enumerate stressors and viable residues; state
-   preserved/changed observations and laws. Record stable/local admitted,
-   excluded and unknown states with risk owner; use `nw-stress-analysis` for
-   triggered stressors. A removed-hypothesis counterexample is triage evidence,
-   not automatically a missing type. A new residue amends architecture, never
-   refactoring.
+   Use `nw-algebraic-design-protocol` for observation limits and
+   representation-preservation checks; native types/patterns, not forced FP syntax.
+   Default in every design: algebraic modeling with formal verification.
+   Read `nw-solution-architect-formal-verification` in every design. Map each
+   claim to its checker and reason in `decisions`: Quint for state models,
+   TLA+/TLC when Quint is insufficient (including required temporal/fairness
+   support), Agda for proofs, and both/all when one checker cannot cover it.
+   Probe needed tools with exact argv and output before relying on them.
+7. **Residuality** — derive stressors by negating declared assumptions and name
+   the assumption in each row. Record the preserved observation, allowed
+   degradation, forbidden outcome and surviving residue. Name single points
+   of failure and construction bypasses, with the remaining obligation and
+   owner or the evidence that makes them unreachable. Keep admitted, excluded
+   and unknown states with their risk owner.
+   Walk a second stressor set not used to derive the design against the finished
+   design; record what each shows and distinguish a walkthrough from execution.
+   Use `nw-stress-analysis` for its triggered analysis. A removed-hypothesis
+   counterexample is triage evidence, not automatically a missing type.
+   A new residue amends architecture, never refactoring.
 8. **Test substrate** — name real driving port, helper/import, fixture,
    executor/lifecycle, dependency owner, resolved version and manifest/lock,
    declared/runtime state and literal argv.  If a required dependency is absent,
@@ -160,6 +184,13 @@ Performed by the coordinating architect, not the outer host or a consulted lens.
    broad laws and native examples for finite/singular observations. Real storage,
    synchronized crash/race/protocol integration and an identifiable feature E2E
    remain when promised; a cheap model is not their replacement.
+   For each broad law, declare public generator domain and size bounds,
+   shrinking/replay approach, and independent observation or falsifier under
+   `nw-property-based-testing`; reuse applicable formal-model invariants.
+   Without a native PBT library, design seeded generators and explicit shrinking
+   in the repository's language, retaining any unexecuted shrinking limitation.
+   The architect supplies these semantic obligations; ATD authors the executable
+   public properties, not the architect's design probes.
    For warm verification, decide whether the native commands correctly invalidate
    dependency/toolchain/flag/generated-input changes and freshly execute checks.
    Project-only `verification.reuse.outputs` in `.nwave/config.json` declares
@@ -244,8 +275,8 @@ facts from the same normalized input.
 The generated contract below is the sole field grammar for the manifest. Do
 not supply completed Markdown or an ADR draft. Resolve the semantic decisions
 from code facts, preserve the reuse, prefactoring, native-evidence, and
-uncertainty duties above, and use at most one bounded Bash probe for a
-load-bearing unknown.
+uncertainty duties above, and bound each empirical probe to its load-bearing
+unknown under the self-falsification discipline below.
 
 A provider-enforced output schema remains authoritative. When a caller requires
 existing typed `design_facts`, obey that schema exactly and do not substitute a
@@ -347,6 +378,7 @@ object with exactly:
     object with exactly:
     - `applicability`: `not_applicable`
     - `reason`: non-empty text.
+- `architect_handoff` (optional): typed architect sections from `des handoff describe`; raw model text is retained.
 - `impact_closure`: tagged object on `applicability`:
   - `applicable`:
     object with exactly:
@@ -400,10 +432,14 @@ For every public value, distinguish **safety** excludes an invalid state;
 **inhabitation** proves an intended valid value can be constructed from admitted
 input; **public reachability** proves its producer-to-consumer path reaches a
 public driving/observation port; **liveness** proves eventual progress under
-explicit temporal/fairness assumptions. Record each in the brief/ADR on axes: DESIGN
-`PASS|BLOCKED`, runtime `OBSERVED|DESIGNED_NOT_BUILT|INDETERMINATE`. Liveness is
-`NOT_APPLICABLE` only when irrelevant; bounded/synchronous execution justifies
-that only for liveness, never safety/refinement/reachability. Omission is BLOCKED.
+explicit temporal/fairness assumptions. Record each in the brief/ADR on separate
+axes: DESIGN `PASS|BLOCKED`, runtime
+`OBSERVED|DESIGNED_NOT_BUILT|INDETERMINATE`, and the proof/check result with its
+actual evidence or `INDETERMINATE`. An unchecked DESIGN claim is `BLOCKED`;
+an unexecuted checker establishes no proof. Irrelevant liveness carries a
+concrete non-applicability reason, not a third DESIGN-axis value.
+Bounded/synchronous execution justifies that only for liveness, never
+safety/refinement/reachability. Omission is `BLOCKED`.
 
 Record `input -> constructor/producer -> consumer -> public port`, with exact
 owner/invocation/existing symbol or concrete repo-relative DNB site/symbol.
@@ -433,6 +469,8 @@ representation, never a patch site:
 3. An added law over an unchanged representation is a symptom patch. It may
    ship only with an explicit recorded justification of why the representation
    cannot change, in the amended durable authority.
+   Retain each attempted concrete counterexample and its actual result; for a
+   refuted law, name the carrier distinction, law-scope or boundary diagnosis.
 
 ## Independent statement review — retired
 
@@ -446,29 +484,37 @@ counterexamples. The delivery flow's independent quality points are the
 acceptance-oracle review, one whole-diff implementation review, and conditional
 source-blind EXAMINE.
 
-For each unknown load-bearing system fact, run at most one bounded empirical
-probe (three per authority), recording fact and result. Model only a separately
-selected formal-proof obligation; a probe never prototypes a desired answer or
-becomes a wave.
+Default in every design: algebraic modeling with formal verification.
+Missing required checkers are an installation-or-waiver decision for the human,
+relayed by the host. Return a typed refusal naming missing tools, affected claims
+and platform-specific install commands; do not install without authorization.
+Only a recorded human waiver permits continuation without that proof.
+A waived claim remains INDETERMINATE with the waiver reason, never PASS;
+native property tests or finite checks do not silently replace it.
 
-This discipline requires no proof assistant or model checker: property tests
-in the project's own language, exhaustive finite checks, or a model checker
-when one is available all qualify — a prover is never a prerequisite. Probe
-the host, not assumed Linux/tooling. For a new selected temporal or modelable
-non-functional claim, use Quint as the standard readable notation with
-Apalache/TLC as the selected verifier. Preserve useful existing TLA+ models;
-choose direct TLA+ for a new model only with a recorded capability or tooling
-reason. Agda complements these for applicable local
-proofs. Use `nw-solution-architect-formal-verification` for tool selection,
-installation offers and explicit model-versus-runtime evidence. When an applicable claim's
-tool is available, execute it; otherwise use explicit algebraic fallback and
-mark only that proof `INDETERMINATE`. Offer installation only on a known,
-bounded, user-consented path. Tool absence never blocks DESIGN or becomes proof.
+For each unknown load-bearing system fact, use a bounded empirical probe and
+record the unknown, executed fact and result. A probe resolves a discriminator,
+never prototypes a desired answer or becomes a wave. Repeating an inconclusive
+probe needs a changed hypothesis or useful new evidence under
+`delivery:trustworthy-baseline-and-repair-scope`.
+
+Use `nw-solution-architect-formal-verification` for checker selection, bounded
+execution, complete model/proof delivery and property-specific falsification.
+Self-falsification may also use native property tests or finite checks, but they
+do not replace a required formal checker. Preserve useful existing models and
+actual host limits. Missing tooling stops the affected proof; return the typed
+refusal to the host for the human's installation or explicit waiver choice.
+Unrelated analysis may continue, but missing tools alone do not authorize an
+accepted design without the required proof. Record any human waiver in
+`decisions`, with the affected claims and reason; the proof stays `INDETERMINATE`
+and its unchecked DESIGN claim stays `BLOCKED`, never PASS.
 
 Use applicable `nw-review` questions as DESIGN self-checks only (S1-S4
 structure; selected T5-T7 time; three values); do not dispatch an independent
 DESIGN review. They find "structural incoherence", never temporal holes; a
-temporal gap needs the model checker.
+temporal gap needs a temporal/state-exploration check with the checker covering
+that claim, TLA+/TLC when Quint is insufficient. Missing tooling follows the
+host-relayed installation-or-waiver rule above, never a silent native-test downgrade.
 
 ## Handoff
 
@@ -481,9 +527,25 @@ destination and section heading; plain `--input -` continues to refuse a
 conflicting already-bound fact set.
 
 The semantic input records the decision evidence, public validation, and
-executable support. DES alone projects those facts into the authority and
-handover. Use an opaque diagnostic only to summarize a refusal or remaining
-uncertainty for a human; it is never a machine-readable terminal grammar.
+executable support. Describe `purpose`, common architecture and each value's
+delta so a reader unfamiliar with the Request can understand parts,
+responsibilities and binding rules. Carry the driving port, public observations,
+native substrate and runner argv, architectural/contract obligations, typed
+carriers and invariants required by the downstream oracle owner. Inherit common
+constraints without copying a second authority. The next role consumes the
+constructed authority and role facts, not the architect's terminal reply.
+
+Supply formal model/proof bytes and retained execution artifacts through the
+existing semantic constructor input under the formal-verification skill;
+DES alone persists authority, handover and deterministic projections.
+Keep software-observed argv, exits, outputs, traces and identities distinct from
+modeler-declared property coverage, backend, seed, bounds and interpretation.
+An asserted receipt or hash alone proves no run; missing evidence stays explicit.
+When a needed assurance fact lacks a truthful carrier in the closed grammar,
+report that representation gap to DESIGN's constructor owner; preserve reachable
+semantic work without inventing fields, future commands or a side authority.
+Use an opaque diagnostic only to summarize refusal or uncertainty for a human,
+never as a machine-readable terminal grammar. `NEXT` remains advisory.
 
 ## Wave-end expansion offer — resolved at entry, said at the end
 

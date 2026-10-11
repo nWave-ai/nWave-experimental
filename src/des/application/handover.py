@@ -11,7 +11,15 @@ import stat
 import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+from des.application.architect_handoff import (
+    decode as decode_architect_handoff,
+)
+from des.application.architect_handoff import (
+    decode_receipts,
+)
+from des.application.architect_handoff.g10_codec import enc as architect_encode
 from des.domain.architecture_brief_resolver import (
     is_design_oracle_locator,
     is_repository_relative_whole_file_locator,
@@ -20,7 +28,6 @@ from des.domain.architecture_brief_resolver import (
 )
 from des.domain.design_authority_locator import is_design_authority_locator
 from des.domain.design_document import (
-    DesignDocumentInvalid,
     decode_design_decisions,
     design_decisions_defect,
     design_decisions_wire,
@@ -42,6 +49,10 @@ from des.ports.driven_ports.task_invocation_port import (
     LegacyDesignFacts,
     PublicOracle,
 )
+
+
+if TYPE_CHECKING:
+    from des.application.architect_handoff.g10_types import Run as ArchitectRun
 
 
 _MISSING = object()
@@ -108,6 +119,7 @@ class StoredHandover:
     scope: DocumentScope
     shared_design: SharedDesign | None = None
     product_authority: ProductAuthority | None = None
+    architect_receipts: tuple[ArchitectRun, ...] = ()
 
     @property
     def has_explicit_scope(self) -> bool:
@@ -532,6 +544,7 @@ def _canonical_bytes(  # noqa: PLR0913 - canonical graph, bound authorities and 
     feature_id: str | None = None,
     shared: SharedDesign | None = None,
     product_authority: ProductAuthority | None = None,
+    architect_receipts: tuple[ArchitectRun, ...] = (),
     projection: _CanonicalProjection = _WHOLE_ENCODING,
 ) -> bytes:
     # Bound once, and under the projection's own name, because the acceptance
@@ -609,6 +622,11 @@ def _canonical_bytes(  # noqa: PLR0913 - canonical graph, bound authorities and 
                     }
                 }
                 if product_authority is not None
+                else {}
+            ),
+            **(
+                {"architect_receipts": architect_encode(architect_receipts)}
+                if architect_receipts
                 else {}
             ),
         },
@@ -745,7 +763,7 @@ def _restore_facts(authority: dict) -> DesignFacts | Blocked:
     authority_keys = set(authority)
     if "public_oracle" in authority_keys:
         authority_keys = authority_keys - {"public_oracle"}
-    authority_keys -= {"adr"}
+    authority_keys -= {"adr", "architect_handoff"}
     if authority_keys not in (
         legacy_keys,
         keys,
@@ -792,10 +810,15 @@ def _restore_facts(authority: dict) -> DesignFacts | Blocked:
             else (),
             authority.get("authority_locator", ""),
             public_oracle=public_oracle,
+            architect_handoff=(
+                decode_architect_handoff(authority["architect_handoff"])
+                if "architect_handoff" in authority
+                else None
+            ),
             **decode_design_decisions(authority, historical=bool(missing_decisions)),
             **({"missing_decisions": missing_decisions} if missing_decisions else {}),
         )
-    except (KeyError, TypeError, DesignDocumentInvalid) as error:
+    except (KeyError, TypeError, ValueError) as error:
         return Blocked(
             "HandoverMalformed",
             f"design facts cannot be reconstructed: {_shown(str(error))}",
@@ -927,7 +950,7 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             ".nwave/des/handover.json is malformed: JSON nesting is too deep to parse",
             _HANDOVER_REPAIR,
         )
-    if not isinstance(payload, dict) or set(payload) not in (
+    if not isinstance(payload, dict) or set(payload) - {"architect_receipts"} not in (
         {"request", "values"},  # legacy project handover
         {"request", "values", "feature_id"},  # legacy feature handover
         {"request", "values", "product_authority"},
@@ -942,6 +965,12 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             "root must contain request, explicit scope, and values",
             "restore the handover",
         )
+    architect_receipts: tuple[ArchitectRun, ...] = ()
+    if "architect_receipts" in payload:
+        try:
+            architect_receipts = decode_receipts(payload["architect_receipts"])
+        except ValueError as error:
+            return Blocked("HandoverMalformed", str(error), _HANDOVER_REPAIR)
     request, items = payload["request"], payload["values"]
     feature_id = payload.get("feature_id")
     if "scope" in payload:
@@ -1137,6 +1166,30 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
     # Persisted bytes must BE the canonical encoding, not merely parse to it:
     # pretty printing or reordered keys would break byte compare-and-swap.
     comparison_raw = raw
+    if architect_receipts:
+        body = {
+            key: value for key, value in payload.items() if key != "architect_receipts"
+        }
+        comparison_raw = json.dumps(
+            body, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+        ).encode("utf-8")
+        canonical = json.dumps(
+            {
+                **body,
+                "architect_receipts": [
+                    architect_encode(run) for run in architect_receipts
+                ],
+            },
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        if raw != canonical or "scope" not in payload:
+            return Blocked(
+                "HandoverMalformed",
+                "architect receipt bytes are not canonical",
+                "record receipts through des handoff run or record",
+            )
     if "scope" not in payload:
         expected_keys = (
             ["request", "values"]
@@ -1279,7 +1332,13 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             "restore the handover",
         )
     return StoredHandover(
-        request, stored, raw, legacy_scope(feature_id), shared, product_authority
+        request,
+        stored,
+        raw,
+        legacy_scope(feature_id),
+        shared,
+        product_authority,
+        architect_receipts,
     )
 
 
@@ -1708,6 +1767,7 @@ def rewrite_handover(  # noqa: PLR0913 - CAS operands and explicit scope/authori
         feature_id=resolved_feature_id,
         shared=shared,
         product_authority=product,
+        architect_receipts=_bound_architect_receipts(expected),
     )
     validated = read_handover(raw)
     if isinstance(validated, Blocked):
@@ -1718,7 +1778,13 @@ def rewrite_handover(  # noqa: PLR0913 - CAS operands and explicit scope/authori
     if replaced is not None:
         return replaced
     return StoredHandover(
-        request, normalized, raw, legacy_scope(resolved_feature_id), shared, product
+        request,
+        normalized,
+        raw,
+        legacy_scope(resolved_feature_id),
+        shared,
+        product,
+        _bound_architect_receipts(expected),
     )
 
 
@@ -1735,7 +1801,12 @@ def rewrite_constructed_handover(
     shared = _bound_shared(expected)
     product = _bound_product_authority(expected)
     raw = _canonical_bytes(
-        request, values, feature_id=feature_id, shared=shared, product_authority=product
+        request,
+        values,
+        feature_id=feature_id,
+        shared=shared,
+        product_authority=product,
+        architect_receipts=_bound_architect_receipts(expected),
     )
     replaced = replace_exact_bytes(
         handover_path(root), expected, raw, words=_HANDOVER_REPLACE_WORDS
@@ -1743,7 +1814,13 @@ def rewrite_constructed_handover(
     if replaced is not None:
         return replaced
     return StoredHandover(
-        request, values, raw, legacy_scope(feature_id), shared, product
+        request,
+        values,
+        raw,
+        legacy_scope(feature_id),
+        shared,
+        product,
+        _bound_architect_receipts(expected),
     )
 
 
@@ -1855,6 +1932,7 @@ def bind_shared_design(
         feature_id=feature_id,
         shared=shared,
         product_authority=stored.product_authority,
+        architect_receipts=stored.architect_receipts,
     )
     validated = read_handover(raw)
     if isinstance(validated, Blocked):
@@ -1865,8 +1943,60 @@ def bind_shared_design(
     if replaced is not None:
         return replaced
     return StoredHandover(
-        stored.request, stored.values, raw, scope, shared, stored.product_authority
+        stored.request,
+        stored.values,
+        raw,
+        scope,
+        shared,
+        stored.product_authority,
+        stored.architect_receipts,
     )
+
+
+def _bound_architect_receipts(raw: bytes) -> tuple[ArchitectRun, ...]:
+    """Retain existing driven observations through every native graph rewrite."""
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+        if isinstance(payload, dict) and "architect_receipts" in payload:
+            return decode_receipts(payload["architect_receipts"])
+    except (UnicodeDecodeError, ValueError):
+        pass
+    return ()
+
+
+def bind_architect_receipts(
+    root: Path, stored: StoredHandover, receipts: tuple[ArchitectRun, ...]
+) -> StoredHandover | Blocked:
+    """Record caller-observed receipt data; leave all semantic authorities intact.
+
+    The caller holds acquire_delivery_lock. CAS compares the exact full graph
+    snapshot captured before execution, so neither stale authority nor a
+    concurrent graph writer silently wins.
+    """
+    raw = _canonical_bytes(
+        stored.request,
+        stored.values,
+        feature_id=(
+            stored.scope.feature_id
+            if isinstance(stored.scope, Feature)
+            else None
+            if isinstance(stored.scope, Project)
+            else stored.scope
+        ),
+        shared=stored.shared_design,
+        product_authority=stored.product_authority,
+        architect_receipts=receipts,
+    )
+    validated = read_handover(raw)
+    if isinstance(validated, Blocked):
+        return validated
+    failure = replace_exact_bytes(
+        handover_path(root),
+        stored.raw,
+        raw,
+        words=_HANDOVER_REPLACE_WORDS,
+    )
+    return failure if failure is not None else validated
 
 
 def handover_unchanged(root: Path, expected: bytes) -> Blocked | None:

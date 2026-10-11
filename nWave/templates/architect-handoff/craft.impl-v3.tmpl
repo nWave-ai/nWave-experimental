@@ -1,0 +1,36 @@
+Role: {{role}} (exact installed role).
+## FROM DES (facts DES holds; the repository is the current working directory)
+feature: {{feature}}
+request (verbatim from DES state):
+{{request}}
+value {{value}}, the observation the delivery serves:
+{{observation}}
+mode: IMPLEMENTATION. The public oracle for this value is recorded and RED; make it GREEN.
+authority documents written by DES, read these first:
+{{authority|bullets}}
+operational constraints (platform architect, DES-published): {{operations}}
+closed design for this value (typed facts DES bound):
+- production targets you may change (owned paths): {{targets|csv}}
+- paradigm to preserve: {{paradigm}}
+- public oracle (immutable, never edit): {{oracle_line}}
+- support files (immutable): {{supports|csv}}
+- native verification commands:
+{{verification|bullets}}
+- obligations the implementation must honour:
+{{obligations|bullets}}
+- DES state when this prompt was prepared:
+{{state_lines|bullets}}
+
+## TASK (template)
+Implement the batch on the owned paths so that the recorded public oracle passes, honouring the design authority.
+- Use the skills named in your definition on their triggers.
+- Preserve the immutable oracle, its supports and the design authority; do not edit them. Do not review your own work.
+- Run the verification commands against your edits when diagnosis needs execution; your local result does not replace the recorded verification, independent review or EXAMINE.
+- If the batch cannot be driven GREEN, return `rejected` and name who can unblock it: the oracle (acceptance designer), the design (architect) or the product.
+- Use Jev (nw-typesafe-system-one) for semantic judgments. State the capability limit if you ask fewer questions than the skill allows.
+
+## RETURN
+Use StructuredOutput exactly once: `{"outcome": "accepted" | "rejected" | "indeterminate", "diagnostic": "<text>", "blocked_by": null | "oracle" | "design" | "product"}`. `blocked_by` is owed on a refusal only. The caller records the result with `des craft --repo-root {{repo_root}} --value {{value}} --input -`.
+
+## FROM THE ROOT (verbatim; not verified by DES)
+{{root_input}}

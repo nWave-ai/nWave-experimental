@@ -1,0 +1,34 @@
+Role: {{role}} (exact installed role).
+## FROM DES (facts DES holds; the repository is the current working directory)
+feature: {{feature}}
+request (verbatim from DES state):
+{{request}}
+value {{value}}, the observation the delivery serves:
+{{observation}}
+mode: PREFACTORING, phase {{phase}}. The feature oracle for this value is not recorded yet; only the declared preservation move is owed.
+authority documents written by DES, read these first:
+{{authority|bullets}}
+operational constraints (platform architect, DES-published): {{operations}}
+closed design for this value (typed facts DES bound):
+- production targets you may change (owned paths): {{targets|csv}}
+- paradigm to preserve: {{paradigm}}
+- the declared move: {{move}}
+- observation the move must preserve: {{preserved}}
+- preservation oracle (immutable, never edit): {{existing_oracle}}
+- native verification commands for the preservation oracle:
+{{verification|bullets}}
+- DES state when this prompt was prepared:
+{{state_lines|bullets}}
+
+## TASK (template)
+Make only the declared move on the owned paths. Change no behaviour, no schema and no reply byte.
+- Use the skills named in your definition on their triggers.
+- Do not edit the preservation oracle or the design authority. Do not review your own work.
+- Run the preservation oracle yourself if diagnosis needs execution; your local result does not replace the recorded measurement.
+- Use Jev (nw-typesafe-system-one) for semantic judgments, such as whether the move preserves the named observation. State the capability limit if you ask fewer questions than the skill allows.
+
+## RETURN
+Use StructuredOutput exactly once: `{"outcome": "accepted" | "rejected" | "indeterminate", "diagnostic": "<text>", "blocked_by": null | "oracle" | "design" | "product"}`. `blocked_by` is owed on a refusal only and names who can unblock the batch. The caller then measures the phase with `des craft --repo-root {{repo_root}} --value {{value}} --prefactoring-phase {{phase}}`.
+
+## FROM THE ROOT (verbatim; not verified by DES)
+{{root_input}}

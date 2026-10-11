@@ -41,6 +41,7 @@ from scripts.shared.agent_catalog import (  # noqa: E402
     build_ownership_map,
     detect_command_skills,
     is_public_agent,
+    is_public_command,
     is_public_skill,
     load_private_skills,
     load_public_agents,
@@ -75,13 +76,16 @@ def _strip_catalog(catalog_path: Path, public_agents: set[str]) -> int:
     for cmd_name in list(commands):
         cmd = commands[cmd_name]
         cmd_agents = cmd.get("agents") or []
-        non_public = [a for a in cmd_agents if a not in public_agents]
-        if non_public:
-            if len(non_public) == len(cmd_agents):
-                del commands[cmd_name]
-                count += 1
-            else:
-                cmd["agents"] = [a for a in cmd_agents if a in public_agents]
+        non_public = [
+            agent
+            for agent in cmd_agents
+            if not is_public_command({"agents": [agent]}, public_agents)
+        ]
+        if not is_public_command(cmd, public_agents):
+            del commands[cmd_name]
+            count += 1
+        elif non_public:
+            cmd["agents"] = [agent for agent in cmd_agents if agent not in non_public]
 
     with catalog_path.open("w", encoding="utf-8") as fh:
         yaml.dump(catalog, fh, default_flow_style=False, sort_keys=False)

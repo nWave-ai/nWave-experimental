@@ -1,0 +1,50 @@
+{
+ "sections": [
+  {"kind": "laws", "scope": "shared", "status": {"tag": "applicable", "payload": {
+    "observations": [
+      {"id": "O1", "description": "the value returned by clamp, compared by ==", "result_type": "number",
+       "cannot_distinguish": "1, 1.0 and True"}],
+    "equality": {"under": ["O1"], "definition": "Python == on numbers"},
+    "constructors": [{"id": "clamp", "signature": "clamp(x: number, lo: number, hi: number) -> number, lo <= hi"}],
+    "generators": [{"id": "G1", "domain": "numbers and ordered bounds", "size_bound": 100, "seed_policy": "random.Random(1), 1000 cases",
+                    "must_include": ["x below lo", "x above hi", "x equal to lo", "lo equal to hi"]}],
+    "laws": [
+      {"id": "L1", "statement": "clamp(clamp(x, lo, hi), lo, hi) == clamp(x, lo, hi)", "kind": "idempotence", "layer": "domain",
+       "owner": "clamp.py::clamp", "uses": ["O1", "clamp"],
+       "treatment": {"tag": "broad",
+         "generator": "G1",
+         "independent_observation": "min(max(x, lo), hi) written separately in the test",
+         "falsifier": {"description": "a clamp that returns lo for x above hi"}},
+       "evidence": {"tag": "executed", "receipts": ["RL-OK", "RL-BAD"]}},
+      {"id": "L2", "statement": "lo <= clamp(x, lo, hi) <= hi", "kind": "invariant", "layer": "domain",
+       "owner": "clamp.py::clamp", "uses": ["O1", "clamp"],
+       "treatment": {"tag": "finite", "reason": "a closed table of boundary cases", "cases": ["x < lo", "x > hi", "x == lo", "x == hi", "lo == hi"]},
+       "evidence": {"tag": "to_run"}}],
+    "refuted": []}}},
+  {"kind": "model", "scope": "shared", "status": {"tag": "not_applicable",
+    "reason": "one pure function with no state, time or concurrency: no formal model is selected, the claims rest on the laws and an argument"}},
+  {"kind": "closure", "scope": "shared", "status": {"tag": "applicable", "payload": {"closures": [{
+    "subject": "the clamped number",
+    "safety": {"tag": "claim", "statement": "the result is always within [lo, hi]", "design": "PASS", "runtime": "DESIGNED_NOT_BUILT",
+               "assumptions": ["lo <= hi is checked by the caller contract"], "runs": ["RL-OK"], "laws": ["L2"],
+               "basis": {"tag": "argued", "argument": "min and max are total on ordered numbers, and the result is one of x, lo, hi"}},
+    "inhabitation": {"tag": "claim", "statement": "clamp(15, 0, 10) is constructible and equals 10", "design": "PASS", "runtime": "DESIGNED_NOT_BUILT",
+                     "assumptions": [], "runs": [], "laws": [],
+                     "basis": {"tag": "path", "admitted_input": "x=15, lo=0, hi=10", "producer": "clamp.py::clamp", "consumer": "clamp.py::clamp",
+                               "public_observation": "the return value 10"}},
+    "public_reachability": {"tag": "claim", "statement": "clamp is reached by import from the package", "design": "PASS", "runtime": "INDETERMINATE",
+                            "runtime_note": "the import path exists today; the new body is not built", "assumptions": [], "runs": [], "laws": [],
+                            "basis": {"tag": "path", "admitted_input": "from clamp import clamp", "producer": "clamp.py::clamp", "consumer": "app.py:3",
+                                      "public_observation": "the return value"}},
+    "liveness": {"tag": "not_applicable", "reason": "a pure function returns; no progress condition exists"}}]}}},
+  {"kind": "receipts", "scope": "shared", "status": {"tag": "applicable", "payload": {"runs": [
+    {"id": "RL-OK", "tool": "script", "tool_version": "python 3.12", "target": "prototype", "variant": "fixed",
+     "argv": ["python3", "laws.py", "--seed", "1", "--cases", "1000"], "exit_status": 0, "result_class": "ok",
+     "checks": ["L1", "L2"], "measure": {"kind": "cases", "value": 1000}, "seed": "1"},
+    {"id": "RL-BAD", "tool": "script", "tool_version": "python 3.12", "target": "prototype", "variant": "unfixed",
+     "argv": ["python3", "laws.py", "--seed", "1", "--cases", "1000", "--bug", "lo-for-above"], "exit_status": 1, "result_class": "violation",
+     "checks": ["L1"], "measure": {"kind": "cases", "value": 1000}, "seed": "1"}]}}},
+  {"kind": "scenarios", "scope": "shared", "status": {"tag": "not_applicable",
+    "reason": "the behavior is fixed by examples; no order, timing, concurrency or state interaction is unclear"}}
+ ]
+}

@@ -109,6 +109,18 @@ uv run poe format
 git commit -m "feat(agents): add new capability"
 ```
 
+### Portable subprocess tests
+
+- Launch Python subprocesses with `sys.executable`, not a developer's virtual
+  environment path. Resolve dependency directories with
+  `sysconfig.get_path("purelib")`, not a guessed `lib/python*/site-packages` layout.
+- Give installation tests an isolated `HOME` and `PATH`. When the installer
+  needs `python3`, provide a clean test-owned venv (`venv.EnvBuilder(with_pip=False)`)
+  on that PATH instead of inheriting host tools or removing Python altogether.
+- Clear host-specific agent-directory and profile overrides in the sandbox.
+  A missing-runtime test must not accidentally import DES from an editable
+  checkout or a globally installed package.
+
 ## Architecture Principles
 
 1. Each agent has one responsibility

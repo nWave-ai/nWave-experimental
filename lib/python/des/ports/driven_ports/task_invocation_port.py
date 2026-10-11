@@ -287,6 +287,9 @@ class DesignFacts:
         ApplicableImpactClosure | NotApplicable | UnassessedDesignDecision
     ) = field(kw_only=True)
     adr: ApplicableADR | NotApplicable | None = None
+    # Explicit host-supplied typed sections; None is historical unassessed
+    # input, never an applicability decision. Other semantic facts stay intact.
+    architect_handoff: dict | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

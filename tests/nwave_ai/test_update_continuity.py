@@ -10,6 +10,7 @@ import json
 import os
 import subprocess
 import sys
+import sysconfig
 import time
 import venv
 from pathlib import Path
@@ -18,8 +19,8 @@ import pytest
 
 
 REPO = Path(__file__).resolve().parents[2]
-PYTHON = Path("/home/parajao/Projects/nWave-dev/.venv/bin/python")
-PINNED_SITE = next((PYTHON.parent.parent / "lib").glob("python*/site-packages"))
+PYTHON = Path(sys.executable)
+PINNED_SITE = Path(sysconfig.get_path("purelib"))
 
 
 def _command(home: Path, root: Path, *args: str) -> subprocess.CompletedProcess[str]:

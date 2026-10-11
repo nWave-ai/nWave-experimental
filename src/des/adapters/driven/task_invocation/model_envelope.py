@@ -27,6 +27,9 @@ from des.domain.design_document import (
     design_decisions_schema,
     without_absent_optional_decisions,
 )
+from des.domain.design_document import (
+    _decode_architect_handoff as decode_architect_handoff,
+)
 from des.domain.distill_document import DistillDocument, DistillDocumentInvalid
 from des.ports.driven_ports.task_invocation_port import (
     MINIMUM_OBSERVATION_CHARACTERS,
@@ -938,6 +941,11 @@ def decode_model_run(  # noqa: PLR0913 - see the note above
                     verification,
                     oracle_verification_index,
                     authority_locator=authority_locator,
+                    architect_handoff=(
+                        decode_architect_handoff(raw_facts["architect_handoff"])
+                        if raw_facts.get("architect_handoff") is not None
+                        else None
+                    ),
                     **decode_design_decisions(
                         without_absent_optional_decisions(raw_facts)
                     ),

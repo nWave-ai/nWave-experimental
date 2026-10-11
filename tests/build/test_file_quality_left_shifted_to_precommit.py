@@ -33,6 +33,7 @@ Two constraints bound the design, and these tests pin both:
 
 from __future__ import annotations
 
+import runpy
 import subprocess
 import sys
 from pathlib import Path
@@ -143,6 +144,17 @@ def test_precommit_rejects_a_staged_file_missing_its_final_newline(tmp_path):
     assert "offender.txt" in result.stdout, (
         "check_end_of_file.py exited non-zero but never mentions the file it "
         f"was given -- it ignored its arguments; stdout={result.stdout!r}"
+    )
+
+
+def test_end_of_file_scope_preserves_receipt_evidence_but_checks_siblings():
+    """Receipt-bound bytes are skipped without exempting neighboring fixtures."""
+    is_scannable = runpy.run_path(str(END_OF_FILE_SCRIPT))["_is_scannable"]
+    assert not is_scannable(
+        "tests/des/architect_handoff/fixtures/v9lb1/traces/EX1.itf.json"
+    )
+    assert is_scannable(
+        "tests/des/architect_handoff/fixtures/v9lb1-sibling/traces/EX1.itf.json"
     )
 
 

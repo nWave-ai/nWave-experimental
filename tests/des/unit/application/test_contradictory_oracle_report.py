@@ -1,30 +1,4 @@
-"""A zero exit status with a JUnit report recording errors/failures must not
-be GREEN.
-
-CONCRETE HOST REPRODUCTION (des-fixes-sonnet-20260917 batch, 2026-09-17):
-`DeliveryContinuationRunner._oracle_verdict(0, (1, 0, 1), False)` and
-`_oracle_verdict(0, (1, 1, 0), False)` both returned `("green",
-"junit-report")`. A native oracle whose process exits 0 while its own JUnit
-report records a failed or errored test case is silently accepted as GREEN.
-
-WHY: `_oracle_verdict`'s prior branch order checked `if not exit_status:
-return "green", "junit-report"` BEFORE reading `counts` (tests, errors,
-failures) at all. A clean process exit therefore always won the verdict,
-even when the report the runner itself just measured disagreed with it.
-
-HOW (the fix): read `counts` before trusting a zero exit. An error in the
-report makes the verdict `broken` (an oracle whose own report says it never
-reached its assertion, per the same "error report broken" convention already
-applied on the nonzero-exit path). A failure with a zero exit is a genuine
-contradiction between the two axes and is classified `indeterminate` /
-`junit-report-contradicts-exit-status` -- the SAME conservative designation
-the runner already gives the mirror contradiction (nonzero exit, clean
-report) two lines below. Never `green` with a reported error or failure.
-
-SCOPE: this file owns exactly the correction to `_oracle_verdict`. It does
-not touch `_junit_counts`, `_executed_oracle_set`'s indeterminate-routing, or
-report-count semantics beyond what the classifier already declares.
-"""
+"""Captured native/report assertions must not be overruled by process exit alone."""
 
 from __future__ import annotations
 
@@ -39,6 +13,12 @@ from des.application.delivery_continuation import (
     DeliveryContinuationRunner,
     DeliveryOutcome,
     Disposition,
+)
+from des.domain.oracle_observation import (
+    ObservationUnavailable,
+    OracleObservation,
+    OracleObservationKind,
+    observation_from_counts,
 )
 
 
@@ -61,7 +41,9 @@ def test_zero_exit_with_reported_failure_or_error_is_never_green(
     exit_status: int, counts: tuple[int, int, int], report_requested: bool
 ) -> None:
     verdict, axis = DeliveryContinuationRunner._oracle_verdict(
-        exit_status, counts, report_requested
+        exit_status,
+        observation_from_counts(counts[0], counts[2], counts[1], source="junit-report"),
+        completed=True,
     )
     assert verdict != "green", (
         f"WHAT: _oracle_verdict({exit_status!r}, {counts!r}, "
@@ -77,7 +59,9 @@ def test_zero_exit_with_reported_error_is_broken() -> None:
     # errors -> broken is the SAME convention `_oracle_verdict` already
     # applies on its nonzero-exit path two branches below; a zero exit must
     # not exempt an errored report from that same designation.
-    verdict, axis = DeliveryContinuationRunner._oracle_verdict(0, (1, 1, 0), False)
+    verdict, axis = DeliveryContinuationRunner._oracle_verdict(
+        0, observation_from_counts(1, 0, 1, source="junit-report"), completed=True
+    )
     assert (verdict, axis) == ("broken", "junit-report"), (verdict, axis)
 
 
@@ -85,7 +69,9 @@ def test_zero_exit_with_reported_failure_is_indeterminate_contradiction() -> Non
     # A failure with a clean exit is a genuine two-axis contradiction, so it
     # earns the SAME conservative designation the mirror contradiction
     # (nonzero exit, clean report) already earns just below in the method.
-    verdict, axis = DeliveryContinuationRunner._oracle_verdict(0, (1, 0, 1), False)
+    verdict, axis = DeliveryContinuationRunner._oracle_verdict(
+        0, observation_from_counts(1, 1, 0, source="junit-report"), completed=True
+    )
     assert (verdict, axis) == (
         "indeterminate",
         "junit-report-contradicts-exit-status",
@@ -98,53 +84,79 @@ def test_zero_exit_with_reported_failure_is_indeterminate_contradiction() -> Non
 # --- existing valid controls: this correction must not move any of these ---
 
 
-def test_clean_zero_exit_with_clean_report_stays_green() -> None:
-    verdict, axis = DeliveryContinuationRunner._oracle_verdict(0, (3, 0, 0), False)
-    assert (verdict, axis) == ("green", "junit-report")
+@pytest.mark.parametrize("source", ["native-observation", "junit-report"])
+def test_clean_zero_exit_with_positive_observation_stays_green(source: str) -> None:
+    verdict, axis = DeliveryContinuationRunner._oracle_verdict(
+        0, observation_from_counts(3, 0, 0, source=source), completed=True
+    )
+    assert (verdict, axis) == ("green", source)
 
 
 def test_nonzero_exit_with_reported_failure_stays_red() -> None:
-    verdict, axis = DeliveryContinuationRunner._oracle_verdict(1, (3, 0, 1), True)
+    verdict, axis = DeliveryContinuationRunner._oracle_verdict(
+        1, observation_from_counts(3, 1, 0, source="junit-report"), completed=True
+    )
     assert (verdict, axis) == ("red", "junit-report")
 
 
 def test_nonzero_exit_with_reported_error_stays_broken() -> None:
-    verdict, axis = DeliveryContinuationRunner._oracle_verdict(1, (3, 1, 0), True)
+    verdict, axis = DeliveryContinuationRunner._oracle_verdict(
+        1, observation_from_counts(3, 0, 1, source="junit-report"), completed=True
+    )
     assert (verdict, axis) == ("broken", "junit-report")
 
 
 def test_nonzero_exit_with_clean_report_stays_the_existing_contradiction() -> None:
-    verdict, axis = DeliveryContinuationRunner._oracle_verdict(1, (3, 0, 0), True)
+    verdict, axis = DeliveryContinuationRunner._oracle_verdict(
+        1, observation_from_counts(3, 0, 0, source="junit-report"), completed=True
+    )
     assert (verdict, axis) == ("indeterminate", "junit-report-contradicts-exit-status")
 
 
-def test_native_tool_success_exit_with_no_report_stays_green() -> None:
-    verdict, axis = DeliveryContinuationRunner._oracle_verdict(0, None, False)
-    assert (verdict, axis) == ("green", "exit-status-only")
+def test_native_tool_success_exit_without_observation_is_indeterminate() -> None:
+    verdict, axis = DeliveryContinuationRunner._oracle_verdict(
+        0,
+        OracleObservation(OracleObservationKind.Missing, "native-observation"),
+        completed=True,
+    )
+    assert (verdict, axis) == ("indeterminate", "native-observation-no-observation")
 
 
 def test_native_tool_nonzero_exit_with_no_report_stays_indeterminate() -> None:
-    verdict, axis = DeliveryContinuationRunner._oracle_verdict(1, None, False)
+    verdict, axis = DeliveryContinuationRunner._oracle_verdict(
+        1,
+        OracleObservation(OracleObservationKind.Missing, "native-observation"),
+        completed=True,
+    )
     assert (verdict, axis) == ("indeterminate", "exit-status-only")
 
 
 def test_missing_exit_status_stays_broken() -> None:
-    verdict, axis = DeliveryContinuationRunner._oracle_verdict(None, None, False)
+    verdict, axis = DeliveryContinuationRunner._oracle_verdict(
+        None,
+        OracleObservation(OracleObservationKind.Missing, "native-observation"),
+        completed=False,
+    )
     assert (verdict, axis) == ("broken", "exit-status")
 
 
 def test_requested_report_absent_stays_broken() -> None:
-    verdict, axis = DeliveryContinuationRunner._oracle_verdict(0, None, True)
+    verdict, axis = DeliveryContinuationRunner._oracle_verdict(
+        0,
+        ObservationUnavailable("junit-report-absent", "requested report absent"),
+        completed=True,
+    )
     assert (verdict, axis) == ("broken", "junit-report-absent")
 
 
-def test_zero_executed_tests_with_zero_exit_is_unaffected_by_this_fix() -> None:
-    # Zero executed tests (tests=0, errors=0, failures=0) is an EXISTING
-    # semantic this correction does not touch or broaden: a report that
-    # genuinely ran nothing, with a clean exit, still reads as `green` per
-    # the pre-existing branch this fix does not reorder past the count check.
-    verdict, axis = DeliveryContinuationRunner._oracle_verdict(0, (0, 0, 0), False)
-    assert (verdict, axis) == ("green", "junit-report")
+@pytest.mark.parametrize("source", ["native-observation", "junit-report"])
+def test_zero_completed_observations_with_zero_exit_is_indeterminate(
+    source: str,
+) -> None:
+    verdict, axis = DeliveryContinuationRunner._oracle_verdict(
+        0, observation_from_counts(0, 0, 0, source=source), completed=True
+    )
+    assert (verdict, axis) == ("indeterminate", f"{source}-no-observation")
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +195,7 @@ def _fake_native_oracle(root: Path, exit_status: int, produces_report: bool) -> 
     [
         (0, True, ("indeterminate", "junit-report-contradicts-exit-status")),
         (101, True, ("red", "junit-report")),
-        (0, False, ("broken", "junit-report-absent")),
+        (0, False, ("indeterminate", "junit-report-invalid")),
     ],
 )
 def test_native_oracle_judges_its_explicit_report_without_pytest_exit_conventions(
@@ -227,16 +239,15 @@ def test_native_oracle_judges_its_explicit_report_without_pytest_exit_convention
     assert retained["exit"] == exit_status
     assert "PYTEST_ADDOPTS" not in retained["declared_environment"]
     assert "PYTHONPATH" not in retained["declared_environment"]
+    assert not isinstance(measured, DeliveryOutcome), measured
+    assert measured.measured[0]["verdict"] == verdict
+    assert measured.measured[0]["axis"] == axis
+    assert measured.measured[0]["counts"] == ((1, 0, 1) if produces_report else None)
     if verdict == "indeterminate":
-        assert isinstance(measured, DeliveryOutcome), measured
-        assert measured.disposition is Disposition.Indeterminate
-        assert measured.failure.what == "OracleRedUnobservable"
-        assert measured.failure.why.startswith(oracle_locator)
+        assert measured.refusal is not None
+        outcome = measured.refusal.terminal
+        assert outcome.disposition is Disposition.Indeterminate
+        assert outcome.failure.what == "OracleRedUnobservable"
+        assert outcome.failure.why.startswith(oracle_locator)
     else:
-        assert not isinstance(measured, DeliveryOutcome), measured
-        assert measured.measured[0]["verdict"] == verdict
-        assert measured.measured[0]["axis"] == axis
-        assert measured.measured[0]["counts"] == (
-            (1, 0, 1) if produces_report else None
-        )
         assert (measured.refusal is not None) is (verdict == "broken")

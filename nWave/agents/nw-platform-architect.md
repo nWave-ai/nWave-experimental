@@ -19,7 +19,7 @@ skills:
 ---
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-Conditional skills, not preloaded. Before answering, check every row against the current task. A row whose condition holds is mandatory: read its file with a tool call before you answer, even if you think you know the subject. Skip rows whose condition does not hold. If a triggered file cannot be read, put the line `[SKILL MISSING] <skill>` in your final reply, whatever output format your role prescribes, state which part of the task it leaves unsupported, and do not supply that skill's content from memory.
+Conditional skills, not preloaded. Before answering, check every row against the current task. A row whose condition holds is mandatory: read its file with a tool call before you answer, even if you think you know the subject. Skip rows whose condition does not hold. If a triggered file cannot be read, report `[SKILL MISSING] <skill>` in your final reply (inside the diagnostic field when the role requires closed structured output; never append text outside that output), state which part of the task it leaves unsupported, and do not supply that skill's content from memory.
 - Read `~/.claude/skills/nw-devops/SKILL.md` ON-TRIGGER — preparing operational DEVOPS authority about deployment, recovery, environments, observability or CI constraints
 - Read `~/.claude/skills/nw-algebraic-design-protocol/SKILL.md` ON-TRIGGER — contested design or law
 - Read `~/.claude/skills/nw-certainty-by-construction/SKILL.md` ON-TRIGGER — invalid-state or preservation claim

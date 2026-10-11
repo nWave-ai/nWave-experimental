@@ -1,0 +1,1220 @@
+{
+ "sections": [
+  {
+   "kind": "laws",
+   "scope": "shared",
+   "status": {
+    "tag": "applicable",
+    "payload": {
+     "observations": [
+      {
+       "id": "O1",
+       "description": "the returned page of paginate, compared by ==",
+       "result_type": "list",
+       "cannot_distinguish": "1, 1.0 and True; a list from a list subclass; shared from copied nested objects (the page is a shallow copy)"
+      },
+      {
+       "id": "O2",
+       "description": "CLI stdout text",
+       "result_type": "text",
+       "cannot_distinguish": "which error class produced an empty stdout (it does distinguish number and bool spelling and key order)"
+      },
+      {
+       "id": "O3",
+       "description": "CLI exit status",
+       "result_type": "int in {0, 2} (1 only for the deep-nesting residue)",
+       "cannot_distinguish": "a decoder error from an argparse error (both 2)"
+      },
+      {
+       "id": "O4",
+       "description": "CLI stderr",
+       "result_type": "text",
+       "cannot_distinguish": "exact text (it is not part of the contract)"
+      },
+      {
+       "id": "O5",
+       "description": "the model's count map",
+       "result_type": "map index -> times delivered",
+       "cannot_distinguish": "order inside a page (pages are sets), so order is observed only by L1 on lists"
+      },
+      {
+       "id": "O6",
+       "description": "the model's items",
+       "result_type": "index only",
+       "cannot_distinguish": "items by value, only by index"
+      },
+      {
+       "id": "O7",
+       "description": "the input list after the call",
+       "result_type": "list",
+       "cannot_distinguish": "a value-equal replacement from the original object (a deep-equal snapshot compares values, not identity) [INF]"
+      }
+     ],
+     "equality": {
+      "under": [
+       "O1"
+      ],
+      "definition": "Python == on JSON-safe values"
+     },
+     "constructors": [
+      {
+       "id": "paginate",
+       "signature": "paginate(items: list, offset: int>=0, limit: int>=1) -> list | ValueError"
+      },
+      {
+       "id": "main",
+       "signature": "main() -> exit status in {0, 2}, with stdout and stderr"
+      }
+     ],
+     "generators": [
+      {
+       "id": "G-LIB",
+       "domain": "closed sum CaseKind generated tag first: FirstPage, SecondPage, PartialLast, AtEnd, BeyondEnd, Empty, WalkAll",
+       "size_bound": 40,
+       "seed_policy": "random.Random(20261006), 3000 cases, no library, hand shrinking on the grid n<=6, offset<=8, limit<=4",
+       "must_include": [
+        "offset 0",
+        "offset = limit",
+        "offset = k*limit < n < offset+limit",
+        "offset = n",
+        "offset = n+k and 10**30",
+        "empty list",
+        "duplicates (ints 0..3)"
+       ],
+       "depth_bound": 3
+      },
+      {
+       "id": "G-CLI",
+       "domain": "JSON-safe nested items through the real CLI process",
+       "size_bound": 40,
+       "seed_policy": "random.Random(7); the source says 150 subprocess cases in decision 12 and 300 cases in decisions 11 and 26 (it disagrees with itself)",
+       "must_include": [
+        "second page",
+        "nested lists and dicts",
+        "None, bool, float, str"
+       ],
+       "depth_bound": 3
+      }
+     ],
+     "laws": [
+      {
+       "id": "L1",
+       "statement": "page == [x for i, x in enumerate(items) if offset <= i < offset+limit]",
+       "kind": "oracle",
+       "layer": "domain",
+       "owner": "pagination.py::paginate",
+       "uses": [
+        "O1",
+        "paginate"
+       ],
+       "treatment": {
+        "tag": "broad",
+        "generator": "G-LIB",
+        "independent_observation": "filter-comprehension oracle with no slice arithmetic; walk reassembly",
+        "falsifier": {
+         "description": "the unfixed items[offset:limit] fails L1, L2, L5, L8; an inclusive-end mutant fails L2"
+        }
+       },
+       "evidence": {
+        "tag": "executed",
+        "receipts": [
+         "LAWS-FIXED",
+         "LAWS-UNFIXED"
+        ]
+       }
+      },
+      {
+       "id": "L2",
+       "statement": "len(page) == min(limit, max(len(items)-offset, 0))",
+       "kind": "invariant",
+       "layer": "domain",
+       "owner": "pagination.py::paginate",
+       "uses": [
+        "O1",
+        "paginate"
+       ],
+       "treatment": {
+        "tag": "broad",
+        "generator": "G-LIB",
+        "independent_observation": "filter-comprehension oracle with no slice arithmetic; walk reassembly",
+        "falsifier": {
+         "description": "the unfixed items[offset:limit] fails L1, L2, L5, L8; an inclusive-end mutant fails L2"
+        }
+       },
+       "evidence": {
+        "tag": "executed",
+        "receipts": [
+         "LAWS-FIXED",
+         "LAWS-UNFIXED"
+        ]
+       }
+      },
+      {
+       "id": "L3",
+       "statement": "offset >= len(items) implies page == []",
+       "kind": "invariant",
+       "layer": "domain",
+       "owner": "pagination.py::paginate",
+       "uses": [
+        "O1",
+        "paginate"
+       ],
+       "treatment": {
+        "tag": "broad",
+        "generator": "G-LIB",
+        "independent_observation": "filter-comprehension oracle with no slice arithmetic; walk reassembly",
+        "falsifier": {
+         "description": "the unfixed items[offset:limit] fails L1, L2, L5, L8; an inclusive-end mutant fails L2"
+        }
+       },
+       "evidence": {
+        "tag": "executed",
+        "receipts": [
+         "LAWS-FIXED",
+         "LAWS-UNFIXED"
+        ]
+       }
+      },
+      {
+       "id": "L4",
+       "statement": "items is deep-equal to its snapshot after the call and page is a new list (not the same object)",
+       "kind": "invariant",
+       "layer": "domain",
+       "owner": "pagination.py::paginate",
+       "uses": [
+        "O7",
+        "paginate"
+       ],
+       "treatment": {
+        "tag": "broad",
+        "generator": "G-LIB",
+        "independent_observation": "deep snapshot taken before the call",
+        "falsifier": {
+         "description": "the unfixed items[offset:limit] fails L1, L2, L5, L8; an inclusive-end mutant fails L2"
+        }
+       },
+       "evidence": {
+        "tag": "executed",
+        "receipts": [
+         "LAWS-FIXED",
+         "LAWS-UNFIXED"
+        ]
+       }
+      },
+      {
+       "id": "L5",
+       "statement": "split: page(o, l1+l2) == page(o, l1) + page(o+l1, l2)",
+       "kind": "metamorphic",
+       "layer": "domain",
+       "owner": "pagination.py::paginate",
+       "uses": [
+        "O1",
+        "paginate"
+       ],
+       "treatment": {
+        "tag": "broad",
+        "generator": "G-LIB",
+        "independent_observation": "filter-comprehension oracle with no slice arithmetic; walk reassembly",
+        "falsifier": {
+         "description": "the unfixed items[offset:limit] fails L1, L2, L5, L8; an inclusive-end mutant fails L2"
+        }
+       },
+       "evidence": {
+        "tag": "executed",
+        "receipts": [
+         "LAWS-FIXED",
+         "LAWS-UNFIXED"
+        ]
+       }
+      },
+      {
+       "id": "L6",
+       "statement": "prefix: page(o, l) is a prefix of page(o, l+k)",
+       "kind": "metamorphic",
+       "layer": "domain",
+       "owner": "pagination.py::paginate",
+       "uses": [
+        "O1",
+        "paginate"
+       ],
+       "treatment": {
+        "tag": "broad",
+        "generator": "G-LIB",
+        "independent_observation": "filter-comprehension oracle with no slice arithmetic; walk reassembly",
+        "falsifier": {
+         "description": "the unfixed items[offset:limit] fails L1, L2, L5, L8; an inclusive-end mutant fails L2"
+        }
+       },
+       "evidence": {
+        "tag": "executed",
+        "receipts": [
+         "LAWS-FIXED",
+         "LAWS-UNFIXED"
+        ]
+       }
+      },
+      {
+       "id": "L7",
+       "statement": "naturality: page(map(f, items), o, l) == map(f, page(items, o, l)) for f = lambda x: [x]",
+       "kind": "commutativity",
+       "layer": "domain",
+       "owner": "pagination.py::paginate",
+       "uses": [
+        "O1",
+        "paginate"
+       ],
+       "treatment": {
+        "tag": "broad",
+        "generator": "G-LIB",
+        "independent_observation": "filter-comprehension oracle with no slice arithmetic; walk reassembly",
+        "falsifier": {
+         "description": "the unfixed items[offset:limit] fails L1, L2, L5, L8; an inclusive-end mutant fails L2"
+        }
+       },
+       "evidence": {
+        "tag": "executed",
+        "receipts": [
+         "LAWS-FIXED",
+         "LAWS-UNFIXED"
+        ]
+       }
+      },
+      {
+       "id": "L8",
+       "statement": "walk: concatenating pages while stepping offset by limit from 0 while offset < len(items) reproduces items exactly once each, in order",
+       "kind": "inductive",
+       "layer": "domain",
+       "owner": "pagination.py::paginate",
+       "uses": [
+        "O1",
+        "paginate"
+       ],
+       "treatment": {
+        "tag": "broad",
+        "generator": "G-LIB",
+        "independent_observation": "walk reassembly",
+        "falsifier": {
+         "description": "the unfixed items[offset:limit] fails L1, L2, L5, L8; an inclusive-end mutant fails L2"
+        }
+       },
+       "evidence": {
+        "tag": "executed",
+        "receipts": [
+         "LAWS-FIXED",
+         "LAWS-UNFIXED"
+        ]
+       }
+      },
+      {
+       "id": "L9",
+       "statement": "every (offset, limit) pair of type int with offset >= 0 and limit >= 1 and every list yields Success",
+       "kind": "invariant",
+       "layer": "application",
+       "owner": "pagination.py::paginate",
+       "uses": [
+        "O1",
+        "paginate"
+       ],
+       "treatment": {
+        "tag": "none",
+        "reason": "covered by every generated case of L1-L8: a Refusal on valid input fails them [INF]"
+       },
+       "evidence": {
+        "tag": "to_run"
+       }
+      },
+      {
+       "id": "L10",
+       "statement": "any bool, float, str, None, negative offset, non-positive limit or non-list items yields ValueError and no page (finite table, not PBT)",
+       "kind": "invariant",
+       "layer": "application",
+       "owner": "pagination.py::paginate",
+       "uses": [
+        "O1",
+        "paginate"
+       ],
+       "treatment": {
+        "tag": "finite",
+        "reason": "finite closed table, not PBT [SRC 5, 12]",
+        "cases": [
+         "bool offset",
+         "bool limit",
+         "float offset 2.0",
+         "str limit",
+         "None items",
+         "negative offset",
+         "zero limit",
+         "negative limit",
+         "tuple, str, dict, generator items"
+        ]
+       },
+       "evidence": {
+        "tag": "to_run"
+       }
+      },
+      {
+       "id": "L11",
+       "statement": "exit 0 implies stdout is exactly json.dumps(paginate(items, o, l)) + newline and stderr is empty",
+       "kind": "invariant",
+       "layer": "adapter",
+       "owner": "pagination.py::main",
+       "uses": [
+        "O2",
+        "O4",
+        "main"
+       ],
+       "treatment": {
+        "tag": "broad",
+        "generator": "G-CLI",
+        "independent_observation": "json.loads of the real CLI stdout compared with the library result",
+        "falsifier": {
+         "description": "the source names no falsifier for PROP-CLI-AGREES"
+        }
+       },
+       "evidence": {
+        "tag": "executed",
+        "receipts": [
+         "CLI-AGREE"
+        ]
+       }
+      },
+      {
+       "id": "L12",
+       "statement": "exit 2 implies stdout is empty and stderr is non-empty and contains 'error:' (prefix 'error:' unless argparse produced it)",
+       "kind": "invariant",
+       "layer": "adapter",
+       "owner": "pagination.py::main",
+       "uses": [
+        "O2",
+        "O3",
+        "O4",
+        "main"
+       ],
+       "treatment": {
+        "tag": "finite",
+        "reason": "CLI error table [SRC 12]",
+        "cases": [
+         "empty stdin",
+         "bad UTF-8",
+         "JSON object, not list",
+         "argparse non-integer option"
+        ]
+       },
+       "evidence": {
+        "tag": "to_run"
+       }
+      },
+      {
+       "id": "L13",
+       "statement": "for JSON-safe values json.loads(json.dumps(x)) == x, so the CLI round trip preserves the page (NaN and Infinity excluded: NaN != NaN, probe: [NaN, Infinity] prints [NaN, Infinity], exit 0, not strict JSON)",
+       "kind": "roundtrip",
+       "layer": "adapter",
+       "owner": "pagination.py::main",
+       "uses": [
+        "O1",
+        "O2",
+        "main"
+       ],
+       "treatment": {
+        "tag": "broad",
+        "generator": "G-CLI",
+        "independent_observation": "json.loads(json.dumps(x)) == x over nested JSON-safe values",
+        "falsifier": {
+         "description": "the source names no falsifier for PROP-JSON-ROUNDTRIP"
+        }
+       },
+       "evidence": {
+        "tag": "executed",
+        "receipts": [
+         "CLI-AGREE"
+        ]
+       }
+      },
+      {
+       "id": "L14",
+       "statement": "two runs of the same command on the same stdin give the same stdout and exit status",
+       "kind": "idempotence",
+       "layer": "infrastructure",
+       "owner": "pagination.py::main",
+       "uses": [
+        "O2",
+        "O3",
+        "main"
+       ],
+       "treatment": {
+        "tag": "finite",
+        "reason": "one command run twice [INF]",
+        "cases": [
+         "same command and stdin twice"
+        ]
+       },
+       "evidence": {
+        "tag": "to_run"
+       }
+      },
+      {
+       "id": "L15",
+       "statement": "a failed run leaves stdout empty (no partial result)",
+       "kind": "invariant",
+       "layer": "infrastructure",
+       "owner": "pagination.py::main",
+       "uses": [
+        "O2",
+        "O3",
+        "main"
+       ],
+       "treatment": {
+        "tag": "finite",
+        "reason": "failure table of L12 [INF]",
+        "cases": [
+         "malformed JSON",
+         "non-list JSON"
+        ]
+       },
+       "evidence": {
+        "tag": "to_run"
+       }
+      }
+     ],
+     "refuted": [
+      {
+       "id": "RC2",
+       "statement": "a walk never skips or repeats",
+       "cause": "law_scope",
+       "counterexample": "limit changed between requests while advancing by the new limit; mutants M2 and M3",
+       "run": "K-M2-noSkipNoRepeat"
+      },
+      {
+       "id": "RC3",
+       "statement": "stderr starts with 'error:'",
+       "cause": "law_scope",
+       "counterexample": "argparse errors start with 'usage:'"
+      },
+      {
+       "id": "RC4",
+       "statement": "exit 2 for any unreadable stdin",
+       "cause": "boundary",
+       "counterexample": "100000-deep JSON gives exit 1 (RecursionError), stdout empty"
+      },
+      {
+       "id": "RC5",
+       "statement": "CLI options are plain decimal integers",
+       "cause": "law_scope",
+       "counterexample": "'+2' and '1_0' are accepted by int()"
+      },
+      {
+       "id": "RC7",
+       "statement": "the delivered list is a range in the Quint model",
+       "cause": "carrier",
+       "counterexample": "Apalache: Expected a constant integer range"
+      },
+      {
+       "id": "RB",
+       "statement": "json.dumps(json.loads(s)) == s for arbitrary s",
+       "cause": "law_scope",
+       "counterexample": "whitespace, key spacing, float spelling and escapes are normalised"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "kind": "construction",
+   "scope": "shared",
+   "status": {
+    "tag": "applicable",
+    "payload": {
+     "claims": [
+      {
+       "id": "E1",
+       "proposition": "bool offset or limit is refused",
+       "harm": "True would act as 1 and give a plausible wrong page",
+       "owner": "pagination.py::paginate",
+       "admitted_input": "non-bool int",
+       "constructor": "pagination.py:11-14",
+       "consumer": "pagination.py:15",
+       "public_observation": "ValueError",
+       "bypass": [
+        "a caller that slices the list directly",
+        "monkeypatching",
+        "reflection"
+       ],
+       "strength": "runtime_boundary"
+      },
+      {
+       "id": "E2",
+       "proposition": "negative offset is refused",
+       "harm": "items[-3:...] would silently return the tail of the list",
+       "owner": "pagination.py::paginate",
+       "admitted_input": "int >= 0",
+       "constructor": "pagination.py:11-12",
+       "consumer": "pagination.py:15",
+       "public_observation": "ValueError",
+       "bypass": [
+        "a caller that slices the list directly",
+        "monkeypatching",
+        "reflection"
+       ],
+       "strength": "runtime_boundary"
+      },
+      {
+       "id": "E3",
+       "proposition": "limit <= 0 is refused",
+       "harm": "an empty or reversed slice and, for a walker, no progress (the liveness mutant)",
+       "owner": "pagination.py::paginate",
+       "admitted_input": "int >= 1",
+       "constructor": "pagination.py:13-14",
+       "consumer": "pagination.py:15",
+       "public_observation": "ValueError",
+       "bypass": [
+        "a caller that slices the list directly",
+        "monkeypatching",
+        "reflection"
+       ],
+       "strength": "runtime_boundary"
+      },
+      {
+       "id": "E4",
+       "proposition": "non-list items are refused",
+       "harm": "str slicing would return str",
+       "owner": "pagination.py::paginate",
+       "admitted_input": "list",
+       "constructor": "pagination.py:9-10",
+       "consumer": "pagination.py:15",
+       "public_observation": "ValueError",
+       "bypass": [
+        "a caller that slices the list directly",
+        "monkeypatching",
+        "reflection",
+        "a list subclass is still admitted"
+       ],
+       "strength": "runtime_boundary"
+      },
+      {
+       "id": "E5",
+       "proposition": "float or numpy integer offsets are refused as non-integer",
+       "harm": "a float slice would raise TypeError",
+       "owner": "pagination.py::paginate",
+       "admitted_input": "int",
+       "constructor": "pagination.py:11-14",
+       "consumer": "pagination.py:15",
+       "public_observation": "ValueError",
+       "bypass": [
+        "a caller that slices the list directly",
+        "monkeypatching",
+        "reflection",
+        "numpy integers are rejected although the README says 'non-integer'"
+       ],
+       "strength": "runtime_boundary"
+      }
+     ],
+     "admitted": [
+      "any list",
+      "offset in 0..infinity",
+      "limit in 1..infinity",
+      "JSON-safe items",
+      "the CLI over a single complete stdin"
+     ],
+     "excluded": [
+      "non-list items",
+      "bool, float or str offsets or limits",
+      "negative offsets",
+      "non-positive limits (refused with ValueError, exit 2)"
+     ],
+     "unknown": [
+      {
+       "state": "deep-nesting stdin (100000 '[' gives exit 1, RecursionError)",
+       "risk_owner": "maintainer"
+      },
+      {
+       "state": "NaN and Infinity echoed as non-strict JSON output",
+       "risk_owner": "maintainer"
+      },
+      {
+       "state": "option text '+2' and '1_0' accepted by int()",
+       "risk_owner": "product owner"
+      },
+      {
+       "state": "closed stdout or broken pipe after parsing (not probed)",
+       "risk_owner": "shell caller"
+      },
+      {
+       "state": "5000-digit option text (ValueError inside int(), argparse then exits 2; not probed)",
+       "risk_owner": "(none named in the source)"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "kind": "model",
+   "scope": "shared",
+   "status": {
+    "tag": "applicable",
+    "payload": {
+     "models": [
+      {
+       "id": "walk",
+       "language": "quint",
+       "path": "formal/pagination_walk.qnt",
+       "text_file": "pagination_walk.qnt",
+       "atoms": [
+        {
+         "tag": "state",
+         "name": "n",
+         "symbol": "len(items) in paginate",
+         "site": {
+          "tag": "located",
+          "at": "pagination.py::paginate"
+         }
+        },
+        {
+         "tag": "state",
+         "name": "lim",
+         "symbol": "limit",
+         "site": {
+          "tag": "located",
+          "at": "pagination.py::paginate"
+         }
+        },
+        {
+         "tag": "state",
+         "name": "offset",
+         "symbol": "offset",
+         "site": {
+          "tag": "located",
+          "at": "pagination.py::paginate"
+         }
+        },
+        {
+         "tag": "state",
+         "name": "count",
+         "symbol": "ghost delivery counter per index",
+         "site": {
+          "tag": "model_only",
+          "reason": "test-side reassembly of PROP-WALK-REPRODUCES; no code advances the offset"
+         }
+        },
+        {
+         "tag": "constant",
+         "name": "page",
+         "symbol": "paginate return value",
+         "site": {
+          "tag": "located",
+          "at": "pagination.py:7"
+         }
+        },
+        {
+         "tag": "action",
+         "name": "init",
+         "symbol": "the caller binds a list, an offset and a limit",
+         "site": {
+          "tag": "located",
+          "at": "pagination.py:9-14"
+         },
+         "atomicity": {
+          "at": "pagination.py:9-14",
+          "note": "a parameter binding; no shared state [SRC 19]"
+         },
+         "template": "A list with {n} item(s) is read in pages of {lim}, starting at offset {offset}"
+        },
+        {
+         "tag": "action",
+         "name": "step",
+         "symbol": "items[offset:offset + limit]",
+         "site": {
+          "tag": "located",
+          "at": "pagination.py:15"
+         },
+         "atomicity": {
+          "at": "pagination.py:15",
+          "note": "one list-slice call builds a new list in one C operation with no Python-level yield, so no other thread interleaves under the GIL of the standard build; a free-threaded build is not assumed [SRC 19]"
+         },
+         "template": "The caller gets the page that starts at offset {offset@pre} (page size {lim}) and moves on to offset {offset}; deliveries so far per item index: {count}"
+        },
+        {
+         "tag": "action",
+         "name": "probeEnd",
+         "symbol": "items[offset:offset + limit]",
+         "site": {
+          "tag": "located",
+          "at": "pagination.py:15"
+         },
+         "atomicity": {
+          "at": "pagination.py:15",
+          "note": "one list-slice call builds a new list in one C operation with no Python-level yield, so no other thread interleaves under the GIL of the standard build; a free-threaded build is not assumed [SRC 19]"
+         },
+         "template": "The caller asks for a page at offset {offset}, at or beyond the end of the list ({n} item(s)): nothing is delivered"
+        },
+        {
+         "tag": "action",
+         "name": "move",
+         "symbol": "combinator any{step, probeEnd}",
+         "site": {
+          "tag": "model_only",
+          "reason": "model-only combinator; no code step"
+         },
+         "atomicity": {
+          "at": "pagination.py:15",
+          "note": "either step or probeEnd, each atomic as above"
+         },
+         "template": "The caller asks for the next page (offset {offset@pre} before, {offset} after)"
+        },
+        {
+         "tag": "property",
+         "name": "pageMatchesSpec",
+         "symbol": "the property test of the same name (prop_page_filter_oracle)",
+         "site": {
+          "tag": "located",
+          "at": "CREATE_NEW:tests/test_pagination.py::prop_page_filter_oracle"
+         },
+         "statement": "the page the code returns equals the filter definition: the items at positions offset to offset+limit-1"
+        },
+        {
+         "tag": "property",
+         "name": "noSkipNoRepeat",
+         "symbol": "the property test of the same name (prop_walk_reproduces)",
+         "site": {
+          "tag": "located",
+          "at": "CREATE_NEW:tests/test_pagination.py::prop_walk_reproduces"
+         },
+         "statement": "every item before the offset was delivered exactly once and none after it"
+        },
+        {
+         "tag": "property",
+         "name": "completeAtEnd",
+         "symbol": "the property test of the same name (prop_walk_reproduces)",
+         "site": {
+          "tag": "located",
+          "at": "CREATE_NEW:tests/test_pagination.py::prop_walk_reproduces"
+         },
+         "statement": "when the offset reaches the end, every item was delivered exactly once"
+        },
+        {
+         "tag": "property",
+         "name": "bounded",
+         "symbol": "the property test of the same name (prop_length)",
+         "site": {
+          "tag": "located",
+          "at": "CREATE_NEW:tests/test_pagination.py::prop_length"
+         },
+         "statement": "a page has at most limit items"
+        },
+        {
+         "tag": "property",
+         "name": "beyondEndEmpty",
+         "symbol": "the property test of the same name (prop_beyond_end_empty)",
+         "site": {
+          "tag": "located",
+          "at": "CREATE_NEW:tests/test_pagination.py::prop_beyond_end_empty"
+         },
+         "statement": "a page at or beyond the end is empty"
+        }
+       ],
+       "exclusions": [
+        "item values and nesting",
+        "order inside a page (pages are index sets)",
+        "validation Refusals",
+        "JSON and IO",
+        "process failure"
+       ],
+       "assumptions": [
+        "list length <= 6",
+        "limit in 1..3",
+        "offset starts at 0",
+        "the caller steps offset by limit"
+       ],
+       "mutants": [
+        {
+         "id": "M1",
+         "description": "page end bound = limit: pySlice(off, l, len) replaces pySlice(off, off + l, len) (the real defect)",
+         "kills": [
+          {
+           "property": "pageMatchesSpec",
+           "run": "K-M1-pageMatchesSpec"
+          },
+          {
+           "property": "noSkipNoRepeat",
+           "run": "K-M1-noSkipNoRepeat"
+          },
+          {
+           "property": "completeAtEnd",
+           "run": "K-M1-completeAtEnd"
+          }
+         ]
+        },
+        {
+         "id": "M2",
+         "description": "skip: offset' = offset + lim + 1",
+         "kills": [
+          {
+           "property": "noSkipNoRepeat",
+           "run": "K-M2-noSkipNoRepeat"
+          },
+          {
+           "property": "completeAtEnd",
+           "run": "K-M2-completeAtEnd"
+          }
+         ]
+        },
+        {
+         "id": "M3",
+         "description": "repeat: offset' = offset + lim - 1",
+         "kills": [
+          {
+           "property": "noSkipNoRepeat",
+           "run": "K-M3-noSkipNoRepeat"
+          },
+          {
+           "property": "completeAtEnd",
+           "run": "K-M3-completeAtEnd"
+          }
+         ]
+        },
+        {
+         "id": "M4",
+         "description": "wrap-around beyond the end: page = the first min(limit, len) items when offset >= len > 0 [ACT]",
+         "kills": [
+          {
+           "property": "pageMatchesSpec",
+           "run": "K-M4-pageMatchesSpec"
+          },
+          {
+           "property": "noSkipNoRepeat",
+           "run": "K-M4-noSkipNoRepeat"
+          },
+          {
+           "property": "completeAtEnd",
+           "run": "K-M4-completeAtEnd"
+          },
+          {
+           "property": "beyondEndEmpty",
+           "run": "K-M4-beyondEndEmpty"
+          }
+         ]
+        },
+        {
+         "id": "M5",
+         "description": "inclusive end: pySlice(off, off + l + 1, len)",
+         "kills": [
+          {
+           "property": "pageMatchesSpec",
+           "run": "K-M5-pageMatchesSpec"
+          },
+          {
+           "property": "noSkipNoRepeat",
+           "run": "K-M5-noSkipNoRepeat"
+          },
+          {
+           "property": "completeAtEnd",
+           "run": "K-M5-completeAtEnd"
+          },
+          {
+           "property": "bounded",
+           "run": "K-M5-bounded"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "live",
+       "language": "quint",
+       "path": "formal/pagination_live.qnt",
+       "text_file": "pagination_live.qnt",
+       "atoms": [
+        {
+         "tag": "state",
+         "name": "n",
+         "symbol": "len(items) in paginate",
+         "site": {
+          "tag": "located",
+          "at": "pagination.py::paginate"
+         }
+        },
+        {
+         "tag": "state",
+         "name": "lim",
+         "symbol": "limit",
+         "site": {
+          "tag": "located",
+          "at": "pagination.py::paginate"
+         }
+        },
+        {
+         "tag": "state",
+         "name": "offset",
+         "symbol": "offset",
+         "site": {
+          "tag": "located",
+          "at": "pagination.py::paginate"
+         }
+        },
+        {
+         "tag": "action",
+         "name": "init",
+         "symbol": "the caller binds a list, an offset and a limit",
+         "site": {
+          "tag": "located",
+          "at": "pagination.py:9-14"
+         },
+         "atomicity": {
+          "at": "pagination.py:9-14",
+          "note": "a parameter binding; no shared state [SRC 19]"
+         },
+         "template": "A list with {n} item(s) is read in pages of {lim}, starting at offset {offset}"
+        },
+        {
+         "tag": "action",
+         "name": "step",
+         "symbol": "items[offset:offset + limit]",
+         "site": {
+          "tag": "located",
+          "at": "pagination.py:15"
+         },
+         "atomicity": {
+          "at": "pagination.py:15",
+          "note": "one list-slice call builds a new list in one C operation with no Python-level yield, so no other thread interleaves under the GIL of the standard build; a free-threaded build is not assumed [SRC 19]"
+         },
+         "template": "The caller gets the page that starts at offset {offset@pre} (page size {lim}) and moves on to offset {offset}"
+        },
+        {
+         "tag": "action",
+         "name": "probeEnd",
+         "symbol": "items[offset:offset + limit]",
+         "site": {
+          "tag": "located",
+          "at": "pagination.py:15"
+         },
+         "atomicity": {
+          "at": "pagination.py:15",
+          "note": "one list-slice call builds a new list in one C operation with no Python-level yield, so no other thread interleaves under the GIL of the standard build; a free-threaded build is not assumed [SRC 19]"
+         },
+         "template": "The caller asks for a page at offset {offset}, at or beyond the end of the list ({n} item(s)): nothing is delivered"
+        },
+        {
+         "tag": "action",
+         "name": "move",
+         "symbol": "combinator any{step, probeEnd}",
+         "site": {
+          "tag": "model_only",
+          "reason": "model-only combinator; no code step"
+         },
+         "atomicity": {
+          "at": "pagination.py:15",
+          "note": "either step or probeEnd, each atomic as above"
+         },
+         "template": "The caller asks for the next page (offset {offset@pre} before, {offset} after)"
+        },
+        {
+         "tag": "property",
+         "name": "reachesEnd",
+         "symbol": "the caller walk ends",
+         "site": {
+          "tag": "model_only",
+          "reason": "model-only: no walker ships in the repository [SRC 18]"
+         },
+         "statement": "the caller's walk reaches the end of the list"
+        },
+        {
+         "tag": "property",
+         "name": "liveUnderFairness",
+         "symbol": "limit >= 1 gives offset' > offset",
+         "site": {
+          "tag": "located",
+          "at": "pagination.py:13-14"
+         },
+         "statement": "if the caller keeps asking for the next page, the walk reaches the end"
+        }
+       ],
+       "exclusions": [
+        "the ghost count map (dropped from the slice)",
+        "validation Refusals",
+        "JSON and IO"
+       ],
+       "assumptions": [
+        "weak fairness on the in-list page step"
+       ],
+       "mutants": [
+        {
+         "id": "LM1",
+         "description": "limit domain 0..3 (positivity removed) [SRC 22]",
+         "kills": [
+          {
+           "property": "liveUnderFairness",
+           "run": "R8"
+          }
+         ]
+        },
+        {
+         "id": "LM2",
+         "description": "progress removed: step keeps offset' = offset [SRC 22]",
+         "kills": [
+          {
+           "property": "liveUnderFairness",
+           "run": "R9"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "kind": "closure",
+   "scope": "shared",
+   "status": {
+    "tag": "applicable",
+    "payload": {
+     "closures": [
+      {
+       "subject": "the page of items that paginate returns and the CLI prints",
+       "safety": {
+        "tag": "claim",
+        "statement": "no wrong, skipped or repeated page; beyond-end is empty; a page is bounded",
+        "design": "PASS",
+        "runtime": "DESIGNED_NOT_BUILT",
+        "assumptions": [
+         "list length <= 6, limit in 1..3, offset starts at 0, the caller steps offset by limit"
+        ],
+        "runs": [
+         "R4",
+         "R5",
+         "K-M1-pageMatchesSpec",
+         "K-M4-pageMatchesSpec",
+         "K-M5-pageMatchesSpec",
+         "K-M1-noSkipNoRepeat",
+         "K-M2-noSkipNoRepeat",
+         "K-M3-noSkipNoRepeat",
+         "K-M4-noSkipNoRepeat",
+         "K-M5-noSkipNoRepeat",
+         "K-M1-completeAtEnd",
+         "K-M2-completeAtEnd",
+         "K-M3-completeAtEnd",
+         "K-M4-completeAtEnd",
+         "K-M5-completeAtEnd",
+         "K-M5-bounded",
+         "K-M4-beyondEndEmpty"
+        ],
+        "laws": [
+         "L1",
+         "L2",
+         "L3",
+         "L8"
+        ],
+        "basis": {
+         "tag": "checked",
+         "model_id": "walk",
+         "properties": [
+          "pageMatchesSpec",
+          "noSkipNoRepeat",
+          "completeAtEnd",
+          "bounded",
+          "beyondEndEmpty"
+         ],
+         "proof": "passed"
+        }
+       },
+       "inhabitation": {
+        "tag": "claim",
+        "statement": "an intended value is constructible: (list(range(25)), 10, 10) gives [10..19]",
+        "design": "PASS",
+        "runtime": "DESIGNED_NOT_BUILT",
+        "assumptions": [],
+        "runs": [
+         "INHAB"
+        ],
+        "laws": [],
+        "basis": {
+         "tag": "path",
+         "admitted_input": "list(range(25)), offset 10, limit 10",
+         "producer": "pagination.py::paginate",
+         "consumer": "pagination.py::main",
+         "public_observation": "[10, ..., 19] on stdout, exit 0"
+        }
+       },
+       "public_reachability": {
+        "tag": "claim",
+        "statement": "argv and stdin reach stdout and the exit status through main and paginate; a library call reaches the return value",
+        "design": "PASS",
+        "runtime": "INDETERMINATE",
+        "assumptions": [],
+        "runs": [
+         "BASELINE",
+         "CODEFACT"
+        ],
+        "laws": [],
+        "basis": {
+         "tag": "path",
+         "admitted_input": "argv options and a JSON list on stdin",
+         "producer": "pagination.py:18",
+         "consumer": "pagination.py:7",
+         "public_observation": "stdout text and exit status"
+        },
+        "runtime_note": "the first page is OBSERVED by test_cli_first_page; the second page is wrong until the fix"
+       },
+       "liveness": {
+        "tag": "claim",
+        "statement": "the walk reaches offset >= n",
+        "design": "PASS",
+        "runtime": "DESIGNED_NOT_BUILT",
+        "assumptions": [
+         "weak fairness on the in-list page step: the caller does not stop mid-list"
+        ],
+        "runs": [
+         "R6",
+         "R7",
+         "R8",
+         "R9"
+        ],
+        "laws": [
+         "L8"
+        ],
+        "basis": {
+         "tag": "checked",
+         "model_id": "live",
+         "properties": [
+          "liveUnderFairness"
+         ],
+         "proof": "passed",
+         "fairness": "weakFair(step, (n, lim, offset))"
+        }
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "kind": "scenarios",
+   "scope": "shared",
+   "status": {
+    "tag": "applicable",
+    "payload": {
+     "scenarios": [
+      {
+       "id": "SC1",
+       "title": "The second page is empty when the end bound is the limit",
+       "source_run": "K-M1-pageMatchesSpec",
+       "kind": "mutant",
+       "review": {
+        "tag": "pending"
+       }
+      },
+      {
+       "id": "SC2",
+       "title": "A normal walk over a short list",
+       "source_run": "EX1",
+       "kind": "example",
+       "review": {
+        "tag": "pending"
+       }
+      }
+     ]
+    }
+   }
+  }
+ ]
+}

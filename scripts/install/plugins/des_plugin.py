@@ -1070,7 +1070,7 @@ class DESPlugin(InstallationPlugin):
             return host_neutral_runtime_dir()
         return context.claude_dir / "lib" / "python"
 
-    _HOST_NEUTRAL_PLATFORMS = frozenset({"codex", "copilot", "opencode"})
+    _HOST_NEUTRAL_PLATFORMS = frozenset({"codex", "copilot", "opencode", "omp"})
 
     @classmethod
     def _secondary_runtime_python_dir(

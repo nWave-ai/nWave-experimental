@@ -476,3 +476,139 @@ def test_an_unlinked_contract_party_names_the_parties_the_agreement_declares() -
     assert "lib/reservations.ml:1" in producer, producer
     assert "Reservation wire format" in producer, producer
     assert "bin/main.ml:1" in consumer, consumer
+
+
+def test_typed_architect_input_retains_formal_bytes_and_every_existing_decision():
+    from pathlib import Path
+
+    from des.application.architect_handoff import wire
+    from des.application.architect_handoff.g10 import load_files
+
+    fixture = Path(__file__).parents[2] / "architect_handoff/fixtures/oo.g10.json"
+    handoff, defects = load_files([str(fixture)])
+    assert handoff is not None and not defects
+    supplied = manifest()
+    supplied["architect_handoff"] = wire(handoff)
+    document = DesignDocument.from_json(json.dumps(supplied))
+    restored = read_handover(
+        _canonical_bytes(
+            "deliver",
+            (HandoverValue("A", (), document.facts),),
+        )
+    )
+    assert not isinstance(restored, Blocked)
+    facts = restored.values[0].authority
+    assert facts.architect_handoff == handoff
+    assert facts.decisions == tuple(supplied["decisions"])
+    assert facts.obligations == tuple(supplied["constraints"])
+    assert facts.reuse_analysis == document.facts.reuse_analysis
+    assert facts.agreement_analysis == document.facts.agreement_analysis
+    assert facts.impact_closure == document.facts.impact_closure
+    assert facts.adr == document.facts.adr
+    assert "architect_handoff" in json.loads(document.facts_json())
+    assert (
+        document.semantic_sha256
+        != DesignDocument.from_json(json.dumps(manifest())).semantic_sha256
+    )
+
+    broken = manifest()
+    broken["architect_handoff"] = {
+        "sections": [{"kind": "invented", "scope": "shared", "status": {}}]
+    }
+    with pytest.raises(DesignDocumentInvalid, match="WHAT"):
+        DesignDocument.from_json(json.dumps(broken))
+
+
+def test_absent_architect_handoff_preserves_pre_port_manifest_identity():
+    import hashlib
+
+    for include_adr in (True, False):
+        supplied = manifest()
+        if not include_adr:
+            supplied.pop("adr")
+        legacy_normalized = {**supplied, "adr": supplied.get("adr")}
+        expected = hashlib.sha256(
+            json.dumps(
+                legacy_normalized,
+                sort_keys=True,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        assert (
+            DesignDocument.from_json(json.dumps(supplied)).semantic_sha256 == expected
+        )
+
+
+def test_strict_architect_receipt_schema_requires_array_artifacts_and_admits_authored_claims():
+    import jsonschema
+
+    from des.adapters.driven.task_invocation.model_envelope import codex_schema_for
+    from des.application.architect_handoff import g10_codec, g10_types, input_schema
+
+    def find_run(value):
+        if isinstance(value, dict):
+            if {"argv", "artifacts"} <= set(value.get("properties", {})):
+                return value
+            for child in value.values():
+                found = find_run(child)
+                if found is not None:
+                    return found
+        elif isinstance(value, list):
+            for child in value:
+                found = find_run(child)
+                if found is not None:
+                    return found
+        return None
+
+    run_schema = find_run(codex_schema_for("nw-solution-architect"))
+    assert run_schema is not None
+    raw = g10_codec.enc(
+        g10_types.Run(
+            id="CLAIM",
+            tool="script",
+            tool_version="v1",
+            target="implementation",
+            variant="fixed",
+            argv=("command",),
+            exit_status=0,
+            result_class="ok",
+            checks=(),
+        )
+    )
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({**raw, "artifacts": None}, run_schema)
+    jsonschema.validate(raw, run_schema)
+    defects = []
+    decoded = g10_codec.dec(g10_types.Run, raw, "$.run", defects)
+    assert not defects and decoded.artifacts == ()
+
+    cases = (
+        ([""], False),
+        ([" \t\n"], False),
+        (["command", "\x00"], False),
+        (["command", "before\x00after"], False),
+        (["command", "\ud800"], False),
+        ([], False),
+        (["command", "", " \t\n"], True),
+        (["\ncommand", "data"], True),
+    )
+    for schema in (find_run(input_schema()), run_schema):
+        validator = jsonschema.Draft202012Validator(schema)
+        observations = []
+        for argv, expected in cases:
+            instance = {**raw, "argv": argv}
+            defects = []
+            decoded = g10_codec.dec(g10_types.Run, instance, "$.run", defects)
+            observations.append(
+                (
+                    argv,
+                    expected,
+                    validator.is_valid(instance),
+                    decoded is not g10_codec.BAD,
+                )
+            )
+        assert all(
+            expected == schema_admits == decoder_admits
+            for _, expected, schema_admits, decoder_admits in observations
+        ), observations

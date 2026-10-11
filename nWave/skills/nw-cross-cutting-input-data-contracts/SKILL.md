@@ -29,11 +29,14 @@ Measured instances of the failure, all in this repository:
 | `inline_in_feature_delta` | was 4 wave contracts + 1 schema | **0** reads — REMOVED 2026-07-28 once measured; kept here as the worked example |
 | `adr-refs` (`RefList`) | its own definition | **0** dereferences |
 | `skill_tracking` | full transcript-mining service exists | default **`"disabled"`** |
-| `RedObserved` / `SliceCommitVerified` | both genuinely consumed | **no common key** — duration not computable from either ledger |
+| Historical `RedObserved` / `SliceCommitVerified` | consumed by the retired slice-seal protocol | **no common key** — duration could not be computed from those ledgers |
 
-The last one is the instructive case: both data are read by someone. They still cannot answer
-"how long did this slice take to go green", because one is keyed by feature+slice+time and the
-other by test-file content hash. A consumer was known; the join was not.
+The last example describes the retired protocol, not live producers or readers.
+Its feature+slice+time and test-file-content-hash keys could not answer
+"how long did this slice take to go green". A consumer was known; the join was not.
+Current completion evidence comes from native verification/integration results
+and independent review/EXAMINE records, not a `SliceCommitVerified` seal.
+For new data, name the current reader and its actual join key.
 
 **Corollary — instrumentation that must be switched on is not instrumentation.** A datum whose
 producer defaults to off (see `skill_tracking`) is unjustified in the same way as one with no

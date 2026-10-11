@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "request": "Observe the native architect handoff entrypoints and retain receipt facts without replacing the delivery graph.",
+  "outcomes": ["Native handoff projections preserve declared facts and observable receipt provenance."],
+  "scope": {"in_scope": ["Explicit handoff construction and observation"], "out_of_scope": {"applicability": "applicable", "reason": "This smoke observes entrypoints only, not a delivered architecture or formal proof.", "items": ["Model invocation, automatic routing, architecture-quality evaluation and deferred scenario-flow evaluations"]}},
+  "decisions": ["DES constructs and observes; the host invokes specialists."],
+  "values": [{"observation": "Native handoff prompts and receipt recording retain the original delivery authority and unrelated semantic facts.", "dependencies": []}]
+}

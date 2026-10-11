@@ -210,6 +210,29 @@ def load_public_agents(nwave_dir: Path, *, strict: bool = True) -> set[str]:
     }
 
 
+def is_public_command(metadata: dict, public_agents: set[str]) -> bool:
+    """A command is public unless all of its declared agents are non-public."""
+    agents = metadata.get("agents") or []
+    return not agents or any(
+        agent.replace("_", "-") in public_agents for agent in agents
+    )
+
+
+def load_public_commands(nwave_dir: Path) -> set[str]:
+    """Return catalog command names using the task roster's hyphen spelling."""
+    catalog = _load_catalog(nwave_dir)
+    public_agents = {
+        name
+        for name, metadata in catalog.get("agents", {}).items()
+        if metadata.get("public") is not False
+    }
+    return {
+        name.replace("_", "-")
+        for name, metadata in catalog.get("commands", {}).items()
+        if is_public_command(metadata, public_agents)
+    }
+
+
 def load_private_agents(nwave_dir: Path) -> set[str]:
     """Read framework-catalog.yaml and return agents where ``public`` is ``False``.
 

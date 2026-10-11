@@ -59,6 +59,8 @@ roles:
       nw-domain-driven-design: domain boundary or aggregate responsibility claim
       nw-formal-verification-tlaplus: TLA+/TLC state-machine modeling
       nw-sa-critique-dimensions: self-reviewing an architecture authority
+      nw-test-design-mandates: selecting the native DESIGN test substrate, language convention frame, runner, layout, or generated-law observation treatment
+      nw-review: applying the design-review question set as architecture self-check only; this trigger does not dispatch an independent review
     on_demand:
       nw-po-scenario-exploration: presenting model-generated behavioral or non-functional scenarios for human architectural review
       nw-algebraic-design-protocol: every DESIGN authority before deciding public constructors, observations, or laws

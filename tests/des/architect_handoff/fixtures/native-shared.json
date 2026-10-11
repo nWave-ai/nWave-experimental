@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "authority": {"heading": "Shared architect handoff smoke"},
+  "purpose": "Observe typed handoff transport and explicit receipt effects through native entrypoints.",
+  "constraints": ["Retain unrelated semantic decisions and authority identities."],
+  "targets": [{"path": "clamp.py", "decision": "CREATE_NEW", "reason": "Owner named by the retained minimal typed fixture; no implementation is claimed by this smoke."}],
+  "paradigm": "procedural",
+  "decisions": ["This is an input/receipt smoke, not verification of a target implementation.", "Residual stress notes and other untyped semantic facts remain available through this carrier."],
+  "reuse_analysis": {"candidates": []},
+  "prefactoring": {"applicability": "not_applicable", "reason": "This input fixture performs no responsibility movement."},
+  "agreement_analysis": {"applicability": "not_applicable", "reason": "No producer-consumer code contract is changed by this input fixture."},
+  "architectural_tests": {"applicability": "not_applicable", "reason": "This smoke claims no architecture-quality verification."},
+  "contract_tests": {"applicability": "not_applicable", "reason": "This smoke records provenance rather than executing a public implementation contract."},
+  "impact_closure": {"applicability": "applicable", "items": [{"kind": "runtime", "locator": "clamp.py", "decision": "CHANGED", "reason": "The retained typed fixture names this prospective owner."}]},
+  "boundaries": {"applicability": "not_applicable", "reason": "This is declared smoke input, not an implementation boundary claim."},
+  "public_oracle": {"observation": "Native handoff facts remain readable.", "stimulus": "Construct input then explicitly record a command.", "expected": "The graph is retained and receipt provenance is visible.", "falsifier": "A receipt replaces graph facts or an unavailable section appears verified."},
+  "oracle": "tests/test_clamp.py",
+  "acceptance_supports": [],
+  "verification": [["python", "-m", "unittest"]],
+  "oracle_verification_index": 0
+}

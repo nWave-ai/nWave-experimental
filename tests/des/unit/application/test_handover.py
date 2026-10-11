@@ -717,3 +717,769 @@ def test_a_persisted_authority_without_reuse_and_closure_is_legacy() -> None:
     authority = parsed.values[0].authority
     assert isinstance(authority, LegacyDesignFacts)
     assert {"reuse_analysis", "impact_closure"} <= set(authority.missing_decisions)
+
+
+def test_native_receipts_preserve_the_graph_and_survive_other_graph_writers(
+    tmp_path, monkeypatch
+):
+    from des.application.architect_handoff import HandoverReceiptStore, g10_run
+
+    values = (
+        HandoverValue("A", (), _rich_facts()),
+        HandoverValue("B", ("A",), "docs/brief.md#B"),
+    )
+    stored = create_handover(tmp_path, "deliver", values)
+    assert isinstance(stored, StoredHandover)
+    monkeypatch.setattr(g10_run, "fcntl", None)
+    store = HandoverReceiptStore(tmp_path, stored)
+    receipt = g10_run.record_authored(
+        str(tmp_path / ".nwave/des"),
+        "NATIVE",
+        "script",
+        "declared-v1",
+        "implementation",
+        "fixed",
+        ["command"],
+        0,
+        "ok",
+        receipt_store=store,
+    )
+    loaded = load_handover(tmp_path, "deliver")
+    assert isinstance(loaded, StoredHandover)
+    assert loaded.values == stored.values
+    assert loaded.product_authority == stored.product_authority
+    assert loaded.shared_design == stored.shared_design
+    assert loaded.architect_receipts == (receipt,)
+    assert not (tmp_path / ".nwave/des/g10.receipts.json").exists()
+
+    rewritten = rewrite_handover(tmp_path, loaded.raw, loaded.request, loaded.values)
+    assert isinstance(rewritten, StoredHandover)
+    assert rewritten.architect_receipts == (receipt,)
+    assert load_handover(tmp_path, "deliver").architect_receipts == (receipt,)
+
+    before = rewritten.raw
+    with pytest.raises(g10_run.RunError, match="already recorded"):
+        g10_run.record_authored(
+            str(tmp_path / ".nwave/des"),
+            "NATIVE",
+            "script",
+            "declared-v2",
+            "implementation",
+            "fixed",
+            ["command"],
+            0,
+            "ok",
+            receipt_store=store,
+        )
+    assert handover_path(tmp_path).read_bytes() == before
+    replaced = g10_run.record_authored(
+        str(tmp_path / ".nwave/des"),
+        "NATIVE",
+        "script",
+        "declared-v2",
+        "implementation",
+        "fixed",
+        ["command"],
+        0,
+        "ok",
+        receipt_store=store,
+        replace=True,
+    )
+    assert load_handover(tmp_path, "deliver").architect_receipts == (replaced,)
+
+
+def test_snapshot_bound_receipt_writer_refuses_stale_graph_without_losing_facts(
+    tmp_path,
+):
+    from des.application.architect_handoff import HandoverReceiptStore, g10_run
+
+    original = create_handover(tmp_path, "deliver", (HandoverValue("A", (), _facts()),))
+    assert isinstance(original, StoredHandover)
+    stale_store = HandoverReceiptStore(tmp_path, original)
+    updated = rewrite_handover(
+        tmp_path,
+        original.raw,
+        original.request,
+        (replace(original.values[0], authority=_rich_facts()),),
+    )
+    assert isinstance(updated, StoredHandover)
+    with pytest.raises(g10_run.RunError) as refusal:
+        g10_run.record_authored(
+            str(tmp_path / ".nwave/des"),
+            "STALE",
+            "script",
+            "v1",
+            "implementation",
+            "fixed",
+            ["command"],
+            0,
+            "ok",
+            receipt_store=stale_store,
+        )
+    assert refusal.value.defect.rule == "RUN5"
+    assert refusal.value.defect.what == "HandoverDrift"
+    assert refusal.value.defect.where == ".nwave/des/handover.json"
+    assert refusal.value.defect.why and refusal.value.defect.how
+    assert handover_path(tmp_path).read_bytes() == updated.raw
+    assert load_handover(tmp_path, "deliver").values == updated.values
+
+
+def test_native_prompt_keeps_literal_root_context_and_refuses_bad_value_positions(
+    tmp_path, capsys
+):
+    from des.cli.handoff import main
+
+    stored = create_handover(tmp_path, "deliver", (HandoverValue("A", (), _facts()),))
+    assert isinstance(stored, StoredHandover)
+    context = "\n  {{literal_root_text}}\nDO NOT DROP THIS CONTEXT.\n\n"
+    path = tmp_path / "root.txt"
+    path.write_bytes(context.encode("utf-8"))
+    assert (
+        main(
+            [
+                "--repo-root",
+                str(tmp_path),
+                "prompt",
+                "--role",
+                "nw-solution-architect",
+                "--root-context",
+                str(path),
+            ]
+        )
+        == 0
+    )
+    printed = capsys.readouterr().out
+    assert context in printed
+    assert "UNASSESSED" in printed
+    assert "reuse the existing boundary" in printed
+    for position in ("0", "-1", "2"):
+        assert (
+            main(
+                [
+                    "prompt",
+                    "--repo-root",
+                    str(tmp_path),
+                    "--role",
+                    "nw-solution-architect",
+                    "--root-context",
+                    str(path),
+                    "--value",
+                    position,
+                ]
+            )
+            == 1
+        )
+        assert "one-based position" in capsys.readouterr().err
+
+
+def test_native_receipt_execution_uses_the_canonical_store_without_posix_file_lock(
+    tmp_path, monkeypatch
+):
+    import sys
+
+    from des.application.architect_handoff import HandoverReceiptStore, g10_run
+
+    stored = create_handover(tmp_path, "deliver", (HandoverValue("A", (), _facts()),))
+    assert isinstance(stored, StoredHandover)
+    monkeypatch.setattr(g10_run, "fcntl", None)
+    rejected = tmp_path / "standalone"
+    marker = tmp_path / "must-not-run"
+    with pytest.raises(g10_run.RunError) as refusal:
+        g10_run.execute(
+            str(rejected),
+            "REFUSED",
+            "script",
+            "implementation",
+            "fixed",
+            [sys.executable, "-c", f"open({str(marker)!r}, 'w').write('ran')"],
+            version_argv=[sys.executable, "--version"],
+        )
+    assert refusal.value.defect.rule == "RUN5"
+    assert (
+        refusal.value.defect.what
+        and refusal.value.defect.why
+        and refusal.value.defect.how
+    )
+    assert not rejected.exists()
+    assert not marker.exists()
+    run = g10_run.execute(
+        str(tmp_path / ".nwave/des"),
+        "OBSERVED",
+        "script",
+        "implementation",
+        "fixed",
+        [sys.executable, "-c", "print('native observed output')"],
+        version_argv=[sys.executable, "--version"],
+        receipt_store=HandoverReceiptStore(tmp_path, stored),
+    )
+    loaded = load_handover(tmp_path, "deliver")
+    assert isinstance(loaded, StoredHandover)
+    assert loaded.values == stored.values
+    assert loaded.architect_receipts == (run,)
+    assert run.exit_status == 0 and run.result_class == "ok"
+    assert run.artifacts
+    assert (
+        (tmp_path / ".nwave/des" / run.artifacts[0].path)
+        .read_bytes()
+        .startswith(b"native observed output\n")
+    )
+    assert not (tmp_path / ".nwave/des/g10.receipts.json").exists()
+
+
+def test_literal_receipt_argv_keeps_empty_data_arguments_and_refuses_invalid_executables(
+    tmp_path,
+):
+    import sys
+
+    from des.application.architect_handoff import (
+        HandoverReceiptStore,
+        g10_codec,
+        g10_run,
+    )
+    from des.application.architect_handoff import g10_types as types
+
+    stored = create_handover(tmp_path, "deliver", (HandoverValue("A", (), _facts()),))
+    assert isinstance(stored, StoredHandover)
+    argv = [sys.executable, "-c", "import sys; print(repr(sys.argv[1:]))", "", " \t"]
+    run = g10_run.execute(
+        str(tmp_path / ".nwave/des"),
+        "EMPTY",
+        "script",
+        "implementation",
+        "fixed",
+        argv,
+        version_argv=[sys.executable, "--version"],
+        receipt_store=HandoverReceiptStore(tmp_path, stored),
+    )
+    assert list(run.argv) == argv
+    output = (tmp_path / ".nwave/des" / run.artifacts[0].path).read_bytes()
+    assert output.startswith(b"['', ' \\t']\n")
+    for bad in (
+        [],
+        [""],
+        [" "],
+        ["command", 1],
+        ["command", "\ud800"],
+        ["command", "\x00"],
+    ):
+        defects = []
+        decoded = g10_codec.dec(
+            types.Run, {**g10_codec.enc(run), "argv": bad}, "$.run", defects
+        )
+        assert decoded is g10_codec.BAD and defects, bad
+
+
+def test_native_receipt_collection_is_canonical_after_out_of_order_append_and_replace(
+    tmp_path,
+):
+    from des.application.architect_handoff import HandoverReceiptStore, g10_run
+
+    stored = create_handover(
+        tmp_path, "deliver", (HandoverValue("A", (), _rich_facts()),)
+    )
+    assert isinstance(stored, StoredHandover)
+    store = HandoverReceiptStore(tmp_path, stored)
+    for run_id, version, replacing in (
+        ("Z", "v1", False),
+        ("A", "v1", False),
+        ("A", "v2", True),
+    ):
+        g10_run.record_authored(
+            str(tmp_path / ".nwave/des"),
+            run_id,
+            "script",
+            version,
+            "implementation",
+            "fixed",
+            ["command"],
+            0,
+            "ok",
+            receipt_store=store,
+            replace=replacing,
+        )
+        loaded = load_handover(tmp_path, "deliver")
+        assert isinstance(loaded, StoredHandover)
+        assert loaded.values == stored.values
+        assert [run.id for run in loaded.architect_receipts] == sorted({run_id, "Z"})
+    assert loaded.architect_receipts[0].tool_version == "v2"
+
+
+def test_design_import_refusal_names_the_handoff_instead_of_valid_stdin(
+    tmp_path, monkeypatch, capsys
+):
+    import io
+    import sys
+
+    from des.cli.design import main
+    from tests.des.unit.domain.test_design_document import manifest
+
+    for intent in (["--value", "1"], ["--shared"]):
+        monkeypatch.setattr(
+            sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(manifest()).encode()))
+        )
+        assert (
+            main(
+                [
+                    "--repo-root",
+                    str(tmp_path),
+                    *intent,
+                    "--input",
+                    "-",
+                    "--architect-handoff",
+                    "nonexistent.json",
+                ]
+            )
+            == 1
+        )
+        output = capsys.readouterr().out
+        assert "nonexistent.json" in output
+        assert "cannot read the file" in output
+        assert "one closed typed handoff input" in output
+        assert "stdin must carry" not in output
+
+
+def test_native_architect_prompt_returns_semantic_input_for_host_owned_submission(
+    tmp_path, capsys
+):
+    from des.cli.handoff import main
+
+    assert isinstance(
+        create_handover(tmp_path, "deliver", (HandoverValue("A", (), _facts()),)),
+        StoredHandover,
+    )
+    context = tmp_path / "root.txt"
+    context.write_text("host context\n")
+    assert (
+        main(
+            [
+                "--repo-root",
+                str(tmp_path),
+                "prompt",
+                "--role",
+                "nw-solution-architect",
+                "--root-context",
+                str(context),
+            ]
+        )
+        == 0
+    )
+    output = capsys.readouterr().out
+    submit = output.split("## SUBMIT", 1)[1].split("## FROM THE ROOT", 1)[0]
+    assert "The host submits" in submit
+    assert "Return only the closed complete semantic manifest" in submit
+    assert "Do not execute" in submit
+    assert "Submit each manifest yourself" not in submit
+    assert "Hand a manifest to no one else" not in submit
+
+
+def test_product_owner_prompt_is_reachable_before_design_and_uses_its_own_permissions(
+    tmp_path, capsys
+):
+    from des.application.architect_handoff import projection
+    from des.cli.handoff import main
+
+    assert isinstance(
+        create_handover(
+            tmp_path,
+            "product intent",
+            (HandoverValue("product observation", (), None),),
+        ),
+        StoredHandover,
+    )
+    context = tmp_path / "root.txt"
+    context.write_text("actual human context\n")
+    assert (
+        main(
+            [
+                "--repo-root",
+                str(tmp_path),
+                "prompt",
+                "--role",
+                "nw-product-owner",
+                "--root-context",
+                str(context),
+            ]
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "# Product Owner" in out
+    assert "Read-only subagent" in out
+    assert "actual human context\n" in out
+    assert "product intent" in out and "product observation" in out
+    assert {row["kind"] for row in projection("nw-product-owner", {})} == {
+        "scenarios",
+        "closure",
+    }
+
+
+def test_refused_native_writer_cannot_overwrite_committed_output_even_on_replace(
+    tmp_path,
+):
+    import hashlib
+    import sys
+    import time
+
+    from des.application.architect_handoff import HandoverReceiptStore, g10_run
+
+    stored = create_handover(tmp_path, "deliver", (HandoverValue("A", (), _facts()),))
+    assert isinstance(stored, StoredHandover)
+    directory = tmp_path / ".nwave/des"
+    for replacing in (False, True):
+        snapshot = load_handover(tmp_path, "deliver")
+        assert isinstance(snapshot, StoredHandover)
+        ready = [tmp_path / f"ready-{replacing}-{i}" for i in range(2)]
+        release = [tmp_path / f"release-{replacing}-{i}" for i in range(2)]
+
+        def execute(
+            index,
+            *,
+            ready=ready,
+            release=release,
+            snapshot=snapshot,
+            replacing=replacing,
+        ):
+            body = (
+                "from pathlib import Path; import time\n"
+                f"Path({str(ready[index])!r}).touch()\n"
+                "deadline = time.monotonic() + 10\n"
+                f"while not Path({str(release[index])!r}).exists():\n"
+                "    if time.monotonic() > deadline: raise SystemExit(9)\n"
+                "    time.sleep(0.01)\n"
+                f"print({f'writer-{replacing}-{index}'!r})\n"
+            )
+            return g10_run.execute(
+                str(directory),
+                "SAME",
+                "script",
+                "implementation",
+                "fixed",
+                [sys.executable, "-c", body],
+                version_argv=[sys.executable, "--version"],
+                receipt_store=HandoverReceiptStore(tmp_path, snapshot),
+                replace=replacing,
+                timeout_s=15,
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            first, second = workers.submit(execute, 0), workers.submit(execute, 1)
+            try:
+                deadline = time.monotonic() + 8
+                while not all(path.exists() for path in ready):
+                    assert time.monotonic() < deadline, (
+                        "both executions must reach the shared starting snapshot"
+                    )
+                    time.sleep(0.01)
+                release[0].touch()
+                committed = first.result(timeout=15)
+                release[1].touch()
+                with pytest.raises(g10_run.RunError, match="HandoverDrift"):
+                    second.result(timeout=15)
+            finally:
+                for path in release:
+                    path.touch()
+        loaded = load_handover(tmp_path, "deliver")
+        assert isinstance(loaded, StoredHandover)
+        assert loaded.architect_receipts == (committed,)
+        artifact = directory / committed.artifacts[0].path
+        assert (
+            hashlib.sha256(artifact.read_bytes()).hexdigest()
+            == committed.artifacts[0].sha256
+        )
+
+
+def test_receipt_publication_preserves_visible_evidence_when_post_rename_sync_fails(
+    tmp_path, monkeypatch
+):
+    import hashlib
+    import sys
+
+    from des.application import handover
+    from des.application.architect_handoff import HandoverReceiptStore, g10_run
+
+    for replacing in (False, True):
+        for phase in ("after", "before"):
+            root = tmp_path / f"{replacing}-{phase}"
+            root.mkdir()
+            stored = create_handover(
+                root, "deliver", (HandoverValue("A", (), _facts()),)
+            )
+            assert isinstance(stored, StoredHandover)
+            directory = root / ".nwave/des"
+            store = HandoverReceiptStore(root, stored)
+            if replacing:
+                g10_run.execute(
+                    str(directory),
+                    "SYNC",
+                    "script",
+                    "implementation",
+                    "fixed",
+                    [sys.executable, "-c", "print('old')"],
+                    version_argv=[sys.executable, "--version"],
+                    receipt_store=store,
+                )
+            before = handover_path(root).read_bytes()
+            previous = directory / "artifacts/SYNC.out"
+            old_output = previous.read_bytes() if previous.exists() else None
+
+            def refused_storage(*args, **kwargs):
+                return Blocked(
+                    "InjectedStorageFailure", "injected durability failure", "retry"
+                )
+
+            with monkeypatch.context() as injection:
+                injection.setattr(
+                    handover,
+                    "_fsync_directory" if phase == "after" else "_write_temporary",
+                    refused_storage,
+                )
+                with pytest.raises(g10_run.RunError) as refused:
+                    g10_run.execute(
+                        str(directory),
+                        "SYNC",
+                        "script",
+                        "implementation",
+                        "fixed",
+                        [sys.executable, "-c", "print('new')"],
+                        version_argv=[sys.executable, "--version"],
+                        receipt_store=store,
+                        replace=replacing,
+                    )
+            loaded = load_handover(root, "deliver")
+            assert isinstance(loaded, StoredHandover)
+            if phase == "after":
+                (receipt,) = loaded.architect_receipts
+                assert previous.exists(), (
+                    "a visible receipt must retain its matching output"
+                )
+                assert previous.read_bytes().startswith(b"new\n")
+                assert (
+                    hashlib.sha256(previous.read_bytes()).hexdigest()
+                    == receipt.artifacts[0].sha256
+                )
+                assert "durability is uncertain" in refused.value.defect.why
+                assert "inspect" in refused.value.defect.how
+            else:
+                assert loaded.raw == before
+                assert (
+                    previous.read_bytes() if previous.exists() else None
+                ) == old_output
+
+
+def test_fifo_output_is_refused_without_blocking_or_retaining_delivery_lock(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    from des.runtime.spawn import spawn
+
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("FIFO custody requires a platform with mkfifo")
+    for phase in ("before", "publication"):
+        root = tmp_path / phase
+        root.mkdir()
+        stored = create_handover(root, "deliver", (HandoverValue("A", (), _facts()),))
+        assert isinstance(stored, StoredHandover)
+        directory = root / ".nwave/des"
+        artifacts = directory / "artifacts"
+        artifacts.mkdir()
+        output = artifacts / "FIFO.out"
+        marker = root / "command-ran"
+        if phase == "before":
+            os.mkfifo(output)
+        command = f"from pathlib import Path; Path({str(marker)!r}).touch()"
+        if phase == "publication":
+            command += f"; import os; os.mkfifo({str(output)!r})"
+        program = (
+            "import json, sys\n"
+            "from pathlib import Path\n"
+            "from des.application.handover import stored_handover\n"
+            "from des.application.architect_handoff import HandoverReceiptStore, g10_run\n"
+            f"root = Path({str(root)!r})\n"
+            "try:\n"
+            f"    g10_run.execute({str(directory)!r}, 'FIFO', 'script', 'implementation', 'fixed', "
+            f"[sys.executable, '-c', {command!r}], version_argv=[sys.executable, '--version'], "
+            "receipt_store=HandoverReceiptStore(root, stored_handover(root)), timeout_s=1)\n"
+            "except g10_run.RunError as error:\n"
+            "    print(json.dumps([error.defect.what, error.defect.why, error.defect.how]))\n"
+            "else:\n"
+            "    raise SystemExit('special output accepted')\n"
+        )
+        try:
+            completed = spawn(
+                [sys.executable, "-c", program],
+                timeout=3,
+                capture_output=True,
+                text=True,
+                check=False,
+                reap_process_group=(os.name == "posix"),
+            )
+        except subprocess.TimeoutExpired:
+            pytest.fail(
+                "FIFO destination blocked past the external bound; process group reaped"
+            )
+        assert completed.returncode == 0, completed.stderr
+        what, why, how = json.loads(completed.stdout)
+        assert "regular file" in what
+        assert why and how
+        assert marker.exists() is (phase == "publication")
+        assert handover_path(root).read_bytes() == stored.raw
+        lock = acquire_delivery_lock(root)
+        assert not isinstance(lock, Blocked), lock
+        lock.release()
+
+
+def test_detached_handoff_check_reads_defects_without_creating_a_handover(
+    tmp_path, capsys
+):
+    from des.cli.handoff import main
+
+    source = tmp_path / "defective.g10.json"
+    original = b'{"sections": []}\n'
+    source.write_bytes(original)
+    assert main(["check", "--repo-root", str(tmp_path), source.name]) == 1
+    out, err = capsys.readouterr()
+    assert "X1" in out and "no entry" in out
+    assert err == ""
+    assert source.read_bytes() == original
+    assert set(tmp_path.rglob("*")) == {source}
+
+
+def test_detached_handoff_summary_reads_file_without_creating_a_handover(
+    tmp_path, capsys
+):
+    from des.application.architect_handoff import g10_types
+    from des.cli.handoff import main
+
+    source = tmp_path / "defective.g10.json"
+    original = b'{"sections": []}\n'
+    source.write_bytes(original)
+    assert main(["summary", "--repo-root", str(tmp_path), source.name]) == 0
+    out, err = capsys.readouterr()
+    assert set(json.loads(out)["missing_shared"]) == set(g10_types.REQUIRED_SHARED)
+    assert err == ""
+    assert source.read_bytes() == original
+    assert set(tmp_path.rglob("*")) == {source}
+
+
+def test_detached_handoff_render_writes_only_the_requested_html_without_a_handover(
+    tmp_path, capsys
+):
+    from des.cli.handoff import main
+
+    source = tmp_path / "defective.g10.json"
+    original = b'{"sections": []}\n'
+    source.write_bytes(original)
+    page = tmp_path / "inspection.html"
+    assert (
+        main(
+            [
+                "render",
+                "--repo-root",
+                str(tmp_path),
+                source.name,
+                "--html",
+                page.name,
+            ]
+        )
+        == 0
+    )
+    out, err = capsys.readouterr()
+    assert f"wrote {page}" in out and err == ""
+    assert page.read_text().startswith("<!doctype html>")
+    assert source.read_bytes() == original
+    assert set(tmp_path.rglob("*")) == {source, page}
+
+
+def test_handoff_graph_operations_still_refuse_missing_handover_without_effects(
+    tmp_path, capsys
+):
+    import sys
+
+    from des.cli.handoff import main
+
+    marker = tmp_path / "must-not-run"
+    commands = (
+        ["check"],
+        ["summary"],
+        ["render"],
+        ["prompt", "--role", "nw-solution-architect", "--root-context", "unused.txt"],
+        [
+            "run",
+            "--id",
+            "REFUSED",
+            "--tool",
+            "script",
+            "--target",
+            "implementation",
+            "--variant",
+            "fixed",
+            "--version-argv",
+            f"{sys.executable} --version",
+            "--",
+            sys.executable,
+            "-c",
+            f"open({str(marker)!r}, 'w').write('ran')",
+        ],
+        [
+            "record",
+            "--id",
+            "REFUSED",
+            "--tool",
+            "script",
+            "--tool-version",
+            "v1",
+            "--target",
+            "implementation",
+            "--variant",
+            "fixed",
+            "--exit",
+            "0",
+            "--result",
+            "ok",
+            "--",
+            "command",
+        ],
+    )
+    for command in commands:
+        assert main(["--repo-root", str(tmp_path), *command]) == 1
+        out, err = capsys.readouterr()
+        assert out == ""
+        assert "no accumulated handover" in err
+        assert "WHAT:" in err and "WHY:" in err and "HOW:" in err
+        assert "des po" in err and "des design" in err
+        assert not list(tmp_path.iterdir())
+
+
+def test_detached_file_with_handover_keeps_file_payload_and_existing_target_defaults(
+    tmp_path, capsys
+):
+    from des.application.architect_handoff import g10_types
+    from des.cli.handoff import main
+
+    stored = create_handover(tmp_path, "deliver", (HandoverValue("A", (), _facts()),))
+    assert isinstance(stored, StoredHandover)
+    source = tmp_path / "detached.g10.json"
+    source.write_text(
+        json.dumps(
+            {
+                "sections": [
+                    {
+                        "kind": kind,
+                        "scope": "shared",
+                        "status": {
+                            "tag": "not_applicable",
+                            "reason": "Detached inspection.",
+                        },
+                    }
+                    for kind in g10_types.REQUIRED_SHARED
+                ]
+            }
+        )
+    )
+    assert main(["check", "--repo-root", str(tmp_path), source.name]) == 0
+    out, err = capsys.readouterr()
+    assert err == ""
+    assert "X1" not in out
+    assert "need --targets; none were given" not in out
+    assert handover_path(tmp_path).read_bytes() == stored.raw

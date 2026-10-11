@@ -1,0 +1,97 @@
+An example execution:
+
+[State 0]
+{
+  count: Map(0 -> 0, 1 -> 0, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 3,
+  n: 2,
+  offset: 0
+}
+
+[State 1]
+{
+  count: Map(0 -> 1, 1 -> 1, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 3,
+  n: 2,
+  offset: 3
+}
+
+[State 2]
+{
+  count: Map(0 -> 1, 1 -> 1, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 3,
+  n: 2,
+  offset: 3
+}
+
+[State 3]
+{
+  count: Map(0 -> 1, 1 -> 1, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 3,
+  n: 2,
+  offset: 3
+}
+
+[State 4]
+{
+  count: Map(0 -> 1, 1 -> 1, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 3,
+  n: 2,
+  offset: 3
+}
+
+[State 5]
+{
+  count: Map(0 -> 1, 1 -> 1, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 3,
+  n: 2,
+  offset: 3
+}
+
+[State 6]
+{
+  count: Map(0 -> 1, 1 -> 1, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 3,
+  n: 2,
+  offset: 3
+}
+
+[State 7]
+{
+  count: Map(0 -> 1, 1 -> 1, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 3,
+  n: 2,
+  offset: 3
+}
+
+[State 8]
+{
+  count: Map(0 -> 1, 1 -> 1, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 3,
+  n: 2,
+  offset: 3
+}
+
+[State 9]
+{
+  count: Map(0 -> 1, 1 -> 1, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 3,
+  n: 2,
+  offset: 3
+}
+
+[State 10]
+{
+  count: Map(0 -> 1, 1 -> 1, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 3,
+  n: 2,
+  offset: 3
+}
+
+[ok] No violation found (472ms at 4237 traces/second).
+Trace length statistics: max=11, min=11, average=11.00
+You may increase --max-samples and --max-steps.
+Use --verbosity to produce more (or less) output.
+Use --seed=0xabcb --backend=rust to reproduce.
+
+--- stderr ---

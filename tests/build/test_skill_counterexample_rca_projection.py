@@ -46,8 +46,8 @@ def test_design_skill_carries_counterexample_discipline_after_required_pass() ->
 
 
 def test_design_skill_carries_independent_statement_review_with_portability() -> None:
-    """Ale's requirement: target machines may lack Agda/TLA+ -- the
-    discipline must not presuppose a proof assistant or model checker."""
+    """Ale's 2026-10-08 decision: formal verification defaults on; missing
+    tools require a host-relayed human installation or explicit waiver."""
     compact = " ".join(_text(DESIGN_SKILL).split())
 
     assert "## Independent statement review" in _text(DESIGN_SKILL)
@@ -58,11 +58,31 @@ def test_design_skill_carries_independent_statement_review_with_portability() ->
         in compact
     )
     assert (
-        "This discipline requires no proof assistant or model checker: "
-        "property tests in the project's own language, exhaustive finite "
-        "checks, or a model checker when one is available all qualify — a "
-        "prover is never a prerequisite." in compact
+        "Default in every design: algebraic modeling with formal verification."
+        in compact
     )
+    assert (
+        "Only a recorded human waiver permits continuation without that proof."
+        in compact
+    )
+    assert (
+        "A waived claim remains INDETERMINATE with the waiver reason, never PASS"
+        in compact
+    )
+    assert "platform-specific install commands" in compact
+    assert "a prover is never a prerequisite" not in compact
+    for relative in (
+        "nWave/templates/architect-handoff/design.architect-v9.tmpl",
+        "nWave/agents/nw-solution-architect.md",
+        "nWave/skills/nw-solution-architect-formal-verification/SKILL.md",
+    ):
+        published = " ".join(_text(ROOT / relative).split())
+        assert "formal verification" in published
+        assert "recorded human waiver" in published
+        assert "INDETERMINATE" in published
+        assert "install" in published.lower()
+        assert "TLC ships with Quint on this host" not in published
+        assert "Quint, Java and Agda are installed on this host" not in published
 
 
 def test_design_skill_never_applies_the_deferred_review_blocking_rule() -> None:

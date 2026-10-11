@@ -375,6 +375,15 @@ commands:
     - research_document
     - divio_documentation
     - validation_report
+  mutation_test:
+    description: Runs a standalone mutation probe, disabled by default, over a named
+      production delta or the explicit nightly production delta.
+    argument_hint: '[--delta <base>...<head> | --nightly-delta] [--threshold 80]'
+    agents:
+    - software_crafter
+    wave: DELIVER
+    outputs:
+    - mutation_report
   devops:
     description: Designs CI/CD pipelines, infrastructure, observability, and deployment
       strategy. Use when preparing platform readiness for a feature.

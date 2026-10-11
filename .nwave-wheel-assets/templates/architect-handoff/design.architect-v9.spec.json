@@ -1,0 +1,29 @@
+{
+ "role": "nw-solution-architect",
+ "required": {
+  "des_facts": "str",
+  "grammar": "str",
+  "submit_steps": "list",
+  "root_input": "str"
+ },
+ "blocks": {},
+ "must_contain": [
+  "nw-solution-architect",
+  "<!-- DES-WAVE: design -->",
+  "## FROM DES",
+  "## TASK (template)",
+  "## MANIFEST LANGUAGE",
+  "## SUBMIT (template; DES filled the commands)",
+  "## FROM THE ROOT (verbatim, not verified by DES)",
+  "On Refusal, read its WHAT, WHY and HOW",
+  "## ALWAYS REQUIRED",
+  "des code-fact",
+  "## BUDGET",
+  "timeout 180",
+  "complete text of the model",
+  "--backend tlc",
+  "weakFair",
+  "second set of stressors",
+  "exactly PASS or BLOCKED"
+ ]
+}

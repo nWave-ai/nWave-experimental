@@ -1,35 +1,4 @@
-"""Public oracle: a pytest vector ASKED for a junit report and given none is broken.
-
-THE INCIDENT THIS REFUSES. `des oracle` requests `--junitxml=<report>` through
-the environment of declared Python vectors, then reads the report to tell a
-genuine assertion failure from an oracle that never reached its own assertion.
-When the vector names an interpreter that carries no pytest, the process exits
-`1` with `No module named pytest` and writes NO report -- and exit-status-only scored that `red`, the
-ADMITTED answer, so the false RED bought a craft turn against an oracle whose
-assertions were never observed (EVIDENCE.md row 6, measured against the
-unmodified product).
-
-WHAT IS MEASURED HERE, through the one public port and nothing else: `des po`,
-`des design` carrying the verification vector, `des oracle`. Four arms, because
-the value is a boundary and a boundary needs both of its sides:
-
-1. THE INCIDENT -- a pytest vector under a pytest-less interpreter is `broken`
-   on axis `junit-report-absent` whatever the exit status, refused before a
-   craft turn is bought, with a WHAT/WHY/HOW an operator can act on.
-2. NON-PYTEST CONTROL -- a vector that asks for nothing keeps `exit-status-only`
-   and stays ADMITTED. This arm is the one that fails if the new branch is
-   written on «no report» instead of on «a report was asked for».
-3. REPORT CONTROL -- a pytest vector that DOES produce a report keeps
-   `junit-report` and its verdicts.
-4. WRAPPER CONTROL -- a declared Python vector whose argv names no pytest yet
-   reaches pytest through a wrapper still produces an authentic report and is
-   judged on it. A produced report is always judged; absence is damning where
-   pytest or an explicit report output was declared. Genuinely native vectors
-   receive no Python runtime preparation or pytest option injection.
-
-THE PYTEST-LESS INTERPRETER IS BUILT, NEVER FOUND. Depending on a host `python3`
-or on `PATH` order would measure the developer's box instead of the law.
-"""
+"""Missing native tooling cannot establish RED; optional fresh reports retain RED."""
 
 from __future__ import annotations
 
@@ -201,7 +170,7 @@ def test_a_pytest_vector_that_produced_no_report_is_broken_and_refused(
     assert "asked" in why, why
     assert "report" in why, why
     assert "none was produced" in why, why
-    assert "did not complete a session" in why, why
+    assert "no completed assertion observation" in why, why
 
     assert "run the printed vector" in lines["HOW"].lower(), lines["HOW"]
 
@@ -282,6 +251,57 @@ def test_a_wrapper_vector_naming_no_pytest_still_earns_the_report_axis(
     assert record["argv"] == [sys.executable, WRAPPER, ORACLE]
     assert record["exit"] == 1
     assert "assert 41 == 42" in record["stdout"], record
+
+
+def test_requested_optional_report_absence_does_not_discard_actual_native_red(
+    tmp_path: Path,
+) -> None:
+    """@contract-shape: real-io @adapter-integration"""
+    from tests.des.acceptance.steps_for_the_orchestrator.test_native_assertion_failure_is_measured_red import (
+        ORACLE as NATIVE_ORACLE,
+    )
+    from tests.des.acceptance.steps_for_the_orchestrator.test_native_assertion_failure_is_measured_red import (
+        REPORTER,
+        NativeCase,
+        NativeOracleJourney,
+        require,
+    )
+
+    journey = NativeOracleJourney(tmp_path)
+    bridge = (
+        "import {spawnSync} from 'node:child_process';"
+        f"const actual=spawnSync(process.execPath,['--test','--test-reporter=./{REPORTER}',"
+        f"'{NATIVE_ORACLE}'],{{encoding:'utf8'}});"
+        "process.stdout.write(actual.stdout);process.stderr.write(actual.stderr);"
+        "process.exit(actual.status);"
+    )
+    result = journey.measure(
+        NativeCase.ASSERTION,
+        argv=[
+            journey.node,
+            "--input-type=module",
+            "-e",
+            bridge,
+            "--",
+            "--junitxml=absent-optional-report.xml",
+        ],
+    )
+    require(
+        result.witness["verdict"] == "red",
+        f"actual native assertion lost RED when an optional report was absent: {result.witness}",
+        "prefer completed native assertion evidence over absence of an optional report",
+    )
+    require(
+        result.witness["axis"] == "native-observation",
+        f"actual native evidence lost provenance: {result.witness}",
+        "retain the native observation source with the measured witness",
+    )
+    require(
+        "requested optional report was not produced"
+        in result.witness["observation"]["reason"],
+        f"optional report absence lost its source diagnostic: {result.witness}",
+        "retain unavailable-source diagnostics without discarding valid native evidence",
+    )
 
 
 if __name__ == "__main__":

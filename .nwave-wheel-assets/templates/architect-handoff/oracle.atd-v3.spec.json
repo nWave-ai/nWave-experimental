@@ -1,0 +1,7 @@
+{"role": "nw-acceptance-designer",
+ "required": {"feature": "str", "request": "str", "value": "str", "observation": "str", "authority": "list",
+              "oracle_path": "str", "supports": "list", "targets": "list", "paradigm": "str", "verification": "list",
+              "public_oracle": "str", "obligations": "list", "arch_tests": "str", "contract_tests": "str",
+              "state_lines": "list", "repo_root": "str", "root_input": "str"},
+ "blocks": {},
+ "must_contain": ["nw-acceptance-designer", "## FROM DES", "## TASK (template)", "## RETURN", "## FROM THE ROOT", "oracle file to write:"]}

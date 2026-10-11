@@ -157,6 +157,16 @@ class DistBuilder:
             if item.is_file():
                 shutil.copy2(item, dst / item.name)
                 count += 1
+            elif item.is_dir():
+                shutil.copytree(
+                    item,
+                    dst / item.name,
+                    dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+                )
+                count += sum(
+                    1 for path in (dst / item.name).rglob("*") if path.is_file()
+                )
 
         self._log(f"Templates: {count} files")
         return count

@@ -1027,16 +1027,19 @@ def _accepted_design_facts_schema(schema: dict) -> dict:
     return branch["properties"]["design_facts"]
 
 
-def test_adr_is_optional_in_the_base_schema_and_nullable_in_the_codex_projection() -> (
+def test_adr_and_architect_handoff_are_optional_in_base_and_nullable_only_in_codex() -> (
     None
 ):
     base = _architect_schema()["properties"]["design_facts"]
     codex = _accepted_design_facts_schema(codex_schema_for("nw-solution-architect"))
 
-    assert "adr" in base["properties"] and "adr" not in base["required"]
-    assert "adr" in codex["required"]
-    assert {"type": "null"} in codex["properties"]["adr"]["anyOf"]
-    for name in set(codex["properties"]) - {"adr"}:
+    optional_fields = {"adr", "architect_handoff"}
+    for name in optional_fields:
+        assert name in base["properties"] and name not in base["required"]
+        assert {"type": "null"} not in base["properties"][name].get("anyOf", [])
+        assert name in codex["required"]
+        assert codex["properties"][name]["anyOf"].count({"type": "null"}) == 1
+    for name in set(codex["properties"]) - optional_fields:
         declared = codex["properties"][name]
         assert {"type": "null"} not in declared.get("anyOf", [])
         assert declared.get("type") != "null"
@@ -1046,7 +1049,11 @@ def test_adr_is_optional_in_the_base_schema_and_nullable_in_the_codex_projection
     nullable = {
         "outcome": answer["outcome"],
         "diagnostic": answer["diagnostic"],
-        "design_facts": {**answer["design_facts"], "adr": None},
+        "design_facts": {
+            **answer["design_facts"],
+            "adr": None,
+            "architect_handoff": None,
+        },
     }
     jsonschema.Draft202012Validator(codex_schema_for("nw-solution-architect")).validate(
         {"answer": nullable}

@@ -37,7 +37,7 @@
 | [nw-skill-reviewer](nw-skill-reviewer.md) | Use to review SKILL.md quality during DISTILL/DELIVER verification when deliverable_type is `plugin` or `skill`. Validates skill structure, scope discipline, frontmatter, and domain-knowledge quality. Thin reviewer — reuses nw-agent-builder skill assets. Runs on Haiku for cost efficiency. | 3 |
 | [nw-software-crafter](nw-software-crafter.md) | Implements the object-oriented or procedural change for one ready ordered batch. | 7 |
 | [nw-software-crafter-reviewer](nw-software-crafter-reviewer.md) | Independently reviews the whole candidate with captured native evidence. | 7 |
-| [nw-solution-architect](nw-solution-architect.md) | Returns typed design facts consumed by one DES run. | 10 |
+| [nw-solution-architect](nw-solution-architect.md) | Returns typed design facts consumed by one DES run. | 11 |
 | [nw-solution-architect-reviewer](nw-solution-architect-reviewer.md) | Reviews durable architecture decisions for evidence, reuse, boundaries, cross-layer algebra, residual stress behavior, test substrate, and absence of drift. | 8 |
 | [nw-test-optimizer](nw-test-optimizer.md) | Minimize test cost while preserving observable behavior and coverage. Reads production code but modifies tests only. | 2 |
 | [nw-test-optimizer-reviewer](nw-test-optimizer-reviewer.md) | Independently reviews test optimization. Read-only; vetoes production drift, behavior or coverage loss, and unmapped deletion. | 2 |
@@ -76,7 +76,7 @@
 | [nw-skill-reviewer](nw-skill-reviewer.md) | Other | Use to review SKILL.md quality during DISTILL/DELIVER verification when deliverable_type is `plugin` or `skill`. Validates skill structure, scope discipline, frontmatter, and domain-knowledge quality. Thin reviewer — reuses nw-agent-builder skill assets. Runs on Haiku for cost efficiency. | 3 |
 | [nw-software-crafter](nw-software-crafter.md) | Other | Implements the object-oriented or procedural change for one ready ordered batch. | 7 |
 | [nw-software-crafter-reviewer](nw-software-crafter-reviewer.md) | Other | Independently reviews the whole candidate with captured native evidence. | 7 |
-| [nw-solution-architect](nw-solution-architect.md) | Other | Returns typed design facts consumed by one DES run. | 10 |
+| [nw-solution-architect](nw-solution-architect.md) | Other | Returns typed design facts consumed by one DES run. | 11 |
 | [nw-solution-architect-reviewer](nw-solution-architect-reviewer.md) | Other | Reviews durable architecture decisions for evidence, reuse, boundaries, cross-layer algebra, residual stress behavior, test substrate, and absence of drift. | 8 |
 | [nw-system-designer](nw-system-designer.md) | DESIGN | Use for DESIGN wave infrastructure-level architecture. Designs distributed systems, scalability strategies, load balancing, caching, database sharding, message queues, back-of-envelope estimation, and trade-off analysis. Complements solution-architect (application-level) with infrastructure-level depth. | 7 |
 | [nw-system-designer-reviewer](nw-system-designer-reviewer.md) | DESIGN | Use to review system design architecture outputs. Validates trade-off analysis, estimation accuracy, pattern applicability, SPOF detection, and scalability claims. Pairs with system-designer. | 4 |

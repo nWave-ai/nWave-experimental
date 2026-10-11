@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
-SOURCE_PYTHON = Path("/home/parajao/Projects/nWave-dev/.venv/bin/python")
+SOURCE_PYTHON = Path(sys.executable)
 INVALID_HOME = Path(__file__).parent / "nwave_home_invalid"
 ACCEPTED_EXPANSION_PROMPTS = (
     "ask",

@@ -91,7 +91,9 @@ def main(argv: list[str] | None = None) -> int:
         )
     try:
         page = build_page(
-            project_markdown(stored, state),
+            project_markdown(
+                stored, state, architect_base_dir=str(root / ".nwave/des")
+            ),
             str(handover_path(root).relative_to(root)),
             TITLE,
         )

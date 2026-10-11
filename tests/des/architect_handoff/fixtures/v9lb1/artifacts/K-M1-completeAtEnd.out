@@ -1,0 +1,77 @@
+An example execution:
+
+[State 0]
+{
+  count: Map(0 -> 0, 1 -> 0, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 1,
+  mbt::actionTaken: "init",
+  mbt::nondetPicks: { l: Some(1), len: Some(6) },
+  n: 6,
+  offset: 0
+}
+
+[State 1]
+{
+  count: Map(0 -> 1, 1 -> 0, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 1,
+  mbt::actionTaken: "step",
+  mbt::nondetPicks: { l: None, len: None },
+  n: 6,
+  offset: 1
+}
+
+[State 2]
+{
+  count: Map(0 -> 1, 1 -> 0, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 1,
+  mbt::actionTaken: "step",
+  mbt::nondetPicks: { l: None, len: None },
+  n: 6,
+  offset: 2
+}
+
+[State 3]
+{
+  count: Map(0 -> 1, 1 -> 0, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 1,
+  mbt::actionTaken: "step",
+  mbt::nondetPicks: { l: None, len: None },
+  n: 6,
+  offset: 3
+}
+
+[State 4]
+{
+  count: Map(0 -> 1, 1 -> 0, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 1,
+  mbt::actionTaken: "step",
+  mbt::nondetPicks: { l: None, len: None },
+  n: 6,
+  offset: 4
+}
+
+[State 5]
+{
+  count: Map(0 -> 1, 1 -> 0, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 1,
+  mbt::actionTaken: "step",
+  mbt::nondetPicks: { l: None, len: None },
+  n: 6,
+  offset: 5
+}
+
+[State 6]
+{
+  count: Map(0 -> 1, 1 -> 0, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 1,
+  mbt::actionTaken: "step",
+  mbt::nondetPicks: { l: None, len: None },
+  n: 6,
+  offset: 6
+}
+
+[violation] Found an issue (24ms at 83 traces/second).
+Use --verbosity=3 to show executions.
+
+--- stderr ---
+error: Invariant violated

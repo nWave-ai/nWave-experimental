@@ -101,6 +101,7 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     _SubcommandRow("po", "des.cli.po", "main"),
     # DESIGN binds a host-supplied manifest without executing its architect.
     _SubcommandRow("design", "des.cli.design", "main"),
+    _SubcommandRow("handoff", "des.cli.handoff", "main"),
     # ORACLE measures the host-authored acceptance bytes.
     _SubcommandRow("oracle", "des.cli.oracle", "main"),
     # CRAFT measures and records the host-authored implementation.
@@ -177,7 +178,7 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
 
 # Mutation and measurement operations declare the tree they affect.
 _DECLARES_ITS_RUNTIME = frozenset(
-    {"devops", "po", "design", "oracle", "craft", "verify", "integrate"}
+    {"devops", "po", "design", "handoff", "oracle", "craft", "verify", "integrate"}
 )
 
 

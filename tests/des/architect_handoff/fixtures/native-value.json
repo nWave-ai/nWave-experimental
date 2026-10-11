@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "authority": {"heading": "Architect handoff smoke value"},
+  "purpose": "Retain the one value delta alongside the shared typed handoff.",
+  "constraints": ["Retain unrelated semantic decisions and authority identities."],
+  "targets": [{"path": "clamp.py", "decision": "CREATE_NEW", "reason": "Prospective owner from shared smoke input; no target implementation is claimed."}],
+  "paradigm": "procedural",
+  "decisions": ["Use the accumulated handover and preserve the shared typed sections."],
+  "architect_handoff": {"sections": []},
+  "reuse_analysis": {"candidates": []},
+  "prefactoring": {"applicability": "not_applicable", "reason": "This fixture moves no responsibilities."},
+  "agreement_analysis": {"applicability": "not_applicable", "reason": "This fixture changes no producer-consumer contract."},
+  "architectural_tests": {"applicability": "not_applicable", "reason": "No architectural proof is claimed by the smoke."},
+  "contract_tests": {"applicability": "not_applicable", "reason": "No implementation contract is claimed by the smoke."},
+  "impact_closure": {"applicability": "applicable", "items": [{"kind": "runtime", "locator": "clamp.py", "decision": "CHANGED", "reason": "Prospective owner from the shared input."}]},
+  "boundaries": {"applicability": "not_applicable", "reason": "This fixture declares no implementation boundary."},
+  "public_oracle": {"observation": "Native handoff facts remain readable.", "stimulus": "Record then project an explicit receipt.", "expected": "The original graph and receipt provenance are retained.", "falsifier": "The receipt silently replaces authority facts."},
+  "oracle": "tests/test_clamp.py",
+  "acceptance_supports": [],
+  "verification": [["python", "-m", "unittest"]],
+  "oracle_verification_index": 0
+}

@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 
 from des.adapters.driven.git.git_observation import observe_bytes
 from des.adapters.driven.task_invocation.model_envelope import decode_model_run
+from des.application.architect_handoff import accumulated
+from des.application.architect_handoff import projection as architect_projection
 from des.application.delivery_continuation import DeliveryContinuationRunner
 from des.application.delivery_steps import StepOutcome, _from_blocked, _prepared
 from des.application.handover import (
@@ -588,6 +590,15 @@ def _recovery_facts(root: Path, value: int, finding: str) -> dict[str, object]:
         ),
         "finding": finding,
     }
+    payload["current_value_design"].pop("architect_handoff", None)
+    if payload["current_shared_design"] is not None:
+        payload["current_shared_design"]["design"].pop("architect_handoff", None)
+    payload["architect_projection"] = architect_projection(
+        "nw-acceptance-designer",
+        accumulated(stored),
+        value=value,
+        base_dir=str(root / ".nwave/des"),
+    )
     payload["recovery_binding_sha256"] = _recovery_binding_sha256(payload)
     return payload
 
@@ -929,6 +940,15 @@ def prepare(
             "native_evidence": native,
             "radius": radius,
         }
+        for facts in payload["values"]:
+            facts.pop("architect_handoff", None)
+        if "shared_design" in payload:
+            payload["shared_design"].pop("architect_handoff", None)
+        payload["architect_projection"] = architect_projection(
+            "nw-software-crafter-reviewer",
+            accumulated(stored),
+            base_dir=str(root / ".nwave/des"),
+        )
     else:
         raise ValueError("role must be reviewer or examiner")
     raw = _sealed(payload, "role_input")

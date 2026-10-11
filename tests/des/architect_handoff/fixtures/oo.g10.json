@@ -1,0 +1,68 @@
+{
+ "sections": [
+  {"kind": "laws", "scope": "shared", "status": {"tag": "applicable", "payload": {
+    "observations": [
+      {"id": "O1", "description": "Inventory.available() after a command, compared by ==", "result_type": "int >= 0",
+       "cannot_distinguish": "which reservations hold the units"},
+      {"id": "O2", "description": "Inventory.status(key) after a command", "result_type": "ACTIVE | CANCELLED | REJECTED | UNKNOWN",
+       "cannot_distinguish": "a replayed command from the first one"}],
+    "equality": {"under": ["O1", "O2"], "definition": "two inventories are equal when available() and status(k) agree for every key k"},
+    "constructors": [
+      {"id": "reserve", "signature": "Inventory.reserve(key: Key, units: Units) -> Reserved | Rejected"},
+      {"id": "cancel", "signature": "Inventory.cancel(key: Key) -> Cancelled | NotFound"}],
+    "generators": [
+      {"id": "G1", "domain": "command sequences of init, reserve, cancel over 3 keys and units 1..5", "size_bound": 12,
+       "seed_policy": "seeded, 500 sequences", "must_include": ["reserve beyond capacity", "cancel of an unknown key", "replay of a reserve"]},
+      {"id": "G2", "domain": "command sequences that cancel a key and then reserve it again", "size_bound": 12,
+       "seed_policy": "seeded, 500 sequences", "must_include": ["reserve after cancel with the same key", "reserve after cancel with a new key"]}],
+    "laws": [
+      {"id": "L1", "statement": "available() == capacity - sum(units of ACTIVE reservations)", "kind": "invariant", "layer": "domain",
+       "owner": "inventory.py::Inventory", "uses": ["O1", "reserve", "cancel"],
+       "treatment": {"tag": "broad",
+         "generator": "G1",
+         "independent_observation": "a recount of ACTIVE reservations from the command log",
+         "falsifier": {"description": "a reserve that forgets to subtract the units of a replayed key"}},
+       "evidence": {"tag": "to_run"}},
+      {"id": "L2", "statement": "cancel(cancel(s, k), k) == cancel(s, k)", "kind": "idempotence", "layer": "domain",
+       "owner": "inventory.py::Inventory.cancel", "uses": ["O1", "O2", "cancel"],
+       "treatment": {"tag": "finite", "reason": "three states of one key", "cases": ["ACTIVE", "CANCELLED", "UNKNOWN"]}, "evidence": {"tag": "to_run"}},
+      {"id": "L3", "statement": "CANCELLED is absorbing: no command makes a CANCELLED key ACTIVE again", "kind": "inductive", "layer": "domain",
+       "owner": "inventory.py::Inventory", "uses": ["O2", "reserve", "cancel"],
+       "treatment": {"tag": "broad",
+         "generator": "G2",
+         "independent_observation": "status history per key replayed from the command log",
+         "falsifier": {"description": "a reserve that reactivates a CANCELLED row"}},
+       "evidence": {"tag": "to_run"}}],
+    "refuted": []}}},
+  {"kind": "construction", "scope": "shared", "status": {"tag": "applicable", "payload": {
+    "claims": [
+      {"id": "E1", "proposition": "a Units value below 1 or a bool cannot exist", "harm": "reserve(key, 0) would consume nothing and still be recorded as ACTIVE",
+       "owner": "units.py::Units", "admitted_input": "int >= 1", "constructor": "units.py::Units.of", "consumer": "inventory.py::Inventory.reserve",
+       "public_observation": "ValueError with the reason from Units.of", "bypass": ["object.__setattr__ on the frozen dataclass", "deserialization that skips Units.of"],
+       "strength": "centralised"},
+      {"id": "E2", "proposition": "an ACTIVE reservation exists only if Inventory.reserve created it", "harm": "an ACTIVE row written elsewhere would not be subtracted from available()",
+       "owner": "inventory.py::Inventory.reserve", "admitted_input": "a Key and Units", "constructor": "inventory.py::Inventory.reserve", "consumer": "store.py::Store.save",
+       "public_observation": "status(key) == ACTIVE", "bypass": ["a direct SQL insert by another writer"], "strength": "runtime_boundary"}],
+    "admitted": ["a Key and an int >= 1 unit count", "capacity set once by init"],
+    "excluded": ["Units(0)", "Units(True)", "an ACTIVE row without a subtraction"],
+    "unknown": [{"state": "subclasses of Units", "risk_owner": "the owner of units.py"}, {"state": "other writers of the database", "risk_owner": "the owner of store.py"}]}}},
+  {"kind": "model", "scope": "shared", "status": {"tag": "not_applicable",
+    "reason": "synthetic example: the claims rest on construction and an argument, no formal model is selected"}},
+  {"kind": "closure", "scope": "shared", "status": {"tag": "applicable", "payload": {"closures": [{
+    "subject": "a reservation and the units still available",
+    "safety": {"tag": "claim", "statement": "available() is never negative and never exceeds capacity", "design": "PASS", "runtime": "DESIGNED_NOT_BUILT",
+               "assumptions": ["one writer at a time (single transaction per command)"], "runs": [], "laws": ["L1"],
+               "basis": {"tag": "constructed", "claims": ["E1", "E2"]}},
+    "inhabitation": {"tag": "claim", "statement": "init(5), reserve(r1, 2), get(r1) is constructible", "design": "PASS", "runtime": "DESIGNED_NOT_BUILT",
+                     "assumptions": [], "runs": [], "laws": [],
+                     "basis": {"tag": "path", "admitted_input": "init capacity 5 then reserve r1 with 2 units", "producer": "inventory.py::Inventory.reserve",
+                               "consumer": "cli.py::main", "public_observation": "the reply reserved with available 3"}},
+    "public_reachability": {"tag": "claim", "statement": "every status is observable through the CLI", "design": "PASS", "runtime": "DESIGNED_NOT_BUILT",
+                            "assumptions": [], "runs": [], "laws": ["L3"],
+                            "basis": {"tag": "path", "admitted_input": "a JSON line on stdin", "producer": "cli.py::main", "consumer": "inventory.py::Inventory.status",
+                                      "public_observation": "the status reply on stdout"}},
+    "liveness": {"tag": "not_applicable", "reason": "one synchronous command per process; no progress condition beyond the stated single-writer assumption"}}]}}},
+  {"kind": "receipts", "scope": "shared", "status": {"tag": "not_applicable", "reason": "synthetic example: no checker or script was run"}},
+  {"kind": "scenarios", "scope": "shared", "status": {"tag": "not_applicable", "reason": "the order of commands is fixed by the examples; nothing about order or timing is unclear"}}
+ ]
+}

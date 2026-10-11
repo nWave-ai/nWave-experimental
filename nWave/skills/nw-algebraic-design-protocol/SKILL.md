@@ -88,6 +88,13 @@ Seek a homomorphic denotation the other observations derive from. State the old
 and new observation sets and the equivalence claim **before** changing the
 representation, and protect it with generated terms on both sides.
 
+For a changed representation, check both encode/decode round trips at the
+declared observational equality. For a mapping over an operation, check
+identity and composition preservation. Execute against an independent reference
+encoding over generated public inputs, including the input that refuted the old
+carrier; retain each law's actual run and counterexample evidence rather than
+assigning one aggregate result to laws it did not exercise.
+
 Passing generated checks is evidence, not proof. Say which.
 
 ## Stop conditions
@@ -108,6 +115,8 @@ domain plus independent observation/falsifier; finite exhaustive/no law is
 
 ## Cross-cutting invariants
 
-Load `nw-cross-cutting-invariants` alongside this. In particular
-`gate:design-principles-gdp-1-9` and `data:consumer-known-before-produced`: an
-observation nobody consumes is not an observation, it is a field.
+If not already loaded, read `nw-cross-cutting-invariants` for
+`gate:design-principles-gdp-1-9`. For a produced datum or observation, consult
+`data:consumer-known-before-produced` in its actual home,
+`nw-cross-cutting-input-data-contracts`; read that lens if not already loaded.
+An observation nobody consumes is a field, not an observation.

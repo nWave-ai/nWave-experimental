@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -64,6 +65,11 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument("--input", choices=(STDIN,), required=True)
+    parser.add_argument(
+        "--architect-handoff",
+        type=Path,
+        help="import closed typed sections into this manifest through the existing constructor",
+    )
     parser.add_argument("--replace-current", action="store_true")
     parser.add_argument(
         "--migrate-legacy-rendering",
@@ -103,14 +109,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.shared:
         return _shared(args, root, own)
-    manifest = read_request()
+    manifest = _manifest_input(args, root)
     if isinstance(manifest, StepRefusal):
         return refuse(
-            StepRefusal(
-                "InvalidDesignDocument",
-                "stdin must carry one non-empty strict-UTF-8 JSON manifest",
-                "pipe closed v1 semantic JSON into `des design --input -`",
-            ),
+            manifest,
             (own.format(root=root),),
         )
     outcome = DeliverySteps().design_document(
@@ -130,17 +132,48 @@ def main(argv: list[str] | None = None) -> int:
     return succeed(list(outcome.facts), after_step(root))
 
 
+def _manifest_input(args: argparse.Namespace, root: Path):
+    raw = read_request()
+    if isinstance(raw, StepRefusal) or args.architect_handoff is None:
+        return raw
+    from des.application.architect_handoff import wire
+    from des.application.architect_handoff.g10 import load_files
+
+    try:
+        manifest = json.loads(raw)
+        if not isinstance(manifest, dict) or "architect_handoff" in manifest:
+            raise ValueError(
+                "supply architect_handoff either inside the manifest or through "
+                "--architect-handoff, not both"
+            )
+        path = args.architect_handoff
+        handoff, defects = load_files(
+            [str(path if path.is_absolute() else root / path)]
+        )
+        if handoff is None:
+            raise ValueError(
+                "; ".join(
+                    f"{defect.where}: WHAT: {defect.what}; WHY: {defect.why}; HOW: {defect.how}"
+                    for defect in defects
+                )
+            )
+        manifest["architect_handoff"] = wire(handoff)
+        return json.dumps(manifest, ensure_ascii=False)
+    except ValueError as error:
+        return StepRefusal(
+            "InvalidDesignDocument",
+            str(error),
+            "supply one DESIGN manifest and one closed typed handoff input",
+        )
+
+
 def _shared(args: argparse.Namespace, root: Path, own: str) -> int:
     """Construct the shared feature DESIGN: input only, never a provider turn."""
     move = (own.format(root=root),)
-    manifest = read_request()
+    manifest = _manifest_input(args, root)
     if isinstance(manifest, StepRefusal):
         return refuse(
-            StepRefusal(
-                "InvalidDesignDocument",
-                "stdin must carry one non-empty strict-UTF-8 JSON manifest",
-                "pipe closed v1 semantic JSON into `des design --shared --input -`",
-            ),
+            manifest,
             move,
         )
     outcome = DeliverySteps().shared_design_document(

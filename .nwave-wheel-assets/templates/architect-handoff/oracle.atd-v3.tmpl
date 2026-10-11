@@ -1,0 +1,38 @@
+Role: {{role}} (exact installed role).
+## FROM DES (facts DES holds; the repository is the current working directory)
+feature: {{feature}}
+request (verbatim from DES state):
+{{request}}
+value {{value}}, the observation to make falsifiable:
+{{observation}}
+authority documents written by DES, read these first:
+{{authority|bullets}}
+closed design for this value (typed facts DES bound; the brief sections above hold the same decisions in prose):
+- oracle file to write: {{oracle_path}}
+- support files you may write: {{supports|csv}}
+- production targets (craft changes them, never you): {{targets|csv}}
+- paradigm: {{paradigm}}
+- native verification commands (run them to observe RED):
+{{verification|bullets}}
+- public oracle the design declares:
+{{public_oracle}}
+- obligations the oracle set must cover:
+{{obligations|bullets}}
+- architectural tests: {{arch_tests}}
+- contract tests: {{contract_tests}}
+- DES state when this prompt was prepared:
+{{state_lines|bullets}}
+
+## TASK (template)
+Author the candidate executable public oracle for this value through the real driving port. Write only the oracle and support files named above.
+- Use the skills named in your definition on their triggers; they carry the test mechanics.
+- Never implement production behaviour. A design target is never a support file; an imported production module stays a target.
+- Preserve obligations that already hold without fabricating RED. Run the verification commands and report what you observed.
+- Return `rejected` before you change any oracle byte when the constructive chain cannot be expressed through the declared public port without inventing a field, operation, fixture fact or expected result. Say which one in the diagnostic.
+- Use Jev (nw-typesafe-system-one) for semantic judgments, such as whether each observation is falsifiable through the public port. State the capability limit if you ask fewer questions than the skill allows.
+
+## RETURN
+Your final reply is the structured output `{"outcome": "accepted" | "rejected" | "indeterminate", "diagnostic": "<text>"}`. The caller records it with `des oracle --repo-root {{repo_root}} --value {{value}} --input -`.
+
+## FROM THE ROOT (verbatim; not verified by DES)
+{{root_input}}

@@ -11,6 +11,7 @@ import pytest
 from scripts.shared.agent_catalog import (
     build_ownership_map,
     is_public_agent,
+    is_public_command,
     is_public_skill,
     load_public_agents,
 )
@@ -549,3 +550,30 @@ class TestBuildOwnershipMap:
             assert is_public_skill(skill, public_agents, ownership_map) is False, (
                 f"Private-only skill {skill} should be excluded"
             )
+
+
+@pytest.mark.parametrize(
+    ("references", "expected"),
+    [
+        (["software_crafter"], True),
+        (["software-crafter"], True),
+        (["workshopper"], False),
+        (["private_owner"], False),
+        (["systematic_refactorer"], False),
+        (["workshopper", "software_crafter"], True),
+        ([], True),
+    ],
+    ids=[
+        "public-underscore",
+        "public-hyphen",
+        "private",
+        "private-underscore",
+        "unowned-refactor",
+        "mixed-public-private",
+        "no-agent",
+    ],
+)
+def test_command_agent_reference_spelling_preserves_public_visibility(
+    references, expected
+):
+    assert is_public_command({"agents": references}, {"software-crafter"}) is expected

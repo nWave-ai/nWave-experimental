@@ -14,6 +14,7 @@ import shlex
 import subprocess
 import sys
 import tarfile
+import venv
 from functools import lru_cache
 from pathlib import Path
 
@@ -55,6 +56,12 @@ def _run(home: Path, *args: str) -> subprocess.CompletedProcess[str]:
     # would make an install migrate the checkout's tracked legacy marker.
     project = home.parent / f"{home.name}-project"
     project.mkdir(parents=True, exist_ok=True)
+    # Supply only the required Python runtime, without host tools or editable
+    # installations that could mask a missing installed DES package.
+    python_home = home.parent / f"{home.name}-python"
+    if not python_home.exists():
+        venv.EnvBuilder(with_pip=False, symlinks=os.name != "nt").create(python_home)
+    python_bin = python_home / ("Scripts" if os.name == "nt" else "bin")
     env = os.environ.copy()
     env.update(
         {
@@ -62,11 +69,14 @@ def _run(home: Path, *args: str) -> subprocess.CompletedProcess[str]:
             "CODEX_HOME": str(home / ".codex"),
             "NWAVE_AGENTS_HOME": str(home),
             "CLAUDE_CONFIG_DIR": str(home / ".claude"),
-            "PYTHONPATH": str(REPO),
+            "PYTHONPATH": os.pathsep.join((str(REPO / "src"), str(REPO))),
             "NO_COLOR": "1",
-            "PATH": "",
+            "PATH": str(python_bin),
         }
     )
+    for variable in ("PI_CODING_AGENT_DIR", "OMP_PROFILE", "PI_PROFILE"):
+        env.pop(variable, None)
+    env["PI_CONFIG_DIR"] = ".omp"
     return subprocess.run(
         [sys.executable, "-c", PUBLIC_CLI, *args],
         cwd=project,

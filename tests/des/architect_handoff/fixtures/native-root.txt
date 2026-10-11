@@ -1,0 +1,3 @@
+Preserve this root context verbatim, including the literal {{root_context_token}}.
+Observe handoff entrypoints and explicit receipt provenance only. Do not invoke a model, select NEXT, run a delivery, or report architecture/formal proof from this smoke.
+Five architect follow-ups remain deferred, not PASS: scenario-flow J/E-G09 and C6; unexecuted laws L5/L6/L7; v7 Sonnet criterion 2; native G10 producer evaluation; third independent G10 review. See docs/product/backlog.md, Future.

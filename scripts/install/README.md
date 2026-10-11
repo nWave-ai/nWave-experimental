@@ -65,20 +65,43 @@ python scripts/install/install_nwave.py --restore
 `--platform` accepts `auto` (default), `claude-code`, `opencode`, `codex`,
 `copilot`, `omp`, or `all`.
 
-OMP (oh-my-pi) installs nWave task agents and skills into OMP's native
-discovery tree — `<config-root>/agent/agents/*.md` and
-`<config-root>/agent/skills/<name>/SKILL.md`, where the config root is
-`$HOME/.omp` (renamed by OMP's `PI_CONFIG_DIR`). Roles are projected to the
+OMP (oh-my-pi) installs public task agents, skills and `/nw-*` commands into
+its native discovery tree: `<config-root>/agent/agents/*.md`,
+`<config-root>/agent/skills/<name>/SKILL.md` and
+`<config-root>/agent/commands/nw-*.md`. The config root is `$HOME/.omp`
+(renamed by `PI_CONFIG_DIR`); `PI_CODING_AGENT_DIR` relocates skills, commands
+and extensions. Use `--dev` only to include private artifacts.
+The command source is `nWave/tasks/nw/*.md` (or the distribution's
+`tasks/nw/`), filtered using the catalog's public-agent command policy.
+Underscore agent references are compared using hyphenated catalog keys;
+unresolved references remain non-public.
+Command-skills are not the command roster. Task `deliver.md` becomes flat
+`commands/nw-deliver.md`, so its slash name is `/nw-deliver`; `--dev`
+includes every task file. A public reinstall removes obsolete manifest-owned
+command-skill projections as well as private task commands.
+Roles are projected to the
 OMP agent schema: Claude model aliases are omitted so roles inherit the
 user's configured model, tools map to OMP's canonical lowercase names, the
 `StructuredOutput` reply channel becomes an `output` schema from the
 canonical model envelope, and role preload skills become `autoloadSkills`
 naming only public installed skills (each skill delivered once). Scoped
 tool grants have no OMP form and are omitted with an explicit report, never
-widened. OMP installs no hooks — OMP extension events differ from Claude
-Code hooks, so DES guard enforcement is not projected (reported, not
-faked). A named profile (`OMP_PROFILE`/`PI_PROFILE`) is refused with an
-explicit message: only the default profile is served.
+widened. The DES TypeScript shim is installed at
+`<agent-dir>/extensions/nwave-des.ts`, and the Python-only runtime at
+`~/.nwave/runtime`, independently of Claude installation order. Missing
+Python 3.10+ refuses installation with remediation; `--dry-run` prints the
+same public populations, extension path, Python and runtime plan.
+
+OMP's `tool_call` event accepts returned refusals before execution. The shim
+projects task (flat/batch), bash, write and edit calls, including
+hashline/apply_patch file headers and move targets.
+**Not enforced:** unrecognized edit formats, internal URI writes,
+eval/workpool spawns, SendMessage, TaskCreate/TaskUpdate,
+Claude-transcript SubagentStop checks, and session lifecycle/update admission.
+The installer and `--help` state these limits rather than claim full parity.
+A named profile (`OMP_PROFILE`/`PI_PROFILE`) is refused: only the default
+profile is served. Uninstall uses the recorded manifest ownership and keeps
+foreign commands and extensions.
 
 ### Uninstallation
 

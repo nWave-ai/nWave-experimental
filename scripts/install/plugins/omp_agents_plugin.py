@@ -21,11 +21,10 @@ Projection (see omp_common for the laws):
 - ``maxTurns`` is omitted (no OMP equivalent) and reported.
 - ``Invoke Skill(X)`` directives become ``Read skill://X/SKILL.md``.
 
-No hook or DES surface is written: OMP's extension events differ from
-Claude's and this installer does not fake enforcement. Ownership is
-manifest-driven (``.nwave-agents-manifest.json``); foreign ``nw-*`` files
-and any symlink in an owned path are refused, never adopted; non-``nw-``
-entries are outside this plugin's glob and untouched.
+This plugin owns agents only; OmpDESPlugin owns the separate host extension.
+Ownership is manifest-driven (``.nwave-agents-manifest.json``); foreign
+``nw-*`` files and symlinks in owned paths are refused, never adopted.
+Non-``nw-`` entries are outside this plugin's glob and untouched.
 """
 
 import json
@@ -126,30 +125,36 @@ def _read_manifest(target_dir: Path) -> dict | None:
     return None
 
 
-def _read_owned_manifest_strict(target_dir: Path) -> set[str]:
+def _read_owned_manifest_strict(
+    target_dir: Path,
+    *,
+    manifest_filename: str = _MANIFEST_FILENAME,
+    installed_key: str = "installed_agents",
+) -> set[str]:
     """Strictly read the ownership manifest before any mutation.
 
     Same trust bar as the skills plugin: the manifest file must be a regular
-    non-symlink file, carry exactly {installed_agents, version: "1.0"}, and
+    non-symlink file, carry exactly {installed_key, version: "1.0"}, and
     list unique safe basenames. A name is an ownership claim only after its
     own shape is trusted.
 
     Raises:
         ValueError: The manifest exists but cannot be trusted.
     """
-    manifest_path = target_dir / _MANIFEST_FILENAME
+    manifest_path = target_dir / manifest_filename
+    noun = installed_key.removeprefix("installed_")
     if not (manifest_path.exists() or manifest_path.is_symlink()):
         return set()
     if manifest_path.is_symlink() or not manifest_path.is_file():
-        raise ValueError(f"unsafe OMP agents manifest: {manifest_path}")
+        raise ValueError(f"unsafe OMP {noun} manifest: {manifest_path}")
     try:
         document = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ValueError(f"unreadable OMP agents manifest: {manifest_path}") from exc
-    names = document.get("installed_agents") if isinstance(document, dict) else None
+        raise ValueError(f"unreadable OMP {noun} manifest: {manifest_path}") from exc
+    names = document.get(installed_key) if isinstance(document, dict) else None
     trusted = (
         isinstance(document, dict)
-        and set(document) == {"installed_agents", "version"}
+        and set(document) == {installed_key, "version"}
         and document.get("version") == "1.0"
         and isinstance(names, list)
         and all(
@@ -159,7 +164,7 @@ def _read_owned_manifest_strict(target_dir: Path) -> set[str]:
         and len(names) == len(set(names))
     )
     if not trusted:
-        raise ValueError(f"untrusted OMP agents manifest: {manifest_path}")
+        raise ValueError(f"untrusted OMP {noun} manifest: {manifest_path}")
     return set(names)
 
 
@@ -316,12 +321,6 @@ class OmpAgentsPlugin(InstallationPlugin):
 
             for report in all_reports:
                 context.logger.info(f"  ⚠️ {report}")
-            context.logger.info(
-                "  ℹ️ No OMP hook projection: OMP extension events differ from "
-                "Claude Code hooks; DES guard behavior is NOT enforced by this "
-                "install (host-led safety reports unsupported rather than "
-                "claiming enforcement)."
-            )
 
             context.logger.info(
                 f"  ✅ OMP agents installed ({len(installed_names)} agents)"

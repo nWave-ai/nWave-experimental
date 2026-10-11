@@ -211,6 +211,7 @@ class ManifestPluginConfig:
     manifest_filename: str
     noun: str
     installed_key: str
+    host_name: str = "OpenCode"
 
 
 def uninstall_with_manifest(
@@ -240,15 +241,17 @@ def uninstall_with_manifest(
     installed_key = config.installed_key
 
     try:
-        context.logger.info(f"  \U0001f5d1️ Uninstalling OpenCode {noun}...")
+        context.logger.info(f"  \U0001f5d1️ Uninstalling {config.host_name} {noun}...")
         manifest = read_manifest(target_dir, manifest_filename)
 
         if manifest is None:
-            context.logger.info(f"  ⏭️ No OpenCode {noun} manifest found, skipping")
+            context.logger.info(
+                f"  ⏭️ No {config.host_name} {noun} manifest found, skipping"
+            )
             return PluginResult(
                 success=True,
                 plugin_name=plugin_name,
-                message=f"No OpenCode {noun} to uninstall (no manifest found)",
+                message=f"No {config.host_name} {noun} to uninstall (no manifest found)",
             )
 
         installed = manifest.get(installed_key, [])
@@ -263,18 +266,20 @@ def uninstall_with_manifest(
         if manifest_path.exists():
             manifest_path.unlink()
 
-        context.logger.info(f"  \U0001f5d1️ Removed {removed_count} OpenCode {noun}")
+        context.logger.info(
+            f"  \U0001f5d1️ Removed {removed_count} {config.host_name} {noun}"
+        )
         return PluginResult(
             success=True,
             plugin_name=plugin_name,
-            message=f"OpenCode {noun} uninstalled ({removed_count} removed)",
+            message=f"{config.host_name} {noun} uninstalled ({removed_count} removed)",
         )
     except Exception as e:
-        context.logger.error(f"  ❌ Failed to uninstall OpenCode {noun}: {e}")
+        context.logger.error(f"  ❌ Failed to uninstall {config.host_name} {noun}: {e}")
         return PluginResult(
             success=False,
             plugin_name=plugin_name,
-            message=f"OpenCode {noun} uninstallation failed: {e!s}",
+            message=f"{config.host_name} {noun} uninstallation failed: {e!s}",
             errors=[str(e)],
         )
 
@@ -310,24 +315,24 @@ def verify_with_manifest(
     installed_key = config.installed_key
 
     try:
-        context.logger.info(f"  \U0001f50e Verifying OpenCode {noun}...")
+        context.logger.info(f"  \U0001f50e Verifying {config.host_name} {noun}...")
         manifest = read_manifest(target_dir, manifest_filename)
 
         if manifest is None:
             source = source_finder(context)
             if source is None:
                 context.logger.info(
-                    f"  ⏭️ No OpenCode {noun} to verify (none configured)"
+                    f"  ⏭️ No {config.host_name} {noun} to verify (none configured)"
                 )
                 return PluginResult(
                     success=True,
                     plugin_name=plugin_name,
-                    message=f"No OpenCode {noun} configured, verification skipped",
+                    message=f"No {config.host_name} {noun} configured, verification skipped",
                 )
             return PluginResult(
                 success=False,
                 plugin_name=plugin_name,
-                message=f"OpenCode {noun} verification failed: manifest not found",
+                message=f"{config.host_name} {noun} verification failed: manifest not found",
                 errors=[f"Manifest file {manifest_filename} not found"],
             )
 
@@ -343,29 +348,29 @@ def verify_with_manifest(
 
         if missing:
             context.logger.error(
-                f"  ❌ OpenCode {noun} verification failed: {len(missing)} missing"
+                f"  ❌ {config.host_name} {noun} verification failed: {len(missing)} missing"
             )
             return PluginResult(
                 success=False,
                 plugin_name=plugin_name,
                 message=(
-                    f"OpenCode {noun} verification failed: "
+                    f"{config.host_name} {noun} verification failed: "
                     f"{len(missing)} {noun} missing"
                 ),
                 errors=missing,
             )
 
-        context.logger.info(f"  ✅ Verified {verified_count} OpenCode {noun}")
+        context.logger.info(f"  ✅ Verified {verified_count} {config.host_name} {noun}")
         return PluginResult(
             success=True,
             plugin_name=plugin_name,
-            message=f"OpenCode {noun} verification passed ({verified_count} {noun})",
+            message=f"{config.host_name} {noun} verification passed ({verified_count} {noun})",
         )
     except Exception as e:
-        context.logger.error(f"  ❌ Failed to verify OpenCode {noun}: {e}")
+        context.logger.error(f"  ❌ Failed to verify {config.host_name} {noun}: {e}")
         return PluginResult(
             success=False,
             plugin_name=plugin_name,
-            message=f"OpenCode {noun} verification failed: {e!s}",
+            message=f"{config.host_name} {noun} verification failed: {e!s}",
             errors=[str(e)],
         )

@@ -1128,7 +1128,7 @@ class NWaveUninstaller:
             self.logger.warn(f"  ⚠️ OpenCode DES shim removal: {result.message}")
 
     def remove_omp_assets(self) -> None:
-        """Remove manifest-owned OMP skills and task agents.
+        """Remove manifest-owned OMP skills, agents, commands and extension.
 
         Resolves the SAME omp destination the installer plugins write through
         (``scripts.shared.install_paths`` omp helpers), so an uninstall can
@@ -1140,18 +1140,24 @@ class NWaveUninstaller:
         than silently operating on the default root.
         """
         if self.dry_run:
-            self.logger.info("  🚨 [DRY RUN] Would remove OMP skills and agents")
+            self.logger.info(
+                "  🚨 [DRY RUN] Would remove OMP skills, agents, commands and DES extension"
+            )
             return
 
         try:
             from scripts.install.plugins.base import InstallContext
             from scripts.install.plugins.omp_agents_plugin import OmpAgentsPlugin
+            from scripts.install.plugins.omp_commands_plugin import OmpCommandsPlugin
             from scripts.install.plugins.omp_common import OmpProfileNotSupported
+            from scripts.install.plugins.omp_des_plugin import OmpDESPlugin
             from scripts.install.plugins.omp_skills_plugin import OmpSkillsPlugin
         except ImportError:
             from plugins.base import InstallContext
             from plugins.omp_agents_plugin import OmpAgentsPlugin
+            from plugins.omp_commands_plugin import OmpCommandsPlugin
             from plugins.omp_common import OmpProfileNotSupported
+            from plugins.omp_des_plugin import OmpDESPlugin
             from plugins.omp_skills_plugin import OmpSkillsPlugin
 
         context = InstallContext(
@@ -1197,7 +1203,12 @@ class NWaveUninstaller:
             try:
                 for root_str, spelling in roots.items():
                     root = Path(root_str)
-                    if not (root / ".nwave-manifest.json").exists():
+                    manifests = (
+                        root / ".nwave-manifest.json",
+                        root.parent / "commands" / ".nwave-commands-manifest.json",
+                        root.parent / "extensions" / ".nwave-des-manifest.json",
+                    )
+                    if not any(path.exists() for path in manifests):
                         continue
                     if spelling is None:
                         os.environ.pop("PI_CODING_AGENT_DIR", None)
@@ -1207,6 +1218,8 @@ class NWaveUninstaller:
                         # <override>/skills recorded at install time
                         os.environ["PI_CODING_AGENT_DIR"] = str(root.parent)
                     skills_results.append(OmpSkillsPlugin().uninstall(context))
+                    skills_results.append(OmpCommandsPlugin().uninstall(context))
+                    skills_results.append(OmpDESPlugin().uninstall(context))
             finally:
                 if previous_env is None:
                     os.environ.pop("PI_CODING_AGENT_DIR", None)

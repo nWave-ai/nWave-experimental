@@ -621,6 +621,21 @@ _DECISION_FIELDS = (
 _DESIGN_DECISIONS = _Product(_DECISION_FIELDS)
 
 
+def _architect_handoff_input(value: object, name: str) -> dict:
+    from des.application.architect_handoff import decode, wire
+
+    try:
+        return wire(decode(value))
+    except ValueError as error:
+        raise DesignDocumentInvalid(f"{name}: {error}") from error
+
+
+_ARCHITECT_HANDOFF = _Leaf(
+    "typed architect sections from `des handoff describe`; raw model text is retained.",
+    _architect_handoff_input,
+)
+
+
 _MANIFEST = _Product(
     (
         _Field("schema_version", _SCHEMA_VERSION),
@@ -636,6 +651,7 @@ _MANIFEST = _Product(
         _Field("architectural_tests", _ARCHITECTURAL_TESTS),
         _Field("contract_tests", _CONTRACT_TESTS),
         _Field("adr", _ADR, optional=True),
+        _Field("architect_handoff", _ARCHITECT_HANDOFF, optional=True),
         _Field("impact_closure", _IMPACT_CLOSURE),
         _Field("boundaries", _BOUNDARIES),
         _Field("public_oracle", _PUBLIC_ORACLE),
@@ -661,12 +677,26 @@ def design_decisions_wire(facts: DesignFacts) -> dict[str, object]:
             return [wire(item) for item in value]
         return value
 
-    return {
+    projection = {
         field.name: wire(asdict(getattr(facts, field.name)))
         for field in _DECISION_FIELDS
         if getattr(facts, field.name) is not None
         and not isinstance(getattr(facts, field.name), UnassessedDesignDecision)
     }
+    if facts.architect_handoff is not None:
+        from des.application.architect_handoff import wire as handoff_wire
+
+        projection["architect_handoff"] = handoff_wire(facts.architect_handoff)
+    return projection
+
+
+def _decode_architect_handoff(raw: object) -> dict:
+    from des.application.architect_handoff import decode
+
+    try:
+        return decode(raw)
+    except ValueError as error:
+        raise DesignDocumentInvalid(str(error)) from error
 
 
 def decode_design_decisions(
@@ -728,7 +758,9 @@ def without_absent_optional_decisions(raw: dict[str, object]) -> dict[str, objec
     A provider whose strict output must list every property carries an optional
     decision as nullable; the constructor's grammar knows only absence.
     """
-    optional = {field.name for field in _DECISION_FIELDS if field.optional}
+    optional = {field.name for field in _DECISION_FIELDS if field.optional} | {
+        "architect_handoff"
+    }
     return {
         key: value
         for key, value in raw.items()
@@ -1006,7 +1038,11 @@ def design_decisions_schema() -> dict[str, object]:
             }
         return {"type": "string", "minLength": 1}
 
-    return schema(_DESIGN_DECISIONS)
+    from des.application.architect_handoff import input_schema
+
+    result = schema(_DESIGN_DECISIONS)
+    result["properties"]["architect_handoff"] = input_schema()
+    return result
 
 
 _WRAP_WIDTH = 80
@@ -1374,6 +1410,20 @@ class DesignFactsSection:
                     f"Contract: {party.contract}; {party.role}: `{party.locator}`; "
                     f"{party.decision}: {party.reason}"
                 )
+        if self.facts.architect_handoff is not None:
+            from des.application.architect_handoff import wire
+
+            lines += [
+                "",
+                "### Typed architect handoff",
+                "",
+                *_fenced(
+                    "json",
+                    json.dumps(
+                        wire(self.facts.architect_handoff), ensure_ascii=False, indent=2
+                    ),
+                ),
+            ]
         return "\n".join(lines) + "\n"
 
 
@@ -1423,9 +1473,15 @@ class DesignDocument:
         for defect in _manifest_rule_defects(root):
             defects.add(defect)
         defects.close()
+        # An absent new carrier must not invalidate already-bound legacy DESIGN identities.
+        identity = {
+            key: value
+            for key, value in root.items()
+            if key != "architect_handoff" or value is not None
+        }
         semantic_sha256 = hashlib.sha256(
             json.dumps(
-                root, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+                identity, sort_keys=True, ensure_ascii=False, separators=(",", ":")
             ).encode("utf-8")
         ).hexdigest()
         # Decoding above is the only validation pass.  Everything below is a
@@ -1511,6 +1567,11 @@ class DesignDocument:
             oracle_verification_index,
             constraints,
             public_oracle=public_oracle,
+            architect_handoff=(
+                _decode_architect_handoff(root["architect_handoff"])
+                if root.get("architect_handoff") is not None
+                else None
+            ),
             **{
                 field.name: _decision_record(field.name, root[field.name])
                 for field in _DECISION_FIELDS
@@ -1652,6 +1713,18 @@ class DesignDocument:
         ]
         for argv in self.facts.verification:
             blocks += [_wrap("Verification command:"), _fenced("sh", shlex.join(argv))]
+        if self.facts.architect_handoff is not None:
+            from des.application.architect_handoff import wire
+
+            blocks += [
+                heading("Typed architect handoff"),
+                _fenced(
+                    "json",
+                    json.dumps(
+                        wire(self.facts.architect_handoff), ensure_ascii=False, indent=2
+                    ),
+                ),
+            ]
         return "\n\n".join("\n".join(block) for block in blocks) + "\n"
 
     def legacy_markdown_v1(self) -> str:

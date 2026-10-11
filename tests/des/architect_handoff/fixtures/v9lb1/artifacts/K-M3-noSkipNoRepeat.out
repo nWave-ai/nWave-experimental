@@ -1,0 +1,27 @@
+An example execution:
+
+[State 0]
+{
+  count: Map(0 -> 0, 1 -> 0, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 2,
+  mbt::actionTaken: "init",
+  mbt::nondetPicks: { l: Some(2), len: Some(2) },
+  n: 2,
+  offset: 0
+}
+
+[State 1]
+{
+  count: Map(0 -> 1, 1 -> 1, 2 -> 0, 3 -> 0, 4 -> 0, 5 -> 0),
+  lim: 2,
+  mbt::actionTaken: "step",
+  mbt::nondetPicks: { l: None, len: None },
+  n: 2,
+  offset: 1
+}
+
+[violation] Found an issue (22ms at 45 traces/second).
+Use --verbosity=3 to show executions.
+
+--- stderr ---
+error: Invariant violated

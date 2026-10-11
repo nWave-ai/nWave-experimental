@@ -37,6 +37,13 @@ from des.application.delivery_continuation import (
     Disposition,
     NativeEvidence,
 )
+from des.domain.oracle_observation import (
+    ObservationUnavailable,
+    OracleObservation,
+    OracleObservationKind,
+    decode_native_observation,
+    observation_from_counts,
+)
 from des.ports.driven_ports.task_invocation_port import (
     DesignFacts,
     DesignTarget,
@@ -468,11 +475,11 @@ def test_the_step_measures_the_red_before_it_admits_the_set(subject: Path) -> No
         (1, None, False, "indeterminate"),
         (1, None, True, "broken"),
         (0, (2, 0, 0), False, "green"),
-        (0, None, False, "green"),
+        (0, None, False, "indeterminate"),
         (0, None, True, "broken"),
         (2, None, False, "indeterminate"),
-        (4, (0, 0, 0), True, "broken"),
-        (5, (0, 0, 0), True, "broken"),
+        (4, (0, 0, 0), True, "indeterminate"),
+        (5, (0, 0, 0), True, "indeterminate"),
         (1, (0, 0, 0), False, "indeterminate"),
     ],
     ids=[
@@ -482,7 +489,7 @@ def test_the_step_measures_the_red_before_it_admits_the_set(subject: Path) -> No
         "native-exit-one-is-unclassified",
         "no-report-under-a-pytest-vector-is-broken",
         "green-report",
-        "green-no-report",
+        "no-observation-is-indeterminate",
         "green-no-report-under-a-pytest-vector-is-broken",
         "native-exit-two-is-unclassified",
         "internal-usage-error",
@@ -496,8 +503,15 @@ def test_the_verdict_reads_both_axes(
     report_requested: bool,
     verdict: str,
 ) -> None:
+    observation = (
+        observation_from_counts(counts[0], counts[2], counts[1], source="junit-report")
+        if counts is not None
+        else ObservationUnavailable("junit-report-absent", "requested report absent")
+        if report_requested
+        else OracleObservation(OracleObservationKind.Missing, "native-observation")
+    )
     measured = DeliveryContinuationRunner._oracle_verdict(
-        exit_status, counts, report_requested
+        exit_status, observation, completed=True
     )
     assert measured[0] == verdict
 
@@ -665,3 +679,82 @@ def test_unclassified_native_failure_is_recorded_without_inventing_a_pytest_verd
     assert result.measured[0]["exit"] == exit_status
     assert result.measured[0]["argv"] == list(command)
     assert "native diagnostic" in result.measured[0]["diagnostic"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"version": True, "observed": 1, "assertions_failed": 1, "setup_failed": 0},
+        {"version": 1, "observed": True, "assertions_failed": 1, "setup_failed": 0},
+        {"version": 1, "observed": -1, "assertions_failed": 0, "setup_failed": 0},
+        {"version": 1, "observed": 0, "assertions_failed": 1, "setup_failed": 0},
+        {"version": 1, "observed": 1, "assertions_failed": 1, "setup_failed": -1},
+    ],
+    ids=[
+        "boolean-version",
+        "boolean-count",
+        "negative-count",
+        "incoherent-count",
+        "negative-setup",
+    ],
+)
+def test_invalid_native_construction_is_refused_with_its_reason(payload: dict) -> None:
+    observation = decode_native_observation(
+        "DES-ORACLE-OBSERVATION: " + json.dumps(payload) + "\n", completed=True
+    )
+    assert isinstance(observation, ObservationUnavailable)
+    assert observation.reason
+    verdict, axis = DeliveryContinuationRunner._oracle_verdict(
+        1, observation, completed=True
+    )
+    assert (verdict, axis) == ("indeterminate", "native-observation-invalid")
+
+
+@pytest.mark.parametrize(
+    "observation",
+    [
+        OracleObservation(OracleObservationKind.AssertionFailed, "native-observation"),
+        OracleObservation(
+            OracleObservationKind.AssertionFailed, "native-observation", 1, 2
+        ),
+        OracleObservation(
+            OracleObservationKind.AssertionFailed, "native-observation", 1, 1, 1
+        ),
+        OracleObservation(
+            OracleObservationKind.AssertionFailed, "native-observation", True, 1
+        ),
+    ],
+    ids=["no-observation", "excess-failures", "mixed-setup", "raw-boolean"],
+)
+def test_raw_python_construction_cannot_promote_invalid_assertion_evidence(
+    observation: OracleObservation,
+) -> None:
+    assert DeliveryContinuationRunner._oracle_verdict(
+        1, observation, completed=True
+    ) == ("indeterminate", "native-observation-invalid")
+
+
+@pytest.mark.parametrize("exit_status", [0, 1, 2, 127])
+@pytest.mark.parametrize("completed", [False, True])
+@pytest.mark.parametrize("source", ["native-observation", "junit-report"])
+def test_captured_assertion_requires_completion_and_nonzero_exit(
+    exit_status: int, completed: bool, source: str
+) -> None:
+    observation = observation_from_counts(1, 1, 0, source=source)
+    verdict, _ = DeliveryContinuationRunner._oracle_verdict(
+        exit_status, observation, completed=completed
+    )
+    assert verdict == (
+        "broken" if not completed else "red" if exit_status else "indeterminate"
+    )
+
+
+@pytest.mark.parametrize("exit_status", [0, 1, 2, 127])
+@pytest.mark.parametrize("source", ["native-observation", "junit-report"])
+def test_setup_after_assertions_never_becomes_a_positive_outcome(
+    exit_status: int, source: str
+) -> None:
+    observation = observation_from_counts(1, 1, 1, source=source)
+    assert DeliveryContinuationRunner._oracle_verdict(
+        exit_status, observation, completed=True
+    ) == ("broken", source)

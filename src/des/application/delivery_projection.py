@@ -135,7 +135,12 @@ def _evidence_section(state: DeliveryState) -> list[str]:
     return [*lines, ""]
 
 
-def project_markdown(stored: StoredHandover, state: DeliveryState) -> str:
+def project_markdown(
+    stored: StoredHandover,
+    state: DeliveryState,
+    *,
+    architect_base_dir: str | None = None,
+) -> str:
     """The human layer of ONE Request, as markdown the shared renderer accepts.
 
     Markdown rather than HTML because the renderer that already exists takes
@@ -169,5 +174,14 @@ def project_markdown(stored: StoredHandover, state: DeliveryState) -> str:
         selection = state.values[position - 1].selection
         if selection is not None:
             lines += _selection_rows(selection)
+    from des.application.architect_handoff import accumulated
+    from des.application.architect_handoff.g10_project import render_markdown, summary
+
+    handoff = accumulated(stored)
+    lines += ["## Architect handoff", ""]
+    missing = summary(handoff)["missing_shared"]
+    if missing:
+        lines += ["Unassessed shared sections: " + ", ".join(missing), ""]
+    lines += [render_markdown(handoff, architect_base_dir), ""]
     lines += _evidence_section(state)
     return "\n".join(lines)

@@ -31,6 +31,7 @@ from des.adapters.driven.git.git_observation import (
     observe_bytes,
     observe_text,
 )
+from des.application.architect_handoff import wire as architect_handoff_wire
 from des.application.candidate_radius import INDETERMINATE, candidate_radius
 from des.application.commit_message_attribution import attribute_commit_message
 from des.application.handover import (
@@ -80,6 +81,13 @@ from des.domain.integration_commit_message import (
     CommitMessageRule,
     IntegrationFacts,
     compose_integration_message,
+)
+from des.domain.oracle_observation import (
+    ObservationUnavailable,
+    OracleObservation,
+    OracleObservationKind,
+    decode_native_observation,
+    observation_from_counts,
 )
 from des.domain.repository_format_contract import (
     FormatContract,
@@ -244,6 +252,10 @@ class NativeEvidence:
     cwd: str | None = None
     declared_environment: tuple[tuple[str, str], ...] | None = None
     executable: str | None = None
+
+    @property
+    def completed(self) -> bool:
+        return not self.incomplete and self.exit_status is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -519,6 +531,7 @@ class AuthorityFacts:
     ) = None
     adr: ApplicableADR | NotApplicable | None = None
     public_oracle: PublicOracle | None = None
+    architect_handoff: dict | None = None
 
     @property
     def oracle_verification_argv(self) -> tuple[str, ...]:
@@ -559,6 +572,15 @@ class AuthorityFacts:
                 **(
                     {"public_oracle": asdict(self.public_oracle)}
                     if self.public_oracle is not None
+                    else {}
+                ),
+                **(
+                    {
+                        "architect_handoff": architect_handoff_wire(
+                            self.architect_handoff
+                        )
+                    }
+                    if self.architect_handoff is not None
                     else {}
                 ),
             },
@@ -1551,6 +1573,7 @@ class DeliveryContinuationRunner:
                 impact_closure=locator.impact_closure,
                 adr=locator.adr,
                 public_oracle=locator.public_oracle,
+                architect_handoff=locator.architect_handoff,
             )
             if not admit_verification:
                 return typed
@@ -3259,6 +3282,10 @@ class DeliveryContinuationRunner:
         Documents remain admitted through `_markdown_text` and exact tracked
         checks.  An empty or non-heading locator is not a citation; a cited
         document or section that cannot be measured makes the answer unknown.
+
+        Prerequisites retain their dataclass hash projection, except that typed
+        architect handoffs use their canonical JSON wire representation. Values
+        without a handoff retain byte-identical prerequisite hashes.
         """
         locators: list[str] = []
         if stored.shared_design is not None:
@@ -3313,17 +3340,26 @@ class DeliveryContinuationRunner:
                             and is_repository_relative_whole_file_locator(path)
                         ):
                             contract_paths.append(path)
-        result: list[tuple[str, str]] = [
-            (
-                f"prerequisite:{item.observation}",
-                hashlib.sha256(
-                    json.dumps(
-                        asdict(item), sort_keys=True, separators=(",", ":")
-                    ).encode("utf-8")
-                ).hexdigest(),
+        result: list[tuple[str, str]] = []
+        for item in consumed:
+            projection = asdict(item)
+            if (
+                isinstance(item.authority, DesignFacts)
+                and item.authority.architect_handoff is not None
+            ):
+                projection["authority"]["architect_handoff"] = architect_handoff_wire(
+                    item.authority.architect_handoff
+                )
+            result.append(
+                (
+                    f"prerequisite:{item.observation}",
+                    hashlib.sha256(
+                        json.dumps(
+                            projection, sort_keys=True, separators=(",", ":")
+                        ).encode("utf-8")
+                    ).hexdigest(),
+                )
             )
-            for item in consumed
-        ]
         if value.design_semantic_sha256 is not None:
             result.append(("value-design-semantic", value.design_semantic_sha256))
         if stored.shared_design is not None:
@@ -4137,6 +4173,10 @@ class DeliveryContinuationRunner:
             )
         if design.adr is not None:
             facts["adr"] = AuthorityFacts._decision_wire(design.adr)
+        if design.architect_handoff is not None:
+            facts["architect_handoff"] = architect_handoff_wire(
+                design.architect_handoff
+            )
         return facts
 
     @staticmethod
@@ -4181,6 +4221,15 @@ class DeliveryContinuationRunner:
                     if design.adr is not None
                     else {}
                 ),
+                **(
+                    {
+                        "architect_handoff": architect_handoff_wire(
+                            design.architect_handoff
+                        )
+                    }
+                    if design.architect_handoff is not None
+                    else {}
+                ),
             }
         }
 
@@ -4212,12 +4261,6 @@ class DeliveryContinuationRunner:
                 path for _, design in prepared for path in design.acceptance_paths
             )
         )
-
-    #: The only two `pytest` exit statuses that describe a session which RAN to
-    #: the end.  Every other one -- 2 interrupted, 3 internal error, 4 usage, 5
-    #: nothing collected -- says the run did not get as far as an answer, which
-    #: for an oracle IS the answer: it is broken, not red.
-    _ORACLE_COMPLETED_EXITS = (0, 1)
 
     #: Request a report only for a declared Python command. A Python wrapper
     #: can reach pytest without naming it in argv; an unrelated native command
@@ -4276,11 +4319,9 @@ class DeliveryContinuationRunner:
     #: written for a different incident.  The `argv=` already printed on this
     #: oracle's `ORACLE-RED:` line is what makes the vector runnable by hand.
     _ORACLE_REPORT_ABSENT_HOW = (
-        "RUN THE PRINTED VECTOR IN THE WORKSPACE and read its first lines -- the "
-        "`argv=` on this oracle's `ORACLE-RED:` line, executed from the "
-        "repository root, says why no session completed (measured: `No module "
-        "named pytest`); install the runner under that interpreter or declare a "
-        "verification vector whose interpreter carries it, then re-run the Request"
+        "RUN THE PRINTED VECTOR IN THE WORKSPACE from the repository root; "
+        "repair its target-native runner/reporter or the recipe's requested "
+        "report destination, then remeasure the oracle"
     )
 
     #: The HOW each refusing AXIS names.  Selecting on the axes that actually
@@ -4293,10 +4334,8 @@ class DeliveryContinuationRunner:
     #: whose incident the bare diagnosis cannot explain appears here.
     _ORACLE_REFUSAL_WHYS = {
         "junit-report-absent": (
-            "the runner asked this vector for a junit report and none was "
-            "produced, so pytest did not complete a session under this "
-            "interpreter (typically it is not installed there) and nothing "
-            "about this oracle's own assertions was observed"
+            "the vector asked for an optional junit report and none was produced; "
+            "no completed assertion observation is available"
         )
     }
 
@@ -4400,54 +4439,96 @@ class DeliveryContinuationRunner:
     @staticmethod
     def _oracle_verdict(
         exit_status: int | None,
-        counts: tuple[int, int, int] | None,
-        report_requested: bool,
+        observation: OracleObservation | ObservationUnavailable,
         *,
-        pytest_exit_status: bool | None = None,
+        completed: bool,
     ) -> tuple[str, str]:
-        """Classify evidence without assigning pytest exit semantics to other tools.
-
-        A requested report must exist. Pytest's known completed exits and
-        error/failure counts distinguish broken setup from assertion failure.
-        Other tools without a report provide only an exit observation: success
-        is green; nonzero is indeterminate, with diagnostics for the LLM.
-        A native JUnit report can establish errors/failures independently of
-        that tool's numeric exit convention. No process exit remains broken.
-        """
-        if pytest_exit_status is None:
-            pytest_exit_status = report_requested
-        if exit_status is None:
+        """Classify the captured observation without tool-specific exit meanings."""
+        if not completed or exit_status is None:
             return "broken", "exit-status"
-        if report_requested and counts is None:
-            return "broken", "junit-report-absent"
-        if not report_requested and counts is None:
-            # Native tools need not use pytest's exit conventions. A nonzero
-            # status alone cannot distinguish assertion, build and setup errors.
-            return ("green" if not exit_status else "indeterminate"), "exit-status-only"
+        source = observation.source
+        if isinstance(observation, ObservationUnavailable):
+            if source == "junit-report-absent":
+                return "broken", source
+            return "indeterminate", f"{source}-invalid"
+        checked = observation_from_counts(
+            observation.observed,
+            observation.assertions_failed,
+            observation.setup_failed,
+            source=source,
+        )
         if (
-            pytest_exit_status
-            and exit_status not in DeliveryContinuationRunner._ORACLE_COMPLETED_EXITS
+            isinstance(checked, ObservationUnavailable)
+            or checked.kind != observation.kind
         ):
-            return "broken", "exit-status"
-        _, errors, failures = counts
-        # Read the report's own errors/failures BEFORE trusting a zero exit:
-        # a process can exit 0 while its own JUnit report records a failed or
-        # errored test case (a native tool's exit convention need not track
-        # its report), and a zero exit must never outrank a report that
-        # disagrees with it. An error keeps the SAME "broken" designation
-        # this method already gives an errored report on the nonzero-exit
-        # path; a failure against a clean exit is a genuine two-axis
-        # contradiction and earns the same conservative designation the
-        # mirror contradiction (nonzero exit, clean report) earns below.
-        if errors:
-            return "broken", "junit-report"
-        if failures:
+            return "indeterminate", f"{source}-invalid"
+        if observation.kind is OracleObservationKind.SetupFailed:
+            return "broken", source
+        if observation.kind is OracleObservationKind.AssertionFailed:
+            if exit_status:
+                return "red", source
+            return "indeterminate", f"{source}-contradicts-exit-status"
+        if observation.kind is OracleObservationKind.Passed:
             if not exit_status:
-                return "indeterminate", "junit-report-contradicts-exit-status"
-            return "red", "junit-report"
+                return "green", source
+            return "indeterminate", f"{source}-contradicts-exit-status"
         if not exit_status:
-            return "green", "junit-report"
-        return "indeterminate", "junit-report-contradicts-exit-status"
+            return "indeterminate", f"{source}-no-observation"
+        if source == "junit-report":
+            return "indeterminate", f"{source}-contradicts-exit-status"
+        return "indeterminate", "exit-status-only"
+
+    @staticmethod
+    def _oracle_observation(
+        item: NativeEvidence,
+        counts: tuple[int, int, int] | None,
+        *,
+        report_supplied: bool,
+        report_requested: bool,
+        stale_report: bool,
+    ) -> OracleObservation | ObservationUnavailable:
+        native = decode_native_observation(item.stdout, item.completed)
+        if stale_report or (report_supplied and counts is None):
+            reason = (
+                "optional report is stale"
+                if stale_report
+                else "optional report is malformed"
+            )
+            return ObservationUnavailable(
+                "native-observation"
+                if native.kind is not OracleObservationKind.Missing
+                else "junit-report",
+                reason,
+            )
+        if native.kind is OracleObservationKind.Unavailable:
+            return native
+        if counts is not None:
+            tests, errors, failures = counts
+            report = observation_from_counts(
+                tests, failures, errors, source="junit-report"
+            )
+            if native.kind is OracleObservationKind.Missing:
+                return report
+            if isinstance(report, ObservationUnavailable) or native.kind != report.kind:
+                return ObservationUnavailable(
+                    "native-observation",
+                    "native terminal observation and optional report disagree",
+                )
+            return native
+        if native.kind is not OracleObservationKind.Missing:
+            if report_requested:
+                return replace(
+                    native,
+                    reason="requested optional report was not produced; "
+                    "completed native observation remains available",
+                )
+            return native
+        if report_requested:
+            return ObservationUnavailable(
+                "junit-report-absent",
+                "requested optional report was not produced and no terminal observation is available",
+            )
+        return native
 
     @staticmethod
     def _oracle_diagnosis(item: NativeEvidence) -> str:
@@ -4594,19 +4675,42 @@ class DeliveryContinuationRunner:
                 item = evidence[0]
                 counts = self._junit_counts(report)
                 failures = self._junit_failures(report)
-                if declared_report is not None and prior_report == self._report_stamp(
-                    report
-                ):
-                    # Never remove or overwrite a caller-selected path ourselves.
-                    # Only a report produced by this native command can judge it.
+                report_supplied = self._report_stamp(report) is not None
+                stale_report = (
+                    declared_report is not None
+                    and report_supplied
+                    and prior_report == self._report_stamp(report)
+                )
+                if stale_report:
                     counts = None
                     failures = None
-                verdict, axis = self._oracle_verdict(
-                    item.exit_status,
+                observation = self._oracle_observation(
+                    item,
                     counts,
-                    invokes_pytest(argv) or declared_report is not None,
-                    pytest_exit_status=invokes_pytest(argv),
+                    report_supplied=report_supplied,
+                    report_requested=invokes_pytest(argv)
+                    or declared_report is not None,
+                    stale_report=stale_report,
                 )
+                verdict, axis = self._oracle_verdict(
+                    item.exit_status, observation, completed=item.completed
+                )
+                if axis in (
+                    "native-observation-no-observation",
+                    "junit-report-no-observation",
+                ):
+                    observation = replace(
+                        observation,
+                        reason=f"{observation.source} has no completed observations "
+                        "(observed=0, assertions_failed=0, setup_failed=0)",
+                    )
+                if counts is None and isinstance(observation, OracleObservation):
+                    if observation.kind is not OracleObservationKind.Missing:
+                        counts = (
+                            observation.observed,
+                            observation.setup_failed,
+                            observation.assertions_failed,
+                        )
                 locator = self._retain_native_failure_evidence(root, "oracle", evidence)
                 if locator is None:
                     return self._fail(
@@ -4623,8 +4727,30 @@ class DeliveryContinuationRunner:
                         "counts": counts,
                         "argv": list(item.argv),
                         "exit": item.exit_status,
+                        "completed": item.completed,
                         "failures": failures,
-                        "diagnostic": self._oracle_diagnosis(item),
+                        "diagnostic": "; ".join(
+                            part
+                            for part in (
+                                observation.reason,
+                                self._oracle_diagnosis(item),
+                            )
+                            if part
+                        ),
+                        "observation": {
+                            "kind": observation.kind.value,
+                            "source": observation.source,
+                            **(
+                                {
+                                    "observed": observation.observed,
+                                    "assertions_failed": observation.assertions_failed,
+                                    "setup_failed": observation.setup_failed,
+                                }
+                                if isinstance(observation, OracleObservation)
+                                else {}
+                            ),
+                            "reason": observation.reason,
+                        },
                         "native_evidence_locator": locator,
                     }
                 )
@@ -4652,15 +4778,33 @@ class DeliveryContinuationRunner:
                     file=sys.stderr,
                 )
                 if verdict == "indeterminate" and axis != "exit-status-only":
-                    return self._fail(
-                        Disposition.Indeterminate,
-                        "OracleRedUnobservable",
-                        f"{oracle} exited {item.exit_status} while its own report "
-                        f"recorded {counts[1] if counts else 0} errors and "
-                        f"{counts[2] if counts else 0} failures, so whether it "
-                        f"failed on its assertion cannot be established",
-                        "run the oracle by hand and read its report, then re-run "
-                        "the Request",
+                    return OracleExecution(
+                        tuple(measured),
+                        OracleRedRefusal(
+                            json.dumps(self._evidence_records(evidence)),
+                            self._fail(
+                                Disposition.Indeterminate,
+                                "OracleRedUnobservable",
+                                f"{oracle} exited {item.exit_status}: {axis}; "
+                                f"{measured[-1]['diagnostic']}; assertion outcome "
+                                "cannot be established",
+                                (
+                                    "run the printed native vector from the repository "
+                                    "root and make the target-native oracle observe the "
+                                    "promised behavior, emitting its native completion "
+                                    "record or a genuine populated optional report, "
+                                    "then remeasure the oracle"
+                                    if axis
+                                    in (
+                                        "native-observation-no-observation",
+                                        "junit-report-no-observation",
+                                    )
+                                    else "run the printed native vector from the repository "
+                                    "root and repair its target-native runner/reporter "
+                                    "or producing recipe, then remeasure the oracle"
+                                ),
+                            ),
+                        ),
                     )
                 if verdict not in self._ORACLE_REFUSING:
                     continue
@@ -5840,11 +5984,32 @@ class DeliveryContinuationRunner:
         executed = self._executed_oracle_set(root, [(ready.observation, design)])
         if isinstance(executed, DeliveryOutcome):
             return MeasuredOracleSet((), executed)
+        identity = self._record_identity(root, stored, ready.observation, design)
+        tree = self._paths_tree(root, design.acceptance_paths)
+        if (
+            identity is None
+            or tree is None
+            or not self._record_oracle_witness(
+                root,
+                stored.request,
+                ready.observation,
+                identity=identity,
+                tree=tree,
+                measured=executed.measured,
+            )
+        ):
+            return MeasuredOracleSet(
+                executed.measured,
+                self._fail(
+                    Disposition.Indeterminate,
+                    "OracleRecordUnavailable",
+                    "the measured invocation could not be bound and retained as an oracle witness",
+                    "restore Git record storage and repeat the measurement",
+                ),
+            )
         if executed.refusal is not None:
             return MeasuredOracleSet(executed.measured, executed.refusal.terminal)
-        if not self._record_oracle_turn(
-            root, stored, ready.observation, design, executed.measured
-        ):
+        if not self._record_oracle_turn(root, stored, ready.observation, design):
             return MeasuredOracleSet(
                 executed.measured,
                 self._fail(
@@ -5862,7 +6027,6 @@ class DeliveryContinuationRunner:
         stored: StoredHandover,
         observation: str,
         design: AuthorityFacts,
-        measured: tuple[dict[str, object], ...],
     ) -> bool:
         """Persist the measured oracle's exact content and authority identity."""
         head = self._head(root)
@@ -5882,14 +6046,6 @@ class DeliveryContinuationRunner:
             role=_ORACLE_TURN,
             tree=tree,
         )
-        self._record_oracle_witness(
-            root,
-            stored.request,
-            observation,
-            identity=identity,
-            tree=tree,
-            measured=measured,
-        )
         return self.oracle_turn_complete(
             root,
             stored,
@@ -5906,7 +6062,7 @@ class DeliveryContinuationRunner:
         identity: RecordIdentity,
         tree: str,
         measured: tuple[dict[str, object], ...],
-    ) -> None:
+    ) -> bool:
         """Append this bound measurement's verdicts to the value's witness history.
 
         One commit per measurement over the measured acceptance tree, parented
@@ -5931,6 +6087,11 @@ class DeliveryContinuationRunner:
                         "axis": item.get("axis"),
                         "exit": item.get("exit"),
                         "counts": item.get("counts"),
+                        "argv": item.get("argv"),
+                        "completed": item.get("completed"),
+                        "diagnostic": item.get("diagnostic"),
+                        "native_evidence_locator": item.get("native_evidence_locator"),
+                        "observation": item.get("observation"),
                     }
                     for item in measured
                 ],
@@ -5949,8 +6110,13 @@ class DeliveryContinuationRunner:
             env=env,
         )
         if commit.returncode:
-            return
-        self._git(root, "update-ref", ref, commit.stdout.strip(), env=env)
+            return False
+        return (
+            self._git(
+                root, "update-ref", ref, commit.stdout.strip(), env=env
+            ).returncode
+            == 0
+        )
 
     def oracle_witness(
         self,

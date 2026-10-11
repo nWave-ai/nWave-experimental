@@ -1,0 +1,1335 @@
+{
+ "sections": [
+  {
+   "kind": "receipts",
+   "scope": "shared",
+   "status": {
+    "payload": {
+     "runs": [
+      {
+       "argv": [
+        "(the command is not recorded in the source)"
+       ],
+       "artifacts": [],
+       "checks": [
+        "L1",
+        "L2",
+        "L5",
+        "L8"
+       ],
+       "duration_s": null,
+       "exit_status": 1,
+       "id": "LAWS-UNFIXED",
+       "measure": {
+        "kind": "cases",
+        "value": 3000
+       },
+       "model_id": null,
+       "model_sha256": null,
+       "result_class": "violation",
+       "seed": "20261006",
+       "target": "implementation",
+       "tool": "script",
+       "tool_version": "python 3.14.7",
+       "variant": "unfixed"
+      },
+      {
+       "argv": [
+        "(the command is not recorded in the source)"
+       ],
+       "artifacts": [],
+       "checks": [
+        "L1",
+        "L3",
+        "L4",
+        "L8"
+       ],
+       "duration_s": null,
+       "exit_status": 0,
+       "id": "LAWS-FIXED",
+       "measure": {
+        "kind": "cases",
+        "value": 3000
+       },
+       "model_id": null,
+       "model_sha256": null,
+       "result_class": "ok",
+       "seed": "20261006",
+       "target": "prototype",
+       "tool": "script",
+       "tool_version": "python 3.14.7",
+       "variant": "fixed"
+      },
+      {
+       "argv": [
+        "(the command is not recorded in the source)"
+       ],
+       "artifacts": [],
+       "checks": [
+        "L11",
+        "L13"
+       ],
+       "duration_s": null,
+       "exit_status": 0,
+       "id": "CLI-AGREE",
+       "measure": {
+        "kind": "cases",
+        "value": 300
+       },
+       "model_id": null,
+       "model_sha256": null,
+       "result_class": "ok",
+       "seed": "7",
+       "target": "prototype",
+       "tool": "script",
+       "tool_version": "python 3.14.7",
+       "variant": "fixed"
+      },
+      {
+       "argv": [
+        "(the command is not recorded in the source)"
+       ],
+       "artifacts": [],
+       "checks": [],
+       "duration_s": null,
+       "exit_status": 0,
+       "id": "BASELINE",
+       "measure": null,
+       "model_id": null,
+       "model_sha256": null,
+       "result_class": "ok",
+       "seed": null,
+       "target": "implementation",
+       "tool": "test",
+       "tool_version": "python 3.14.7 unittest",
+       "variant": "base"
+      },
+      {
+       "argv": [
+        "(the command is not recorded in the source)"
+       ],
+       "artifacts": [],
+       "checks": [],
+       "duration_s": null,
+       "exit_status": 0,
+       "id": "INHAB",
+       "measure": null,
+       "model_id": null,
+       "model_sha256": null,
+       "result_class": "ok",
+       "seed": null,
+       "target": "prototype",
+       "tool": "script",
+       "tool_version": "python 3.14.7",
+       "variant": "fixed"
+      },
+      {
+       "argv": [
+        "des",
+        "code-fact",
+        "query.callers-of",
+        "paginate",
+        "--root",
+        "."
+       ],
+       "artifacts": [],
+       "checks": [],
+       "duration_s": null,
+       "exit_status": 0,
+       "id": "CODEFACT",
+       "measure": null,
+       "model_id": null,
+       "model_sha256": null,
+       "result_class": "ok",
+       "seed": null,
+       "target": "implementation",
+       "tool": "code_fact",
+       "tool_version": "des code-fact",
+       "variant": "base"
+      },
+      {
+       "argv": [
+        "java",
+        "-version"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/P-JAVA.out",
+         "role": "output",
+         "sha256": "18435fd9d4979b7b57f812f114f0c02c9a3d17dad38869f7dbc398346483f661"
+        }
+       ],
+       "checks": [],
+       "duration_s": 0.017,
+       "exit_status": 0,
+       "id": "P-JAVA",
+       "measure": null,
+       "model_id": null,
+       "model_sha256": null,
+       "result_class": "ok",
+       "seed": null,
+       "target": "environment",
+       "tool": "probe",
+       "tool_version": "openjdk version \"26.0.2.1\" 2026-08-18",
+       "variant": "base"
+      },
+      {
+       "argv": [
+        "printenv",
+        "QUINT_HOME"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/P-QHOME.out",
+         "role": "output",
+         "sha256": "d8760763be63067f00789fcf42648cb7e89259b37690e733415676ec0b8b6596"
+        }
+       ],
+       "checks": [],
+       "duration_s": 0.002,
+       "exit_status": 1,
+       "id": "P-QHOME",
+       "measure": null,
+       "model_id": null,
+       "model_sha256": null,
+       "result_class": "error",
+       "seed": null,
+       "target": "environment",
+       "tool": "probe",
+       "tool_version": "printenv (GNU coreutils) 9.11",
+       "variant": "base"
+      },
+      {
+       "argv": [
+        "quint",
+        "--version"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/P-QUINT.out",
+         "role": "output",
+         "sha256": "1f95521c77cac3abfee4a2de60c3ed3f9bda10c0c71feba1d6e7ad3095fadd56"
+        }
+       ],
+       "checks": [],
+       "duration_s": 0.278,
+       "exit_status": 0,
+       "id": "P-QUINT",
+       "measure": null,
+       "model_id": null,
+       "model_sha256": null,
+       "result_class": "ok",
+       "seed": null,
+       "target": "environment",
+       "tool": "probe",
+       "tool_version": "0.32.0",
+       "variant": "base"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "mutants/M1/pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=completeAtEnd",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1",
+        "--mbt",
+        "--out-itf=traces/K-M1-completeAtEnd.itf.json"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/K-M1-completeAtEnd.out",
+         "role": "output",
+         "sha256": "f01006112bfe44e38a907ebe010af85f110d1f7f65ab389dca13a3ab84cffa2d"
+        },
+        {
+         "path": "traces/K-M1-completeAtEnd.itf.json",
+         "role": "trace",
+         "sha256": "34aafa35d3ce8808af44979ff55ca529b37ca6292c32fd31aec0e40067814a2c"
+        }
+       ],
+       "checks": [
+        "completeAtEnd"
+       ],
+       "duration_s": 0.665,
+       "exit_status": 1,
+       "id": "K-M1-completeAtEnd",
+       "measure": null,
+       "model_id": "walk",
+       "model_sha256": "00663f4cb476bb3c085881fe3e4db83bbf5c3d738d31dab564880eded3bab4d5",
+       "result_class": "violation",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "mutant:M1"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "mutants/M1/pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=noSkipNoRepeat",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1",
+        "--mbt",
+        "--out-itf=traces/K-M1-noSkipNoRepeat.itf.json"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/K-M1-noSkipNoRepeat.out",
+         "role": "output",
+         "sha256": "171159e08a095f74e1e32184ec71d3cd0f87a54e67c1cdac2a991aefd4e4c21c"
+        },
+        {
+         "path": "traces/K-M1-noSkipNoRepeat.itf.json",
+         "role": "trace",
+         "sha256": "b417e6e6e28ddc739169bd22d41362524ca8f5bc35c0e87434f0138897a5e03b"
+        }
+       ],
+       "checks": [
+        "noSkipNoRepeat"
+       ],
+       "duration_s": 0.654,
+       "exit_status": 1,
+       "id": "K-M1-noSkipNoRepeat",
+       "measure": null,
+       "model_id": "walk",
+       "model_sha256": "00663f4cb476bb3c085881fe3e4db83bbf5c3d738d31dab564880eded3bab4d5",
+       "result_class": "violation",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "mutant:M1"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "mutants/M1/pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=pageMatchesSpec",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1",
+        "--mbt",
+        "--out-itf=traces/K-M1-pageMatchesSpec.itf.json"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/K-M1-pageMatchesSpec.out",
+         "role": "output",
+         "sha256": "b519af853485f10e558a01f836bfec40c61867626a663715167546a92eba2e98"
+        },
+        {
+         "path": "traces/K-M1-pageMatchesSpec.itf.json",
+         "role": "trace",
+         "sha256": "af0e8806ece59641cdd14a6663bdeccce68ba7d3dc7451aa05869b9c3f93d12a"
+        }
+       ],
+       "checks": [
+        "pageMatchesSpec"
+       ],
+       "duration_s": 0.66,
+       "exit_status": 1,
+       "id": "K-M1-pageMatchesSpec",
+       "measure": null,
+       "model_id": "walk",
+       "model_sha256": "00663f4cb476bb3c085881fe3e4db83bbf5c3d738d31dab564880eded3bab4d5",
+       "result_class": "violation",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "mutant:M1"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "mutants/M2/pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=completeAtEnd",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1",
+        "--mbt",
+        "--out-itf=traces/K-M2-completeAtEnd.itf.json"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/K-M2-completeAtEnd.out",
+         "role": "output",
+         "sha256": "cf91d0bb1181cf5c64c9197962a7f884625e6593ab41122e4b88b204bcf33ef2"
+        },
+        {
+         "path": "traces/K-M2-completeAtEnd.itf.json",
+         "role": "trace",
+         "sha256": "edbaef842537738fd2726b02c0118d0239822de7e9706e5dabd41ca5a6004535"
+        }
+       ],
+       "checks": [
+        "completeAtEnd"
+       ],
+       "duration_s": 0.638,
+       "exit_status": 1,
+       "id": "K-M2-completeAtEnd",
+       "measure": null,
+       "model_id": "walk",
+       "model_sha256": "9b39be8c53d92866ff18184e53294c4089d813300bfc7db07a3a5c86ad4694fc",
+       "result_class": "violation",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "mutant:M2"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "mutants/M2/pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=noSkipNoRepeat",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1",
+        "--mbt",
+        "--out-itf=traces/K-M2-noSkipNoRepeat.itf.json"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/K-M2-noSkipNoRepeat.out",
+         "role": "output",
+         "sha256": "141965cb812a13160a8645b663fc036133528c8a1e21806649f7a255a72ba4ff"
+        },
+        {
+         "path": "traces/K-M2-noSkipNoRepeat.itf.json",
+         "role": "trace",
+         "sha256": "4d6ea15f2b87b114e15c2389afffcf3b7b4d5cb79a147b9a61d050e0b3bbe448"
+        }
+       ],
+       "checks": [
+        "noSkipNoRepeat"
+       ],
+       "duration_s": 0.668,
+       "exit_status": 1,
+       "id": "K-M2-noSkipNoRepeat",
+       "measure": null,
+       "model_id": "walk",
+       "model_sha256": "9b39be8c53d92866ff18184e53294c4089d813300bfc7db07a3a5c86ad4694fc",
+       "result_class": "violation",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "mutant:M2"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "mutants/M3/pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=completeAtEnd",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1",
+        "--mbt",
+        "--out-itf=traces/K-M3-completeAtEnd.itf.json"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/K-M3-completeAtEnd.out",
+         "role": "output",
+         "sha256": "fed47fe9d6e3dde7a94e24c57d76cb1543720ff79ba134c9605ffdf7385fed7b"
+        },
+        {
+         "path": "traces/K-M3-completeAtEnd.itf.json",
+         "role": "trace",
+         "sha256": "c55b180e12843f4ad223bde24665509f1c077995df0b52e6d1f428d9d04d369c"
+        }
+       ],
+       "checks": [
+        "completeAtEnd"
+       ],
+       "duration_s": 0.667,
+       "exit_status": 1,
+       "id": "K-M3-completeAtEnd",
+       "measure": null,
+       "model_id": "walk",
+       "model_sha256": "b1d21035cd8689f77c027487a297e17ab0c93c68a111cc445052127e1056e473",
+       "result_class": "violation",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "mutant:M3"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "mutants/M3/pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=noSkipNoRepeat",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1",
+        "--mbt",
+        "--out-itf=traces/K-M3-noSkipNoRepeat.itf.json"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/K-M3-noSkipNoRepeat.out",
+         "role": "output",
+         "sha256": "0cc6448d6f73485159a862d4c6529b2d886a04a2315e83f5783e4f56002e35bb"
+        },
+        {
+         "path": "traces/K-M3-noSkipNoRepeat.itf.json",
+         "role": "trace",
+         "sha256": "00df8192739f25a108a04243df316e093c0c2846b66ed237ff713b4ffe56a425"
+        }
+       ],
+       "checks": [
+        "noSkipNoRepeat"
+       ],
+       "duration_s": 0.649,
+       "exit_status": 1,
+       "id": "K-M3-noSkipNoRepeat",
+       "measure": null,
+       "model_id": "walk",
+       "model_sha256": "b1d21035cd8689f77c027487a297e17ab0c93c68a111cc445052127e1056e473",
+       "result_class": "violation",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "mutant:M3"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "mutants/M4/pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=beyondEndEmpty",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1",
+        "--mbt",
+        "--out-itf=traces/K-M4-beyondEndEmpty.itf.json"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/K-M4-beyondEndEmpty.out",
+         "role": "output",
+         "sha256": "ac267007fb40c2c9fd51b99d9f122b9dbed22594657e96b337c8f42a4e0e4752"
+        },
+        {
+         "path": "traces/K-M4-beyondEndEmpty.itf.json",
+         "role": "trace",
+         "sha256": "9b3becc1d6c288bb80054bb010e4eaa56a7c0b34efeacc24bc80318db284987b"
+        }
+       ],
+       "checks": [
+        "beyondEndEmpty"
+       ],
+       "duration_s": 0.656,
+       "exit_status": 1,
+       "id": "K-M4-beyondEndEmpty",
+       "measure": null,
+       "model_id": "walk",
+       "model_sha256": "7a0954e37dd2649488b3c29b95c15e121a98e5c368e1037b2de828ba7b899dd3",
+       "result_class": "violation",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "mutant:M4"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "mutants/M4/pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=completeAtEnd",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1",
+        "--mbt",
+        "--out-itf=traces/K-M4-completeAtEnd.itf.json"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/K-M4-completeAtEnd.out",
+         "role": "output",
+         "sha256": "9262bcbda1187d07ee5565bcaf88cf914fabf8189db2cdde6cbe5eb183d93269"
+        },
+        {
+         "path": "traces/K-M4-completeAtEnd.itf.json",
+         "role": "trace",
+         "sha256": "4ffc2ab25a8b9ffa6a384aff3b92c9ad1eb3d98adcd16fd1e0c2eab1dc7fbeb2"
+        }
+       ],
+       "checks": [
+        "completeAtEnd"
+       ],
+       "duration_s": 0.648,
+       "exit_status": 1,
+       "id": "K-M4-completeAtEnd",
+       "measure": null,
+       "model_id": "walk",
+       "model_sha256": "7a0954e37dd2649488b3c29b95c15e121a98e5c368e1037b2de828ba7b899dd3",
+       "result_class": "violation",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "mutant:M4"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "mutants/M4/pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=noSkipNoRepeat",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1",
+        "--mbt",
+        "--out-itf=traces/K-M4-noSkipNoRepeat.itf.json"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/K-M4-noSkipNoRepeat.out",
+         "role": "output",
+         "sha256": "89e4213c42fd898a9ed36d3bab6b7943e221a300f5f6d253f73e66ea9976584a"
+        },
+        {
+         "path": "traces/K-M4-noSkipNoRepeat.itf.json",
+         "role": "trace",
+         "sha256": "798b181db4c62abe090ed0730be4dce79770b76e85d77987e6ae4c22c138190f"
+        }
+       ],
+       "checks": [
+        "noSkipNoRepeat"
+       ],
+       "duration_s": 0.632,
+       "exit_status": 1,
+       "id": "K-M4-noSkipNoRepeat",
+       "measure": null,
+       "model_id": "walk",
+       "model_sha256": "7a0954e37dd2649488b3c29b95c15e121a98e5c368e1037b2de828ba7b899dd3",
+       "result_class": "violation",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "mutant:M4"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "mutants/M4/pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=pageMatchesSpec",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1",
+        "--mbt",
+        "--out-itf=traces/K-M4-pageMatchesSpec.itf.json"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/K-M4-pageMatchesSpec.out",
+         "role": "output",
+         "sha256": "d0d626741e675d6b11e764966860f4436dc61bbe9169fd1199afb57dc48b0411"
+        },
+        {
+         "path": "traces/K-M4-pageMatchesSpec.itf.json",
+         "role": "trace",
+         "sha256": "3eb7b1ac08328d7d0ec94837cfec01658dd9c7f144505de575fc5ded0e942309"
+        }
+       ],
+       "checks": [
+        "pageMatchesSpec"
+       ],
+       "duration_s": 0.707,
+       "exit_status": 1,
+       "id": "K-M4-pageMatchesSpec",
+       "measure": null,
+       "model_id": "walk",
+       "model_sha256": "7a0954e37dd2649488b3c29b95c15e121a98e5c368e1037b2de828ba7b899dd3",
+       "result_class": "violation",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "mutant:M4"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "mutants/M5/pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=bounded",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1",
+        "--mbt",
+        "--out-itf=traces/K-M5-bounded.itf.json"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/K-M5-bounded.out",
+         "role": "output",
+         "sha256": "7df7890f5b602f22f5d1f3d0715c79da18cb8054e18fbf7050e8eac4fb0f655d"
+        },
+        {
+         "path": "traces/K-M5-bounded.itf.json",
+         "role": "trace",
+         "sha256": "a5e8ae799a9562926b5b497dde66de5ce4ea058649db2f6aa73e06bbb109ca6c"
+        }
+       ],
+       "checks": [
+        "bounded"
+       ],
+       "duration_s": 0.647,
+       "exit_status": 1,
+       "id": "K-M5-bounded",
+       "measure": null,
+       "model_id": "walk",
+       "model_sha256": "e09e731a75dd2335a3209e235a31905b36fcbbc90e190fa15953ff1c0491dcf9",
+       "result_class": "violation",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "mutant:M5"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "mutants/M5/pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=completeAtEnd",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1",
+        "--mbt",
+        "--out-itf=traces/K-M5-completeAtEnd.itf.json"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/K-M5-completeAtEnd.out",
+         "role": "output",
+         "sha256": "b38b3517234794329ba3876af0a68d0bafcd87e7132b8a750a530ec7ce75c805"
+        },
+        {
+         "path": "traces/K-M5-completeAtEnd.itf.json",
+         "role": "trace",
+         "sha256": "96851edb0cdaf787aa85df49c0a1f65036df8775c41291d549b4e835c088f44e"
+        }
+       ],
+       "checks": [
+        "completeAtEnd"
+       ],
+       "duration_s": 0.677,
+       "exit_status": 1,
+       "id": "K-M5-completeAtEnd",
+       "measure": null,
+       "model_id": "walk",
+       "model_sha256": "e09e731a75dd2335a3209e235a31905b36fcbbc90e190fa15953ff1c0491dcf9",
+       "result_class": "violation",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "mutant:M5"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "mutants/M5/pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=noSkipNoRepeat",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1",
+        "--mbt",
+        "--out-itf=traces/K-M5-noSkipNoRepeat.itf.json"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/K-M5-noSkipNoRepeat.out",
+         "role": "output",
+         "sha256": "07e1e18617e0755f6280b18565ec62e966de8634c3af2455b8bd53c23ce4ecfb"
+        },
+        {
+         "path": "traces/K-M5-noSkipNoRepeat.itf.json",
+         "role": "trace",
+         "sha256": "5568f263cfc861b773986bac1855fe4e8790cd8a03b89114f3f7f6fafd958778"
+        }
+       ],
+       "checks": [
+        "noSkipNoRepeat"
+       ],
+       "duration_s": 0.707,
+       "exit_status": 1,
+       "id": "K-M5-noSkipNoRepeat",
+       "measure": null,
+       "model_id": "walk",
+       "model_sha256": "e09e731a75dd2335a3209e235a31905b36fcbbc90e190fa15953ff1c0491dcf9",
+       "result_class": "violation",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "mutant:M5"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "mutants/M5/pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=pageMatchesSpec",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1",
+        "--mbt",
+        "--out-itf=traces/K-M5-pageMatchesSpec.itf.json"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/K-M5-pageMatchesSpec.out",
+         "role": "output",
+         "sha256": "b27b250c76b934c40074c7c695619ecfa50985de35f7b2f2fe3b2aa83d39e1a5"
+        },
+        {
+         "path": "traces/K-M5-pageMatchesSpec.itf.json",
+         "role": "trace",
+         "sha256": "f864b41706b829b572d4ec94e571d26a907bccbd005cacab8bf0a7db1ad64e5a"
+        }
+       ],
+       "checks": [
+        "pageMatchesSpec"
+       ],
+       "duration_s": 0.613,
+       "exit_status": 1,
+       "id": "K-M5-pageMatchesSpec",
+       "measure": null,
+       "model_id": "walk",
+       "model_sha256": "e09e731a75dd2335a3209e235a31905b36fcbbc90e190fa15953ff1c0491dcf9",
+       "result_class": "violation",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "mutant:M5"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=beyondEndEmpty",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/R3-5.out",
+         "role": "output",
+         "sha256": "63571950b22c1628f4997e3cc84ae7ff48b7d4093b168f233d33c861b9faaf28"
+        }
+       ],
+       "checks": [
+        "beyondEndEmpty"
+       ],
+       "duration_s": 1.077,
+       "exit_status": 0,
+       "id": "R3-5",
+       "measure": {
+        "kind": "samples",
+        "value": 2000
+       },
+       "model_id": "walk",
+       "model_sha256": "7894335743ad5b46a0d096db47ea1ecb54a8ccb29ab405aa7edc3ee22bdbf5c0",
+       "result_class": "ok",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "base"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=bounded",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/R3-4.out",
+         "role": "output",
+         "sha256": "51a2940ac6ffb6384b3ad5035979fbe26b1e69b994922e53bc51d506ce8ea723"
+        }
+       ],
+       "checks": [
+        "bounded"
+       ],
+       "duration_s": 1.162,
+       "exit_status": 0,
+       "id": "R3-4",
+       "measure": {
+        "kind": "samples",
+        "value": 2000
+       },
+       "model_id": "walk",
+       "model_sha256": "7894335743ad5b46a0d096db47ea1ecb54a8ccb29ab405aa7edc3ee22bdbf5c0",
+       "result_class": "ok",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "base"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=completeAtEnd",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/R3-3.out",
+         "role": "output",
+         "sha256": "6d7cd5b2e106b2baf7d630727b56eff52ef3a67fe051bb189a17341f6eaf3710"
+        }
+       ],
+       "checks": [
+        "completeAtEnd"
+       ],
+       "duration_s": 1.065,
+       "exit_status": 0,
+       "id": "R3-3",
+       "measure": {
+        "kind": "samples",
+        "value": 2000
+       },
+       "model_id": "walk",
+       "model_sha256": "7894335743ad5b46a0d096db47ea1ecb54a8ccb29ab405aa7edc3ee22bdbf5c0",
+       "result_class": "ok",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "base"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=noSkipNoRepeat",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/R3-2.out",
+         "role": "output",
+         "sha256": "d30740c7a5d2582333b29301652667df52884e4c55cf32441d9a7cb13277b9c0"
+        }
+       ],
+       "checks": [
+        "noSkipNoRepeat"
+       ],
+       "duration_s": 1.128,
+       "exit_status": 0,
+       "id": "R3-2",
+       "measure": {
+        "kind": "samples",
+        "value": 2000
+       },
+       "model_id": "walk",
+       "model_sha256": "7894335743ad5b46a0d096db47ea1ecb54a8ccb29ab405aa7edc3ee22bdbf5c0",
+       "result_class": "ok",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "base"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=pageMatchesSpec",
+        "--max-samples=2000",
+        "--max-steps=10",
+        "--seed=0x1"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/R3-1.out",
+         "role": "output",
+         "sha256": "bfa2d13c916aa26eefc45895d843e47761d94d20b5f4c7357cd5dd5fd4df15a2"
+        }
+       ],
+       "checks": [
+        "pageMatchesSpec"
+       ],
+       "duration_s": 1.149,
+       "exit_status": 0,
+       "id": "R3-1",
+       "measure": {
+        "kind": "samples",
+        "value": 2000
+       },
+       "model_id": "walk",
+       "model_sha256": "7894335743ad5b46a0d096db47ea1ecb54a8ccb29ab405aa7edc3ee22bdbf5c0",
+       "result_class": "ok",
+       "seed": "0x1",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "base"
+      },
+      {
+       "argv": [
+        "quint",
+        "run",
+        "pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--max-samples=1",
+        "--max-steps=5",
+        "--seed=0x6",
+        "--mbt",
+        "--out-itf=traces/EX1.itf.json"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/EX1.out",
+         "role": "output",
+         "sha256": "c762b6dea6b0a515a2d32703c46b9acc9996cc935fd2900be9a44a77e6cce9cc"
+        },
+        {
+         "path": "traces/EX1.itf.json",
+         "role": "trace",
+         "sha256": "c0809212b29d02f955bc5b28cd4b4d8cbd6bf8a28f006ac71693ae118f4744b6"
+        }
+       ],
+       "checks": [],
+       "duration_s": 0.645,
+       "exit_status": 0,
+       "id": "EX1",
+       "measure": null,
+       "model_id": "walk",
+       "model_sha256": "7894335743ad5b46a0d096db47ea1ecb54a8ccb29ab405aa7edc3ee22bdbf5c0",
+       "result_class": "ok",
+       "seed": "0x6",
+       "target": "model",
+       "tool": "quint_run",
+       "tool_version": "0.32.0",
+       "variant": "base"
+      },
+      {
+       "argv": [
+        "quint",
+        "typecheck",
+        "pagination_live.qnt"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/R2.out",
+         "role": "output",
+         "sha256": "d8760763be63067f00789fcf42648cb7e89259b37690e733415676ec0b8b6596"
+        }
+       ],
+       "checks": [],
+       "duration_s": 0.44,
+       "exit_status": 0,
+       "id": "R2",
+       "measure": null,
+       "model_id": "live",
+       "model_sha256": "2161c198e50ca6ac08bc8bb5d64640dd2b228a994dd9632c3f67e9e0e47aa1a8",
+       "result_class": "ok",
+       "seed": null,
+       "target": "model",
+       "tool": "quint_typecheck",
+       "tool_version": "0.32.0",
+       "variant": "base"
+      },
+      {
+       "argv": [
+        "quint",
+        "typecheck",
+        "pagination_walk.qnt"
+       ],
+       "artifacts": [
+        {
+         "path": "artifacts/R1.out",
+         "role": "output",
+         "sha256": "d8760763be63067f00789fcf42648cb7e89259b37690e733415676ec0b8b6596"
+        }
+       ],
+       "checks": [],
+       "duration_s": 0.606,
+       "exit_status": 0,
+       "id": "R1",
+       "measure": null,
+       "model_id": "walk",
+       "model_sha256": "7894335743ad5b46a0d096db47ea1ecb54a8ccb29ab405aa7edc3ee22bdbf5c0",
+       "result_class": "ok",
+       "seed": null,
+       "target": "model",
+       "tool": "quint_typecheck",
+       "tool_version": "0.32.0",
+       "variant": "base"
+      },
+      {
+       "argv": [
+        "quint",
+        "verify",
+        "big.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=pageMatchesSpec,noSkipNoRepeat,completeAtEnd,bounded,beyondEndEmpty",
+        "--max-steps=12",
+        "--backend=apalache"
+       ],
+       "artifacts": [],
+       "checks": [
+        "beyondEndEmpty",
+        "bounded",
+        "completeAtEnd",
+        "noSkipNoRepeat",
+        "pageMatchesSpec"
+       ],
+       "duration_s": 30.131,
+       "exit_status": 0,
+       "id": "R5",
+       "measure": null,
+       "model_id": null,
+       "model_sha256": null,
+       "result_class": "ok",
+       "seed": null,
+       "target": "model",
+       "tool": "quint_verify",
+       "tool_version": "quint 0.32.0, apalache 0.56.1",
+       "variant": "base"
+      },
+      {
+       "argv": [
+        "quint",
+        "verify",
+        "l_m1.qnt",
+        "--init=init",
+        "--step=move",
+        "--temporal=liveUnderFairness",
+        "--backend",
+        "tlc"
+       ],
+       "artifacts": [],
+       "checks": [
+        "liveUnderFairness"
+       ],
+       "duration_s": null,
+       "exit_status": 1,
+       "id": "R8",
+       "measure": {
+        "kind": "states",
+        "value": 70
+       },
+       "model_id": "live",
+       "model_sha256": "e15954a861b40cb9761bccee20cf9071af348fd32229dd496c9f625474b2ac1b",
+       "result_class": "violation",
+       "seed": null,
+       "target": "model",
+       "tool": "quint_verify",
+       "tool_version": "quint 0.32.0, TLC bundled",
+       "variant": "mutant:LM1"
+      },
+      {
+       "argv": [
+        "quint",
+        "verify",
+        "l_m2.qnt",
+        "--init=init",
+        "--step=move",
+        "--temporal=liveUnderFairness",
+        "--backend",
+        "tlc"
+       ],
+       "artifacts": [],
+       "checks": [
+        "liveUnderFairness"
+       ],
+       "duration_s": null,
+       "exit_status": 1,
+       "id": "R9",
+       "measure": {
+        "kind": "states",
+        "value": 21
+       },
+       "model_id": "live",
+       "model_sha256": "fd1b8df0d3f37205dc1ce1f0cb1720e110169d5025d0848d4ff7ef80d70dfce6",
+       "result_class": "violation",
+       "seed": null,
+       "target": "model",
+       "tool": "quint_verify",
+       "tool_version": "quint 0.32.0, TLC bundled",
+       "variant": "mutant:LM2"
+      },
+      {
+       "argv": [
+        "quint",
+        "verify",
+        "pagination_live.qnt",
+        "--init=init",
+        "--step=move",
+        "--temporal=liveUnderFairness",
+        "--backend",
+        "tlc"
+       ],
+       "artifacts": [],
+       "checks": [
+        "liveUnderFairness"
+       ],
+       "duration_s": 4.0,
+       "exit_status": 0,
+       "id": "R7",
+       "measure": {
+        "kind": "states",
+        "value": 63
+       },
+       "model_id": "live",
+       "model_sha256": "2161c198e50ca6ac08bc8bb5d64640dd2b228a994dd9632c3f67e9e0e47aa1a8",
+       "result_class": "ok",
+       "seed": null,
+       "target": "model",
+       "tool": "quint_verify",
+       "tool_version": "quint 0.32.0, TLC bundled",
+       "variant": "fairness"
+      },
+      {
+       "argv": [
+        "quint",
+        "verify",
+        "pagination_live.qnt",
+        "--init=init",
+        "--step=move",
+        "--temporal=reachesEnd",
+        "--backend",
+        "tlc"
+       ],
+       "artifacts": [],
+       "checks": [
+        "reachesEnd"
+       ],
+       "duration_s": 4.0,
+       "exit_status": 1,
+       "id": "R6",
+       "measure": {
+        "kind": "states",
+        "value": 63
+       },
+       "model_id": "live",
+       "model_sha256": "2161c198e50ca6ac08bc8bb5d64640dd2b228a994dd9632c3f67e9e0e47aa1a8",
+       "result_class": "violation",
+       "seed": null,
+       "target": "model",
+       "tool": "quint_verify",
+       "tool_version": "quint 0.32.0, TLC bundled",
+       "variant": "no_fairness"
+      },
+      {
+       "argv": [
+        "quint",
+        "verify",
+        "pagination_walk.qnt",
+        "--init=init",
+        "--step=move",
+        "--invariant=pageMatchesSpec,noSkipNoRepeat,completeAtEnd,bounded,beyondEndEmpty",
+        "--max-steps=10",
+        "--backend=apalache"
+       ],
+       "artifacts": [],
+       "checks": [
+        "beyondEndEmpty",
+        "bounded",
+        "completeAtEnd",
+        "noSkipNoRepeat",
+        "pageMatchesSpec"
+       ],
+       "duration_s": 7.127,
+       "exit_status": 0,
+       "id": "R4",
+       "measure": null,
+       "model_id": "walk",
+       "model_sha256": "7894335743ad5b46a0d096db47ea1ecb54a8ccb29ab405aa7edc3ee22bdbf5c0",
+       "result_class": "ok",
+       "seed": null,
+       "target": "model",
+       "tool": "quint_verify",
+       "tool_version": "quint 0.32.0, apalache 0.56.1",
+       "variant": "base"
+      }
+     ]
+    },
+    "tag": "applicable"
+   }
+  }
+ ]
+}

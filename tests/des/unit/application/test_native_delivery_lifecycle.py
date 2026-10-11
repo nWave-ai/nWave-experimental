@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
 import sys
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
 
+from des.application.architect_handoff import g10_types as handoff_types
 from des.application.delivery_continuation import (
     DeliveryContinuationRunner,
     DeliveryOutcome,
@@ -275,6 +277,57 @@ def _facts(name: str) -> DesignFacts:
             "The fixture reaches no public surface, consumer or build metadata."
         ),
     )
+
+
+def test_cited_design_sections_hashes_prerequisite_with_architect_handoff(
+    tmp_path: Path,
+) -> None:
+    entry = handoff_types.Entry(
+        kind="closure",
+        scope="value:1",
+        status=handoff_types.NotApplicable(reason="No temporal closure obligation."),
+    )
+    prerequisite = HandoverValue(
+        "producer",
+        (),
+        replace(
+            _facts("producer"),
+            architect_handoff={(entry.kind, entry.scope): entry},
+        ),
+    )
+    dependent = HandoverValue("consumer", ("producer",), _facts("consumer"))
+    stored = StoredHandover(
+        "Consume the producer contract", (prerequisite, dependent), b"{}", Project()
+    )
+
+    sections = DeliveryContinuationRunner().cited_design_sections(
+        tmp_path, stored, dependent
+    )
+
+    assert sections is not None
+    assert len(dict(sections)["prerequisite:producer"]) == 64
+
+
+def test_cited_design_sections_preserves_prerequisite_hash_without_architect_handoff(
+    tmp_path: Path,
+) -> None:
+    prerequisite = HandoverValue("producer", (), _facts("producer"))
+    dependent = HandoverValue("consumer", ("producer",), _facts("consumer"))
+    stored = StoredHandover(
+        "Consume the producer contract", (prerequisite, dependent), b"{}", Project()
+    )
+    expected = hashlib.sha256(
+        json.dumps(asdict(prerequisite), sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+
+    sections = DeliveryContinuationRunner().cited_design_sections(
+        tmp_path, stored, dependent
+    )
+
+    assert sections is not None
+    assert dict(sections)["prerequisite:producer"] == expected
 
 
 def _record(root: Path, runner, stored, value, design) -> None:
@@ -631,3 +684,99 @@ def test_native_spawn_and_setup_failures_preserve_ownership_and_name_native_repa
     assert denied.disposition is Disposition.Indeterminate
     assert denied.failure.what == "NativeRuntimeSetupUnavailable"
     assert owned.read_bytes() == b"let existing = 1\n"
+
+
+def _prompt_subject(root):
+    from des.application.handover import create_handover
+
+    (root / "design.md").write_text(
+        "# Design\n\n## Subject\n\nKeep the public contract.\n"
+    )
+    for name in ("subject.ml", "other.ml", "subject_oracle.ml", "preserve.ml"):
+        (root / name).write_text("let () = ()\n")
+    (root / "root.txt").write_text("actual host context\n")
+    facts = replace(
+        _facts("subject"),
+        authority_locator="design.md#Subject",
+        targets=(
+            DesignTarget("subject.ml", "EXTEND"),
+            DesignTarget("other.ml", "EXTEND"),
+        ),
+        prefactoring=ApplicablePrefactoring(
+            existing_oracle="preserve.ml",
+            move="Move representation.",
+            preserved_observation="Preserve current observations.",
+            verification=((sys.executable, "-c", "raise SystemExit(0)"),),
+            acceptance_supports=(),
+        ),
+    )
+    stored = create_handover(root, "deliver", (HandoverValue("A", (), facts),))
+    assert isinstance(stored, StoredHandover)
+    runner = DeliveryContinuationRunner()
+    design = runner.selected_authority(root, stored, 1)
+    assert not isinstance(design, DeliveryOutcome)
+    return stored, runner, design
+
+
+def test_native_implementation_prompt_states_a_recorded_red_oracle_only_when_one_is_recorded(
+    repository, capsys
+):
+    """Exercise the currentness reader with real turn refs, not RED measurement.
+
+    _record writes refs directly; this test does not execute public des oracle.
+    """
+    from des.cli.handoff import main
+
+    root = repository
+    stored, runner, design = _prompt_subject(root)
+    argv = [
+        "--repo-root",
+        str(root),
+        "prompt",
+        "--role",
+        "nw-functional-software-crafter",
+        "--value",
+        "1",
+        "--root-context",
+        str(root / "root.txt"),
+    ]
+    assert main(argv) == 1
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert "is absent, not recorded" in err
+    assert f"des oracle --repo-root {root} --value 1 --input -" in err
+    assert main([*argv, "--phase", "before"]) == 0
+    assert "recorded and RED" not in capsys.readouterr().out
+    _record(root, runner, stored, stored.values[0], design)
+    assert read_state(root).values[0].oracle_recorded
+    assert main(argv) == 0
+    assert "recorded and RED" in capsys.readouterr().out
+
+
+def test_crafter_prompt_advertises_only_selected_mutable_targets(repository, capsys):
+    from des.cli.handoff import main
+
+    stored, runner, design = _prompt_subject(repository)
+    _record(repository, runner, stored, stored.values[0], design)
+    assert (
+        main(
+            [
+                "--repo-root",
+                str(repository),
+                "prompt",
+                "--role",
+                "nw-functional-software-crafter",
+                "--value",
+                "1",
+                "--targets",
+                "subject.ml",
+                "--root-context",
+                str(repository / "root.txt"),
+            ]
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "subject.ml (EXTEND)" in out
+    assert "other.ml (EXTEND)" not in out
+    assert "subject_oracle.ml (EXTEND)" not in out

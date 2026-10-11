@@ -1,0 +1,6 @@
+{"role": "nw-software-crafter",
+ "required": {"feature": "str", "request": "str", "value": "str", "observation": "str", "authority": "list",
+              "operations": "str", "targets": "list", "paradigm": "str", "oracle_line": "str", "supports": "list",
+              "verification": "list", "obligations": "list", "state_lines": "list", "repo_root": "str", "root_input": "str"},
+ "blocks": {},
+ "must_contain": ["## FROM DES", "## TASK (template)", "## RETURN", "## FROM THE ROOT", "mode: IMPLEMENTATION"]}
