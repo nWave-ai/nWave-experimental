@@ -2063,7 +2063,7 @@ wheels = [
 
 [[package]]
 name = "nwave-ai"
-version = "4.0.0+atddpure.44a8d7890"
+version = "4.0.0+atddpure.2f648132f"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
