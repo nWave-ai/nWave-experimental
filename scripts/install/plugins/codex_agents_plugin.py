@@ -134,11 +134,7 @@ def _find_agents_source(context: InstallContext) -> Path | None:
 def _extract_scalar_fields(frontmatter: dict) -> dict[str, str]:
     """Extract string-valued TOML fields from the agent frontmatter.
 
-    Keeps only scalar (string) fields that have TOML equivalents, except
-    ``model``.  nWave's canonical agent sources use Claude model aliases and
-    ``inherit``; neither is a portable Codex subagent model setting.  Omitting
-    the field makes Codex use its configured, supported session model.
-
+    Keeps only scalar (string) fields that have TOML equivalents.
     Drops all fields in CODEX_AGENT_FORBIDDEN_FIELDS and any non-string
     complex values (lists, dicts).
 
@@ -151,9 +147,7 @@ def _extract_scalar_fields(frontmatter: dict) -> dict[str, str]:
     return {
         key: str(value)
         for key, value in frontmatter.items()
-        if key not in CODEX_AGENT_FORBIDDEN_FIELDS
-        and key != "model"
-        and isinstance(value, str)
+        if key not in CODEX_AGENT_FORBIDDEN_FIELDS and isinstance(value, str)
     }
 
 

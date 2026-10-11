@@ -177,12 +177,14 @@ class TestTomlStringRendering:
 class TestExtractScalarFields:
     """_extract_scalar_fields: drops forbidden + non-scalar YAML keys."""
 
-    def test_drops_model_to_use_configured_codex_session_model(self):
-        """Scenario: Codex agents must not carry Claude model aliases.
+    def test_passes_model_through_for_downstream_omit(self):
+        """Scenario: _extract_scalar_fields passes model to _omit_unsupported_model.
 
         Slice: Codex reviewer registration. Given an nWave agent frontmatter
-        model alias, when it is projected to Codex fields, then the model is
-        omitted so Codex resolves its configured session model.
+        with a model field, when projected to scalar fields, then model is
+        included so _omit_unsupported_model can inspect and drop Claude aliases.
+        Claude aliases are excluded from the final TOML by _omit_unsupported_model,
+        not by _extract_scalar_fields (see TestTransformAgent for end-to-end).
         """
         # Given
         frontmatter = {"name": "nw-foo", "description": "bar", "model": "sonnet"}
@@ -190,8 +192,8 @@ class TestExtractScalarFields:
         # When
         result = _extract_scalar_fields(frontmatter)
 
-        # Then
-        assert result == {"name": "nw-foo", "description": "bar"}
+        # Then — model is kept here; _omit_unsupported_model removes Claude aliases
+        assert result == {"name": "nw-foo", "description": "bar", "model": "sonnet"}
 
     def test_drops_forbidden_fields(self):
         # bypass: pure function — verifies field exclusion
