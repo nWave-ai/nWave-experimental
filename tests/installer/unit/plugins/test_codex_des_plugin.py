@@ -350,10 +350,13 @@ class TestInstallWritesHooksJsonAndManifest:
         assert launcher.is_file()
         doc = json.loads((codex_dir / "hooks.json").read_text(encoding="utf-8"))
         command = doc["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        _exe = sys.executable
         expected_python = (
-            sys.executable
-            if codex_des_plugin.is_durable_interpreter_path(sys.executable)
-            else "python3"
+            "python3"
+            if not codex_des_plugin.is_durable_interpreter_path(_exe)
+            or "/.venv/" in _exe
+            or "\\.venv\\" in _exe
+            else _exe
         )
         assert shlex.split(command) == [
             expected_python,
@@ -422,10 +425,13 @@ class TestInstallWritesHooksJsonAndManifest:
         def ps_literal(value: str) -> str:
             return "'" + value.replace("'", "''") + "'"
 
+        _exe = sys.executable
         expected_python = (
-            sys.executable
-            if codex_des_plugin.is_durable_interpreter_path(sys.executable)
-            else "python3"
+            "python3"
+            if not codex_des_plugin.is_durable_interpreter_path(_exe)
+            or "/.venv/" in _exe
+            or "\\.venv\\" in _exe
+            else _exe
         )
         expected = (
             f"& {ps_literal(expected_python)} {ps_literal(str(launcher))} "

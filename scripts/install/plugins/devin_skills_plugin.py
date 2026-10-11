@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
+from shutil import which as _which
 
 from scripts.install.plugins.base import (
     InstallationPlugin,
@@ -34,7 +35,7 @@ from scripts.shared.agent_catalog import (
     load_private_skills,
     load_public_agents,
 )
-from scripts.shared.install_paths import devin_skills_dir
+from scripts.shared.install_paths import devin_config_dir, devin_skills_dir
 from scripts.shared.skill_distribution import (
     enumerate_skills,
     filter_public_skills,
@@ -131,6 +132,32 @@ class DevinSkillsPlugin(InstallationPlugin):
     def __init__(self) -> None:
         super().__init__(name="devin-skills", priority=37)
 
+    def validate_prerequisites(self, context: InstallContext) -> PluginResult:
+        """Check whether Devin CLI is present; skip gracefully if not.
+
+        Detection: ~/.config/devin/ directory exists OR ``devin`` binary in PATH.
+        If neither is found, the plugin returns success with a skip message —
+        the absence of Devin is not an error.
+        """
+        devin_dir = devin_config_dir()
+        devin_binary = _which("devin") is not None
+        if (
+            "devin" not in context.target_platforms
+            and not devin_dir.exists()
+            and not devin_binary
+        ):
+            return PluginResult(
+                success=True,
+                plugin_name=self.name,
+                message="Devin not detected, skipping skills installation",
+            )
+
+        return PluginResult(
+            success=True,
+            plugin_name=self.name,
+            message="Devin prerequisites validated",
+        )
+
     def install(self, context: InstallContext) -> PluginResult:
         """Install public skills from nWave/skills/ into Devin's global tree.
 
@@ -141,6 +168,10 @@ class DevinSkillsPlugin(InstallationPlugin):
         symlinks are never traversed or replaced.
         """
         try:
+            prereq = self.validate_prerequisites(context)
+            if "skip" in prereq.message.lower():
+                return prereq
+
             context.logger.info("  📦 Installing Devin skills...")
 
             skills_source = _find_skills_source(context)

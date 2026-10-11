@@ -1127,6 +1127,67 @@ class NWaveUninstaller:
         else:
             self.logger.warn(f"  ⚠️ OpenCode DES shim removal: {result.message}")
 
+    def remove_cursor_des_hooks(self) -> None:
+        """Remove the nWave DES hook from ~/.cursor/hooks.json.
+
+        The installer writes a ``preToolUse`` entry into Cursor's global
+        hooks.json when Cursor is detected. Clean uninstall MUST remove it
+        while leaving any hook the operator authored themselves untouched —
+        CursorDESPlugin owns only the nwave entry it wrote.
+        """
+        if self.dry_run:
+            self.logger.info("  🚨 [DRY RUN] Would remove Cursor DES hook")
+            return
+
+        try:
+            from scripts.install.plugins.base import InstallContext
+            from scripts.install.plugins.cursor_des_plugin import CursorDESPlugin
+        except ImportError:
+            from plugins.base import InstallContext
+            from plugins.cursor_des_plugin import CursorDESPlugin
+
+        context = InstallContext(
+            claude_dir=self.claude_config_dir,
+            scripts_dir=self.claude_config_dir / "scripts",
+            templates_dir=self.claude_config_dir / "templates",
+            logger=self.logger,
+        )
+        result = CursorDESPlugin().uninstall(context)
+        if result.success:
+            self.logger.info("  🗑️ Removed Cursor DES hook")
+        else:
+            self.logger.warn(f"  ⚠️ Cursor DES hook removal: {result.message}")
+
+    def remove_devin_skills(self) -> None:
+        """Remove manifest-owned nWave skills from ~/.config/devin/skills/.
+
+        The installer copies ``nw-*`` skill directories when Devin is
+        detected. Clean uninstall removes only names recorded in the
+        DevinSkillsPlugin manifest; user-created skills are never touched.
+        """
+        if self.dry_run:
+            self.logger.info("  🚨 [DRY RUN] Would remove Devin skills")
+            return
+
+        try:
+            from scripts.install.plugins.base import InstallContext
+            from scripts.install.plugins.devin_skills_plugin import DevinSkillsPlugin
+        except ImportError:
+            from plugins.base import InstallContext
+            from plugins.devin_skills_plugin import DevinSkillsPlugin
+
+        context = InstallContext(
+            claude_dir=self.claude_config_dir,
+            scripts_dir=self.claude_config_dir / "scripts",
+            templates_dir=self.claude_config_dir / "templates",
+            logger=self.logger,
+        )
+        result = DevinSkillsPlugin().uninstall(context)
+        if result.success:
+            self.logger.info("  🗑️ Removed Devin skills")
+        else:
+            self.logger.warn(f"  ⚠️ Devin skills removal: {result.message}")
+
     def remove_omp_assets(self) -> None:
         """Remove manifest-owned OMP skills, agents, commands and extension.
 
@@ -1582,6 +1643,8 @@ def main():
     uninstaller.remove_des_hooks()
     uninstaller.remove_copilot_des_hooks()
     uninstaller.remove_opencode_des_hooks()
+    uninstaller.remove_cursor_des_hooks()
+    uninstaller.remove_devin_skills()
     uninstaller.remove_omp_assets()
     uninstaller.remove_des_hook_scripts()
     uninstaller.remove_attribution()
