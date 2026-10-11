@@ -1438,17 +1438,25 @@ class NWaveInstaller:
             registry.register(AgentsPlugin())
             registry.register(CommandsPlugin())
             registry.register(SkillsPlugin())
-            # NWAVE_AGENTS_HOME honored here too (same override every other
-            # ~/.nwave-rooted read/write in this file already honors): left
-            # at AttributionPlugin's own default (None -> Path.home()), an
-            # isolated caller with NWAVE_AGENTS_HOME pinned still had this
-            # plugin's config_dir/hooks_dir/config.json read-and-write
-            # (migrate_legacy_hook, install_prepare_commit_msg_hook,
-            # read/write_global_config) land in the operator's real home.
-            # Default is unchanged when unset.
-            registry.register(
-                AttributionPlugin(config_dir=self._locations.agents_home / ".nwave")
+        # AttributionPlugin is host-neutral: the enforcement runtime (PreToolUse
+        # universal handler) and config (~/.nwave/config.json) work identically
+        # across Claude Code, Codex, Cursor, Copilot, OMP, and OpenCode. The
+        # plugin is priority 200 and fail-open — it never blocks core install.
+        # NWAVE_AGENTS_HOME honored here (same override every other
+        # ~/.nwave-rooted read/write in this file already honors): left at
+        # AttributionPlugin's own default (None -> Path.home()), an isolated
+        # caller with NWAVE_AGENTS_HOME pinned still had config_dir/hooks_dir/
+        # config.json (migrate_legacy_hook, read/write_global_config) land in
+        # the operator's real home. Default is unchanged when unset.
+        # Spike pending (S3): whether each host honors `updatedInput` on a
+        # preToolUse allow is unverified per host. Attribution is seeded here;
+        # claiming it works on a specific host requires a live-commit spike.
+        _locs = getattr(self, "_locations", None)
+        registry.register(
+            AttributionPlugin(
+                config_dir=_locs.agents_home / ".nwave" if _locs is not None else None
             )
+        )
         # OpenCode plugins (registered when opencode detected)
         if target_platforms and "opencode" in target_platforms:
             opencode_skills = OpenCodeSkillsPlugin()
@@ -1490,7 +1498,14 @@ class NWaveInstaller:
             registry.register(omp_agents)
             registry.register(OmpCommandsPlugin())
             registry.register(OmpDESPlugin())
-        # Devin CLI plugins (skills only — no DES hook or native agent format).
+        # Devin CLI plugins. All 181 skills are installed, including the 174
+        # user-invocable command-skills (equivalent to Claude Code commands).
+        # Spike pending (S4): no DES hook or native agent format has been probed
+        # against a running Devin CLI host — these are asserted absent from commit
+        # message context, not from an empirical probe. Spike pending (S5):
+        # skills reference `des design --repo-root ROOT --input -`; the DES
+        # runtime lands at ~/.claude/lib/python/des/ (via DESPlugin above) but
+        # whether Devin's shell can resolve the `des` command is unverified.
         if target_platforms and "devin" in target_platforms:
             registry.register(DevinSkillsPlugin())
         return registry

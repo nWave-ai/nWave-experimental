@@ -14,6 +14,15 @@ Walking-skeleton scope:
 - Ensures ~/.cursor/agents/ exists (checklist path)
 - Writes .nwave-des-manifest.json for clean uninstall
 - Preserves user-authored hooks and ``version``
+
+Spike pending (S1): the event name ``preToolUse`` and matcher ``Shell|Write|
+Edit|Delete`` have not been verified against a running Cursor host. Unlike the
+Codex port (which records "Observed from codex-cli 0.145.0 on 2026-07-26"), no
+live-run evidence exists here. A green install/verify only attests that
+hooks.json was written correctly on disk; it does NOT attest that Cursor fires
+the hook at runtime. To close this spike: install, restart Cursor, run a shell
+action, and confirm ~/.claude/des-audit.jsonl receives a HOOK_INVOKED entry per
+the smoke test in docs/guides/installing-cursor.md.
 """
 
 from __future__ import annotations
