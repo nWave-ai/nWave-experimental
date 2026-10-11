@@ -111,6 +111,9 @@ mutation-test.log
 # nWave audit logs (local only)
 .nwave-audit.log
 
+# nWave generated analysis artifacts
+nwave-issues-summary.md
+
 # Hypothesis property-based testing
 .hypothesis/
 

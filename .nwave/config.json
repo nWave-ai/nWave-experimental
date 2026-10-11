@@ -1,0 +1,6 @@
+{
+  "audit_log_dir": ".nwave/des/logs",
+  "audit_logging_enabled": true,
+  "enabled": true,
+  "schema-version": 1
+}
