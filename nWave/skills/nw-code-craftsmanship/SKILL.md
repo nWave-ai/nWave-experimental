@@ -40,6 +40,36 @@ For OO application/domain code, use SOLID (single responsibility, open/closed, L
 
 The shared readability, ownership, reuse and boundary principles apply in both paradigms; OO-specific constraints above stay scoped to OO application/domain code. A unit can be a function or module as much as a class. Never impose a generalized framework, abstraction layer, or plugin mechanism the current requirement does not need. Generalize only when a second real caller demands it.
 
+## FP-Specific Dependency Injection
+
+In functional code, dependency injection is achieved through composition, not frameworks. Three idiomatic patterns:
+
+- **Currying / partial application** — partially apply a dependency (e.g., a repository function) to produce a new function; the caller sees only the remaining arguments. Prefer this for single-dependency scenarios where the injected value is stable for a computation's lifetime.
+- **Reader monad / environment record** — thread a shared read-only environment (config, clock, logger, repo) through a chain of functions via an explicit `env` parameter or a Reader-typed computation. Use when three or more functions in a pipeline need the same shared capabilities. Avoid implicit global singletons — they make units untestable.
+- **Effect types as port abstractions** — in typed FP (Haskell, Scala ZIO, PureScript, F#, Kotlin with Arrow), represent side-effects as typed capabilities (`IO`, `ZIO[R,E,A]`, `Eff`). The port is the effect type signature; adapters swap the interpreter. This is the FP analogue of the driven-port/adapter split.
+
+Choose the lightest-weight form that preserves testability: currying for a single collaborator, Reader/env record for a shared context, typed effects when the language supports it and the boundary is meaningful. Never impose a monad stack or effect library when the function takes a plain argument.
+
+## FP-Specific Hexagonal Architecture
+
+The same port/adapter principle applies in FP, but immutability changes the texture:
+
+- **Driving ports** are pure functions or types expressing the public interface. A driving adapter converts external input (HTTP request, CLI arg) into the domain's algebraic types.
+- **Driven ports** are functions passed as arguments (or captured in an environment record) rather than interface implementations. An in-memory adapter is a pure function; a real adapter runs in IO.
+- **Immutability boundary** — domain logic is pure; the IO/effect boundary is the adapter. Do not let IO leak into domain functions. A function that produces a value from inputs is always testable without mocking.
+- **Effect types as driven ports** — a `Clock`, `Logger`, or `Repo` capability injected as an effect type is the FP hexagonal pattern. Test with a pure interpreter; deploy with the real interpreter.
+
+The boundary invariant: the domain module must compile and test without importing any adapter. If it imports an HTTP client or a DB driver, the boundary has leaked.
+
+## Usable Design for Algebraic APIs
+
+Algebraic APIs (typeclasses, monoidal structures, combinators) require extra naming and discoverability discipline because their power is non-obvious:
+
+- **Operation naming** — prefer names from the problem domain (`merge`, `combine`, `validate`) over mathematical names (`mappend`, `fold`) unless the mathematical name is universally understood in the team's context. The first goal is legibility at the call site.
+- **Discoverability** — group related combinators in one module with a clear module name. A `Parser` module that exports `map`, `flatMap`, `or`, `many`, `between` is navigable; scattering them across utils is not. Document the composition laws (associativity, identity) as property tests, not prose.
+- **Composition laws as tests** — laws are executable contracts. A monoid must satisfy `combine(a, identity) == a` and `combine(combine(a,b),c) == combine(a,combine(b,c))`. Write these as parametric property tests; they double as usage examples.
+- **Minimal footprint** — expose the smallest orthogonal set of primitives from which callers can derive everything else. A combinator expressible from existing primitives should not be a first-class API member unless it appears in three or more call sites (Rule of Three).
+
 ## Role Boundary
 
 The LLM (orchestrating agent) chooses and orchestrates the design; the crafter respects the design already selected and implements within it. When implementation surfaces a new ownership conflict (two candidate owners for the same rule/fact), the crafter raises it to the architect rather than picking one silently. A reviewer judges semantic duplication as part of review. None of this is a runtime gate — it is authoring and review discipline, not an enforced check.
