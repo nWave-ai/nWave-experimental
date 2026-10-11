@@ -228,6 +228,32 @@ def codex_config_dir() -> Path:
     return Path(override) if override else Path.home() / ".codex"
 
 
+# Devin CLI config root. Devin CLI stores its user-global config under
+# ~/.config/devin/ on Linux/macOS (documented in devin extensibility docs).
+# DEVIN_CONFIG_DIR is an nWave-level override for test isolation; Devin CLI
+# itself has no published env var for relocating this directory.
+
+DEVIN_CONFIG_DIR_ENV = "DEVIN_CONFIG_DIR"
+
+
+def devin_config_dir() -> Path:
+    """Return the Devin CLI configuration root, honoring DEVIN_CONFIG_DIR.
+
+    Uses ~/.config/devin/ by default (the canonical Devin CLI path on
+    Linux/macOS). DEVIN_CONFIG_DIR may be set for install isolation in tests.
+    """
+    override = env_or_none(DEVIN_CONFIG_DIR_ENV)
+    return Path(override) if override else Path.home() / ".config" / "devin"
+
+
+def devin_skills_dir() -> Path:
+    """Return the Devin CLI global skills directory.
+
+    Devin CLI discovers user-global skills at <config-root>/skills/.
+    """
+    return devin_config_dir() / "skills"
+
+
 # OMP (oh-my-pi) native roots. OMP 18.5 resolves TWO DIFFERENT roots, and the
 # installer must follow each faithfully:
 #

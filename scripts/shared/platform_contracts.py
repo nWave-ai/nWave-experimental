@@ -4,7 +4,7 @@ Defines canonical path rewrite mappings, forbidden fields, and exceptions
 used by all installer plugins. Every plugin that handles platform differences
 MUST import from this module rather than hardcoding rules locally (ADR-003).
 
-Supported platforms: claude_code, opencode, codex, omp.
+Supported platforms: claude_code, opencode, codex, omp, devin.
 """
 
 from __future__ import annotations
@@ -145,6 +145,25 @@ OMP_PATH_REWRITES: tuple[tuple[str, str], ...] = (
 # directory the runtime scheme does not publish.
 
 OMP_PATH_REWRITE_EXCEPTIONS: tuple[str, ...] = ("~/.claude/lib/python",)
+
+
+# -- Path Rewrite Rules (Claude Code -> Devin CLI) ----------------------------
+#
+# Devin CLI discovers global skills at ~/.config/devin/skills/ (canonical user
+# path documented in devin skills paths). Rules follow the same ordering
+# convention as OMP: more specific prefixes before general ones.
+# The DES runtime lib path is excepted: skills reference it through the
+# host-neutral pointer scheme, never through a per-host copy.
+
+DEVIN_PATH_REWRITES: tuple[tuple[str, str], ...] = (
+    ("~/.claude/skills/", "~/.config/devin/skills/"),
+    ("~/.claude/agents/nw/", "~/.config/devin/skills/"),
+    ("~/.claude/agents/", "~/.config/devin/skills/"),
+    ("~/.claude/nWave/skills/", "~/.config/devin/skills/"),
+    ("~/.claude/nWave/", "~/.config/devin/"),
+)
+
+DEVIN_PATH_REWRITE_EXCEPTIONS: tuple[str, ...] = ("~/.claude/lib/python",)
 
 
 # -- OMP Agent Frontmatter Contract -------------------------------------------

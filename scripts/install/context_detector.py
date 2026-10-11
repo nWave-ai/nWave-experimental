@@ -225,6 +225,7 @@ class TargetPlatform(Enum):
     CURSOR = "cursor"
     COPILOT_CLI = "copilot"
     OMP = "omp"
+    DEVIN = "devin"
 
 
 def _detect_claude_code() -> bool:
@@ -363,6 +364,28 @@ def _detect_omp() -> bool:
     return omp_binary or omp_config_exists
 
 
+def _detect_devin() -> bool:
+    """Detect if Devin CLI is available for installation.
+
+    Checks two signals:
+    - `devin` binary in PATH (via shutil.which)
+    - ~/.config/devin/ directory exists (created on first Devin CLI launch)
+
+    DEVIN_CONFIG_DIR may override the config root for test isolation.
+
+    Returns:
+        True if any Devin CLI signal is detected.
+    """
+    try:
+        from scripts.shared.install_paths import devin_config_dir
+    except ImportError:  # installed layout: scripts/ is on sys.path
+        from shared.install_paths import devin_config_dir  # type: ignore[no-redef]
+
+    devin_binary = shutil.which("devin") is not None
+    devin_config_exists = devin_config_dir().is_dir()
+    return devin_binary or devin_config_exists
+
+
 def detect_target_platforms() -> set[TargetPlatform]:
     """Auto-detect which AI coding platforms are available for installation.
 
@@ -374,6 +397,7 @@ def detect_target_platforms() -> set[TargetPlatform]:
     - Copilot CLI: COPILOT_CLI env set OR $COPILOT_HOME/~/.copilot/ exists OR
       `copilot` binary in PATH
     - OMP: `omp` binary in PATH OR the OMP native agent directory exists
+    - Devin CLI: `devin` binary in PATH OR ~/.config/devin/ directory exists
 
     Returns:
         Set of detected platforms, which is empty when no supported host is
@@ -399,5 +423,8 @@ def detect_target_platforms() -> set[TargetPlatform]:
 
     if _detect_omp():
         platforms.add(TargetPlatform.OMP)
+
+    if _detect_devin():
+        platforms.add(TargetPlatform.DEVIN)
 
     return platforms

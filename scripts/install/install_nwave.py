@@ -189,6 +189,7 @@ try:
     from scripts.install.plugins.copilot_des_plugin import CopilotDESPlugin
     from scripts.install.plugins.cursor_des_plugin import CursorDESPlugin
     from scripts.install.plugins.des_plugin import DESPlugin
+    from scripts.install.plugins.devin_skills_plugin import DevinSkillsPlugin
     from scripts.install.plugins.omp_agents_plugin import OmpAgentsPlugin
     from scripts.install.plugins.omp_commands_plugin import OmpCommandsPlugin
     from scripts.install.plugins.omp_des_plugin import OMP_GUARD_CEILING, OmpDESPlugin
@@ -243,6 +244,7 @@ except ImportError:
     from plugins.copilot_des_plugin import CopilotDESPlugin
     from plugins.cursor_des_plugin import CursorDESPlugin
     from plugins.des_plugin import DESPlugin
+    from plugins.devin_skills_plugin import DevinSkillsPlugin
     from plugins.omp_agents_plugin import OmpAgentsPlugin
     from plugins.omp_commands_plugin import OmpCommandsPlugin
     from plugins.omp_des_plugin import OMP_GUARD_CEILING, OmpDESPlugin
@@ -1488,6 +1490,9 @@ class NWaveInstaller:
             registry.register(omp_agents)
             registry.register(OmpCommandsPlugin())
             registry.register(OmpDESPlugin())
+        # Devin CLI plugins (skills only — no DES hook or native agent format).
+        if target_platforms and "devin" in target_platforms:
+            registry.register(DevinSkillsPlugin())
         return registry
 
     def install_framework(self) -> bool:
@@ -1653,6 +1658,55 @@ class NWaveInstaller:
                     if not plan.success:
                         self.logger.error(plan.message)
                         return False
+
+            if "devin" in target_platforms:
+                from scripts.install.plugins.devin_skills_plugin import (
+                    _find_skills_source as _find_devin_skills_source,
+                )
+                from scripts.shared.install_paths import devin_skills_dir
+                from scripts.shared.skill_distribution import (
+                    enumerate_skills,
+                    filter_public_skills,
+                )
+                from scripts.shared.agent_catalog import (
+                    build_ownership_map,
+                    detect_command_skills,
+                    load_private_skills,
+                )
+
+                devin_context = InstallContext(
+                    claude_dir=self.claude_config_dir,
+                    scripts_dir=self.project_root / "scripts" / "install",
+                    templates_dir=self.framework_source / "templates",
+                    logger=self.logger,
+                    project_root=self.project_root,
+                    framework_source=self.framework_source,
+                    dev_mode=self.dev_mode,
+                    dry_run=True,
+                    target_platforms=set(target_platforms),
+                )
+                devin_skills_source = _find_devin_skills_source(devin_context)
+                devin_skill_count = 0
+                if devin_skills_source is not None:
+                    devin_public_agents = (
+                        set()
+                        if self.dev_mode
+                        else load_public_agents(self.project_root / "nWave")
+                    )
+                    devin_entries = enumerate_skills(devin_skills_source)
+                    if not self.dev_mode:
+                        devin_entries = filter_public_skills(
+                            devin_entries,
+                            devin_public_agents,
+                            build_ownership_map(self.project_root / "nWave" / "agents"),
+                            detect_command_skills(devin_skills_source),
+                            load_private_skills(self.project_root / "nWave"),
+                        )
+                    devin_skill_count = len(devin_entries)
+                self.logger.info(
+                    f"  🚨 [DRY RUN] Would install {devin_skill_count} Devin skills to "
+                    f"{devin_skills_dir()}"
+                )
 
             return True
 
@@ -2195,7 +2249,7 @@ def show_help():
     help_text = f"""
 {B}DESCRIPTION:{N}
     Installs the nWave methodology framework to your global AI coding host
-    config directory (Claude Code, OpenCode, Codex, Cursor, Copilot, OMP).
+    config directory (Claude Code, OpenCode, Codex, Cursor, Copilot, OMP, Devin).
     This makes all specialized agents and commands available across all projects.
 
 {B}USAGE:{N}
@@ -2209,6 +2263,7 @@ def show_help():
                       before a real install -- run this first if unsure.
     --dev             Install ALL agents, skills and OMP commands (including private)
     --platform omp    Install public OMP agents, skills, /nw-* commands and DES extension
+    --platform devin  Install public skills to ~/.config/devin/skills/ (Devin CLI)
     --adopt-legacy-codex-dev
                       With --dev --platform codex only, quarantine safely
                       backed-up legacy unmanifested Codex nWave assets
@@ -2258,7 +2313,7 @@ def _resolve_platform_override(platform_flag: str) -> set[str] | None:
 
     Args:
         platform_flag: One of "auto", "claude-code", "opencode", "codex",
-            "cursor", "copilot", "omp", "all".
+            "cursor", "copilot", "omp", "devin", "all".
 
     Returns:
         None for auto-detect, or a set of platform string values.
@@ -2271,7 +2326,8 @@ def _resolve_platform_override(platform_flag: str) -> set[str] | None:
         "cursor": {"cursor"},
         "copilot": {"copilot"},
         "omp": {"omp"},
-        "all": {"claude_code", "opencode", "codex", "cursor", "copilot", "omp"},
+        "devin": {"devin"},
+        "all": {"claude_code", "opencode", "codex", "cursor", "copilot", "omp", "devin"},
     }
     return platform_map[platform_flag]
 
@@ -2298,6 +2354,7 @@ def main():
             "cursor",
             "copilot",
             "omp",
+            "devin",
             "all",
         ],
         default="auto",
