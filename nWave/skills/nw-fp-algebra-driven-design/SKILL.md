@@ -19,7 +19,7 @@ just FP data types. This file's own contribution is narrower: the catalogue
 of recurring FP structures (Section 2) and how they compose. Load the
 protocol skill for the method; load this one for the structure catalogue.
 
-Refs: [fp-principles](../nw-fp-principles/SKILL.md) | [fp-domain-modeling](../nw-fp-domain-modeling/SKILL.md) | [fp-usable-design](../nw-fp-usable-design/SKILL.md)
+Refs: [fp-principles](../nw-fp-principles/SKILL.md) | [fp-domain-modeling](../nw-fp-domain-modeling/SKILL.md) | [code-craftsmanship](../nw-code-craftsmanship/SKILL.md)
 
 ---
 
@@ -97,7 +97,7 @@ generators. See `nw-property-based-testing` for ownership.
 
 **Rules + Domain Modeling** (see [fp-domain-modeling](../nw-fp-domain-modeling/SKILL.md)): Domain wrappers with smart constructors are algebraic rules. State machine transitions are rules about valid sequences.
 
-**Rules + Usable Design** (see [fp-usable-design](../nw-fp-usable-design/SKILL.md)): Simple algebraic rules map to simple, searchable, nameable operations — improving navigability and learnability.
+**Rules + Usable Design** (see [code-craftsmanship](../nw-code-craftsmanship/SKILL.md)): Simple algebraic rules map to simple, searchable, nameable operations — improving navigability and learnability.
 
 **Decomposition + Feature Organization**: When algebraic decomposition splits a monolithic operation into orthogonal pieces, organize by feature domain.
 

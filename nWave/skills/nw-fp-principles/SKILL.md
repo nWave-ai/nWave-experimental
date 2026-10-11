@@ -9,7 +9,7 @@ user-invocable: false
 
 Core functional programming thinking patterns. Language-agnostic.
 
-Cross-references: [fp-domain-modeling](../nw-fp-domain-modeling/SKILL.md) | [fp-hexagonal-architecture](../nw-fp-hexagonal-architecture/SKILL.md) | [fp-algebra-driven-design](../nw-fp-algebra-driven-design/SKILL.md)
+Cross-references: [fp-domain-modeling](../nw-fp-domain-modeling/SKILL.md) | [code-craftsmanship](../nw-code-craftsmanship/SKILL.md) | [fp-algebra-driven-design](../nw-fp-algebra-driven-design/SKILL.md)
 
 ---
 
@@ -167,7 +167,7 @@ pendingTotals = orders
 | **Accumulator** (Writer) | Side-channel output | Logging, auditing, collecting metadata |
 | **Stateful** (State) | Sequential state changes | Counters, parsers, accumulators |
 
-These compose: real applications stack multiple patterns. See [fp-hexagonal-architecture](../nw-fp-hexagonal-architecture/SKILL.md) for DI patterns.
+These compose: real applications stack multiple patterns. See [code-craftsmanship](../nw-code-craftsmanship/SKILL.md) for DI patterns.
 
 ---
 

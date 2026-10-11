@@ -10,7 +10,7 @@ disable-model-invocation: true
 
 Domain modeling with types. Make illegal states unrepresentable, workflows as pipelines, error handling at the type level.
 
-Cross-references: [fp-principles](../nw-fp-principles/SKILL.md) | [fp-hexagonal-architecture](../nw-fp-hexagonal-architecture/SKILL.md) | [fp-algebra-driven-design](../nw-fp-algebra-driven-design/SKILL.md)
+Cross-references: [fp-principles](../nw-fp-principles/SKILL.md) | [code-craftsmanship](../nw-code-craftsmanship/SKILL.md) | [fp-algebra-driven-design](../nw-fp-algebra-driven-design/SKILL.md)
 
 ---
 
@@ -186,7 +186,7 @@ GetProductPrice        : ProductCode -> Price
 
 **Public vs. internal**: Top-level workflow hides dependencies from callers. Internal steps make them explicit.
 
-See [fp-hexagonal-architecture](../nw-fp-hexagonal-architecture/SKILL.md) section 5 for full DI decision tree.
+See [code-craftsmanship](../nw-code-craftsmanship/SKILL.md) section 5 for full DI decision tree.
 
 ---
 
