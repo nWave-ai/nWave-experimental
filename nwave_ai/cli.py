@@ -868,6 +868,66 @@ def _handle_attribution(args: list[str]) -> int:
     return 1
 
 
+def _report_native_platform_status(*, json_output: bool = False) -> bool:
+    """Detect and report native-platform (Codex/Cursor/Devin) installation status.
+
+    Runs plugin verify() for each platform whose config root is present on disk.
+    Human mode prints a summary section; JSON mode is intentionally skipped to
+    keep the existing JSON contract stable — use verify_nwave.py --platform all
+    --json for machine-readable native checks.
+
+    Returns True when any native platform check fails, False otherwise.
+    """
+    try:
+        from scripts.install.verify_nwave import (
+            _NATIVE_PLATFORMS,
+            _make_verify_context,
+            verify_native_platform,
+            format_native_results,
+        )
+        from scripts.install.install_utils import PathUtils
+        from scripts.shared.install_paths import (
+            devin_config_dir,
+            codex_config_dir,
+        )
+    except ImportError:
+        return False
+
+    if json_output:
+        return False
+
+    home = Path.home()
+    platform_presence: dict[str, bool] = {
+        "codex": codex_config_dir().exists(),
+        "cursor": (home / ".cursor").is_dir(),
+        "devin": devin_config_dir().exists(),
+    }
+    active = [p for p in _NATIVE_PLATFORMS if platform_presence.get(p, False)]
+    if not active:
+        return False
+
+    config_dir = PathUtils.get_claude_config_dir()
+
+    class _SilentLogger:
+        def info(self, _msg: str) -> None: pass
+        def error(self, _msg: str) -> None: pass
+        def warn(self, _msg: str) -> None: pass
+
+    any_failed = False
+    print()
+    print("Native platforms detected:")
+    for p in active:
+        try:
+            p_results = verify_native_platform(p, config_dir, _SilentLogger())
+            if not all(r.success for r in p_results):
+                any_failed = True
+            print(format_native_results(p, p_results))
+        except Exception as exc:  # noqa: BLE001 — best-effort, must not crash doctor
+            print(f"  ⚠️  {p}: verification error — {exc}")
+            any_failed = True
+    return any_failed
+
+
 def _handle_doctor(args: list[str]) -> int:
     """Handle 'doctor [--json] [--fix] [--target <path>] [--help]' subcommand.
 
@@ -932,7 +992,9 @@ def _handle_doctor(args: list[str]) -> int:
     else:
         print(render_human(results))
 
-    if any(not r.passed for r in results):
+    native_failed = _report_native_platform_status(json_output=json_output)
+
+    if any(not r.passed for r in results) or native_failed:
         return 1
     return 0
 
