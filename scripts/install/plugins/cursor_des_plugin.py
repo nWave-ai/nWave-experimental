@@ -15,14 +15,17 @@ Walking-skeleton scope:
 - Writes .nwave-des-manifest.json for clean uninstall
 - Preserves user-authored hooks and ``version``
 
-Spike pending (S1): the event name ``preToolUse`` and matcher ``Shell|Write|
-Edit|Delete`` have not been verified against a running Cursor host. Unlike the
-Codex port (which records "Observed from codex-cli 0.145.0 on 2026-07-26"), no
-live-run evidence exists here. A green install/verify only attests that
-hooks.json was written correctly on disk; it does NOT attest that Cursor fires
-the hook at runtime. To close this spike: install, restart Cursor, run a shell
-action, and confirm ~/.claude/des-audit.jsonl receives a HOOK_INVOKED entry per
-the smoke test in docs/guides/installing-cursor.md.
+S1 PARTIALLY CLOSED: ``preToolUse`` is confirmed as a valid live Cursor event.
+Inspection of a running ~/.cursor/hooks.json on 2026-10-11 (Cursor 3.23.23)
+showed 7 registered event types including ``preToolUse`` and
+``beforeShellExecution``; other installed tools already use ``preToolUse``,
+confirming Cursor fires it at runtime. The nWave entry is written correctly with
+matcher ``Shell|Write|Edit|Delete``. Remaining gap: runtime firing of the
+specific nWave entry has not been confirmed by observing a HOOK_INVOKED entry in
+~/.claude/des-audit.jsonl after a live Cursor Shell/Write/Edit/Delete action.
+The audit log is empty because nWave DES only writes entries during active DES
+steps (project must be enabled). To fully close S1: perform a Shell/Write/Edit
+action in Cursor, then check des-audit.jsonl for a HOOK_INVOKED entry.
 """
 
 from __future__ import annotations

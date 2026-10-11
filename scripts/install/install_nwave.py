@@ -1500,12 +1500,19 @@ class NWaveInstaller:
             registry.register(OmpDESPlugin())
         # Devin CLI plugins. All 181 skills are installed, including the 174
         # user-invocable command-skills (equivalent to Claude Code commands).
-        # Spike pending (S4): no DES hook or native agent format has been probed
-        # against a running Devin CLI host — these are asserted absent from commit
-        # message context, not from an empirical probe. Spike pending (S5):
-        # skills reference `des design --repo-root ROOT --input -`; the DES
-        # runtime lands at ~/.claude/lib/python/des/ (via DESPlugin above) but
-        # whether Devin's shell can resolve the `des` command is unverified.
+        # Skills are discovered as /devin:nw-* slash commands (confirmed via
+        # `devin skills list` on Devin 3000.6.14, 2026-10-11).
+        # S4 CLOSED (A — platform limitation): Devin 3000.6.14 has no hook
+        # subcommand and no hooks key in config.json. Probe confirmed via
+        # `devin --help` and `devin config show` on 2026-10-11. Devin uses a
+        # permissions model (Exec allow-lists in config.json) rather than
+        # pre-tool-use hooks. DES enforcement is not possible on Devin.
+        # S5 CONFIRMED GAP: `des` is not in PATH after a Devin install. The
+        # DES runtime lands at ~/.claude/lib/python/des/ (not on PATH), so
+        # `des design ...` invocations inside skill bodies cannot execute in
+        # Devin's shell environment. Skills work as LLM methodology guidance;
+        # DES step EXECUTION requires `PYTHONPATH=~/.claude/lib/python` or a
+        # `des` shim on PATH. Probe confirmed on 2026-10-11.
         if target_platforms and "devin" in target_platforms:
             registry.register(DevinSkillsPlugin())
         return registry

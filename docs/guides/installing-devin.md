@@ -7,8 +7,10 @@ root (`~/.config/devin/skills/`) and you can confirm the installation with a
 short checklist.
 
 **What Devin gets:** 181 nWave methodology skills available as native Devin
-skills. The DES runtime tier (pre-tool validation) requires a `preToolUse`-
-equivalent hook in Devin CLI; probe its availability before relying on it.
+skills, discoverable as `/devin:nw-*` slash commands. **DES pre-tool enforcement
+is not available on Devin** — Devin 3000.6.14 has no hook API (confirmed
+2026-10-11). Skills provide full methodology guidance; DES step execution
+(running `des design` etc.) requires additional PATH setup (see below).
 
 ## Prerequisites
 
@@ -93,10 +95,24 @@ nwave-ai install --platform devin --yes \
 | `~/.claude/lib/python/des/` | DES runtime module (shared across tools) |
 | `~/.claude/des-audit.jsonl` | Audit log (created at install if missing) |
 
-**Note on DES enforcement:** Devin's DES `preToolUse` hook availability has not
-yet been probed against a running Devin CLI host. Until that spike is complete,
-DES pre-tool validation may not fire. The skills themselves (methodology
-guidance, workflow orchestration) work independently of the hook.
+**DES enforcement status (confirmed 2026-10-11, Devin 3000.6.14):**
+
+| Capability | Status |
+|-----------|--------|
+| Skills (methodology guidance) | ✅ Works — discoverable as `/devin:nw-*` slash commands |
+| DES pre-tool hook | ❌ Not available — Devin has no hook API; uses `permissions` (Exec allow-lists) instead |
+| DES step execution (`des design`, etc.) | ⚠️ Requires PATH setup — see below |
+
+**Making DES steps accessible:** skill bodies reference `des design --repo-root ROOT --input -`.
+The `des` module is installed at `~/.claude/lib/python/des/` but is not on PATH.
+To run DES steps from Devin's shell, add to your shell profile:
+
+```bash
+export PYTHONPATH="$HOME/.claude/lib/python:$PYTHONPATH"
+alias des="python3 -m des"
+```
+
+After sourcing the profile, `des design --help` should work from any directory.
 
 ## Upgrading
 
