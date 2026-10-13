@@ -43,12 +43,10 @@ from des.application.delivery_continuation import (
 from des.ports.driven_ports.task_invocation_port import (
     ModelOutcome,
     ModelRun,
-    NotApplicable,
 )
 from tests.des._helpers.step_stimulus import decomposed, designed, oracled
 from tests.des.unit.application.test_authored_oracle_is_executed_red import (
     OBSERVATION,
-    ORACLE,
     PRODUCTION,
     RED_ON_ITS_ASSERTION,
     REQUEST,
@@ -134,61 +132,21 @@ def test_changed_design_with_unchanged_oracle_bytes_is_not_settled_by_stale_evid
         ) -> ModelRun:
             if role_id == "nw-solution-architect":
                 self.design_calls += 1
-                decision = "D1" if self.design_calls == 1 else "D2"
                 self.roles.append(role_id)
                 self.prompts.append((role_id, prompt))
-                from des.ports.driven_ports.task_invocation_port import (
-                    DesignFacts,
-                    DesignTarget,
-                    ReuseAnalysis,
-                )
-
-                return ModelRun(
-                    ModelOutcome.Accepted,
-                    "",
-                    0,
-                    True,
-                    design_facts=DesignFacts(
-                        targets=(
-                            DesignTarget(PRODUCTION, "CREATE_NEW"),
-                            DesignTarget(ORACLE, "CREATE_NEW"),
-                        ),
-                        paradigm="object_oriented",
-                        decisions=(decision,),
-                        oracle=ORACLE,
-                        acceptance_supports=(),
-                        verification=(("python", "-m", "pytest", ORACLE, "-q"),),
-                        oracle_verification_index=0,
-                        architectural_tests=NotApplicable(
-                            "The fixture has no structural boundary change."
-                        ),
-                        contract_tests=NotApplicable(
-                            "The fixture changes no shared contract."
-                        ),
-                        prefactoring=NotApplicable(
-                            "The fixture requires no preservation move."
-                        ),
-                        agreement_analysis=NotApplicable(
-                            "The fixture has no affected agreement."
-                        ),
-                        reuse_analysis=ReuseAnalysis(()),
-                        impact_closure=NotApplicable(
-                            "The fixture reaches no public surface, consumer or build metadata."
-                        ),
-                    ),
-                )
+                return ModelRun(ModelOutcome.Accepted, "", 0, True)
             return super().invoke(role_id=role_id, prompt=prompt, cwd=cwd, **rest)  # type: ignore[arg-type]
 
     port = ChangingDesignPort(subject)
     runner = DeliveryContinuationRunner()
     stored = decomposed(runner, port, subject, REQUEST)
-    stored, d1 = designed(runner, port, subject, stored)
+    stored, d1 = designed(runner, port, subject, stored, port.manifest("D1"))
     first = oracled(runner, port, subject, stored, d1)
     assert first.refusal is None, first.refusal
     assert runner.oracle_turn_complete(subject, stored, stored.values[0], d1)
 
     # Correct the DESIGN only (same value, same oracle bytes on disk): D2.
-    stored, d2 = designed(runner, port, subject, stored)
+    stored, d2 = designed(runner, port, subject, stored, port.manifest("D2"))
     assert d1.decisions != d2.decisions, "the probe requires a genuine design change"
     assert d1.acceptance_paths == d2.acceptance_paths, (
         "the probe requires unchanged oracle bytes on disk"

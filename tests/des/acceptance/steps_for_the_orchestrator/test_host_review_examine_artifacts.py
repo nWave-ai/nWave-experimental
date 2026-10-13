@@ -780,6 +780,9 @@ def _crafted_with_inline_code_command(root: Path, step) -> None:
         )[0]
         == 0
     )
+    from tests.des._helpers.host_facts import design_manifest
+    from tests.des.acceptance.steps_for_the_orchestrator.conftest import observation
+
     _dcode, _dout, _derr = step(
         "design",
         "--repo-root",
@@ -791,39 +794,43 @@ def _crafted_with_inline_code_command(root: Path, step) -> None:
                 "structured_output": {
                     "outcome": "accepted",
                     "diagnostic": "bound facts with a second inline-code verification command",
-                    "design_facts": {
-                        "targets": [{"path": TARGET, "decision": "CREATE_NEW"}],
-                        "paradigm": "object_oriented",
-                        "decisions": ["one observable value"],
-                        "oracle": ORACLE,
-                        "acceptance_supports": [],
-                        "verification": [
-                            [sys.executable, "-m", "pytest", ORACLE],
-                            [sys.executable, "-c", inline_code],
-                        ],
-                        "oracle_verification_index": 0,
-                        "architectural_tests": {
-                            "applicability": "not_applicable",
-                            "reason": "The fixture has no structural boundary change.",
+                    "manifest": design_manifest(
+                        {
+                            "targets": [{"path": TARGET, "decision": "CREATE_NEW"}],
+                            "paradigm": "object_oriented",
+                            "decisions": ["one observable value"],
+                            "oracle": ORACLE,
+                            "acceptance_supports": [],
+                            "verification": [
+                                [sys.executable, "-m", "pytest", ORACLE],
+                                [sys.executable, "-c", inline_code],
+                            ],
+                            "oracle_verification_index": 0,
+                            "architectural_tests": {
+                                "applicability": "not_applicable",
+                                "reason": "The fixture has no structural boundary change.",
+                            },
+                            "contract_tests": {
+                                "applicability": "not_applicable",
+                                "reason": "The fixture changes no shared contract.",
+                            },
+                            "prefactoring": {
+                                "applicability": "not_applicable",
+                                "reason": "The fixture requires no preservation move.",
+                            },
+                            "agreement_analysis": {
+                                "applicability": "not_applicable",
+                                "reason": "The fixture has no affected agreement.",
+                            },
+                            "reuse_analysis": {"candidates": []},
+                            "impact_closure": {
+                                "applicability": "not_applicable",
+                                "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                            },
                         },
-                        "contract_tests": {
-                            "applicability": "not_applicable",
-                            "reason": "The fixture changes no shared contract.",
-                        },
-                        "prefactoring": {
-                            "applicability": "not_applicable",
-                            "reason": "The fixture requires no preservation move.",
-                        },
-                        "agreement_analysis": {
-                            "applicability": "not_applicable",
-                            "reason": "The fixture has no affected agreement.",
-                        },
-                        "reuse_analysis": {"candidates": []},
-                        "impact_closure": {
-                            "applicability": "not_applicable",
-                            "reason": "The fixture reaches no public surface, consumer or build metadata.",
-                        },
-                    },
+                        observation("A"),
+                        1,
+                    ),
                 }
             }
         ],
@@ -2090,6 +2097,87 @@ def test_examiner_observation_revisions_hold_for_a_generated_packet_population(
 
     _assert_native_ran_once(
         native_counter, "after generated-population revision preparations"
+    )
+
+
+def test_provider_fixture_keeps_inherited_pytest_plugins_loadable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plugin_dir = tmp_path / "inherited plugins"
+    plugin_dir.mkdir()
+    loaded = tmp_path / "plugin-loaded"
+    (plugin_dir / "inherited_fixture_probe.py").write_text(
+        "from pathlib import Path\n\n"
+        "def pytest_configure(config):\n"
+        f"    Path({str(loaded)!r}).write_text('loaded')\n"
+    )
+    inherited_path = str(plugin_dir)
+    if os.environ.get("PYTHONPATH"):
+        inherited_path += os.pathsep + os.environ["PYTHONPATH"]
+    inherited_addopts = (
+        os.environ.get("PYTEST_ADDOPTS", "") + " -p inherited_fixture_probe"
+    )
+    monkeypatch.setenv("PYTHONPATH", inherited_path)
+    monkeypatch.setenv("PYTEST_ADDOPTS", inherited_addopts)
+    environment = fake_provider.environment(
+        tmp_path,
+        launcher_dir=tmp_path / "provider-bin",
+        results=tmp_path / "results.json",
+        log=tmp_path / "turns.json",
+        package_parent=PACKAGE_PARENT,
+    )
+    assert environment["PYTEST_ADDOPTS"] == inherited_addopts, (
+        "WHAT: the fixture changed inherited pytest options. "
+        "WHY: caller-selected plugins and evidence must remain active. "
+        "HOW: preserve PYTEST_ADDOPTS opaquely when constructing the child environment."
+    )
+    assert (
+        environment["PYTHONPATH"] == str(PACKAGE_PARENT) + os.pathsep + inherited_path
+    ), (
+        "WHAT: the child lost its inherited module search path or candidate precedence. "
+        "WHY: inherited plugins must stay importable alongside candidate source. "
+        "HOW: prepend package_parent without replacing the inherited PYTHONPATH."
+    )
+    config = tmp_path / "nested-pytest.ini"
+    config.write_text("[pytest]\n")
+    test_file = tmp_path / "test_child.py"
+    test_file.write_text(
+        "from pathlib import Path\n\n"
+        "def test_child():\n"
+        f"    assert Path({str(loaded)!r}).read_text() == 'loaded'\n"
+    )
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-c",
+            str(config),
+            "-q",
+            "-n",
+            "0",
+            "-p",
+            "no:cacheprovider",
+            f"--junitxml={tmp_path / 'nested-results.xml'}",
+            str(test_file),
+        ],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, (
+        "WHAT: child pytest could not run with its inherited plugins. "
+        "WHY: replacing PYTHONPATH leaves PYTEST_ADDOPTS naming unloadable modules. "
+        "HOW: preserve inherited search paths; do not skip the plugin.\n"
+        + completed.stdout
+        + completed.stderr
+    )
+    assert loaded.read_text() == "loaded", (
+        "WHAT: the inherited plugin did not execute its real pytest hook. "
+        "WHY: a successful child alone does not prove its plugin stayed active. "
+        "HOW: retain both inherited plugin options and their module search path."
     )
 
 

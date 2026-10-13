@@ -271,7 +271,7 @@ class NativeOracleJourney:
             else [self.node, "--test", f"--test-reporter=./{REPORTER}", oracle]
         )
         facts = design_facts([argv])
-        facts["structured_output"]["design_facts"].update(
+        facts["structured_output"]["manifest"].update(
             oracle=oracle, acceptance_supports=[REPORTER, *(companion_files or {})]
         )
         for args, answers, stdin in (

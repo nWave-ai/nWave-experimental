@@ -125,6 +125,9 @@ class CraftBlocker(str, Enum):
     Product = "product"
 
 
+MUTABLE_TARGET_DECISIONS = ("EXTEND", "CREATE_NEW")
+
+
 @dataclass(frozen=True, slots=True)
 class DesignTarget:
     path: str
@@ -256,7 +259,7 @@ class ApplicableImpactClosure:
 
 @dataclass(frozen=True, slots=True)
 class DesignFacts:
-    """Provider-neutral, minimum semantic design consumed by the runner."""
+    """Constructor-produced semantic design consumed by the runner."""
 
     targets: tuple[DesignTarget, ...]
     paradigm: str
@@ -266,13 +269,9 @@ class DesignFacts:
     verification: tuple[tuple[str, ...], ...]
     oracle_verification_index: int
     obligations: tuple[str, ...] = ()
-    # This is assigned by the closed DESIGN-document constructor, not guessed
-    # from Markdown by a later consumer.  Provider-authored design facts have
-    # no configured document section to name and retain the empty value.
+    # The DESIGN constructor assigns the configured document section.
     authority_locator: str = ""
-    # This is assigned by the closed DESIGN-document constructor from the
-    # manifest's public_oracle section, if present. Provider-authored facts and
-    # handovers written before this field existed have public_oracle=None.
+    # Historical handovers predating the public oracle retain None.
     public_oracle: PublicOracle | None = None
     architectural_tests: ApplicableArchitecturalTests | NotApplicable = field(
         kw_only=True
@@ -290,6 +289,7 @@ class DesignFacts:
     # Explicit host-supplied typed sections; None is historical unassessed
     # input, never an applicability decision. Other semantic facts stay intact.
     architect_handoff: dict | None = field(default=None, kw_only=True)
+    product_change: str = field(default="required", kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,7 +328,6 @@ class ModelRun:
     retry_safe: bool
     product_values: tuple[ProductValue, ...] = ()
     accounting: ModelAccounting | None = None
-    design_facts: DesignFacts | None = None
     review_defect: ReviewDefect | None = None
     craft_blocker: CraftBlocker | None = None
     charter: ExpectationCharterAnswer | None = None

@@ -66,6 +66,8 @@ def _typed_facts_rows(facts: DesignFacts) -> list[str]:
         f"| ORACLE | `{facts.oracle}` |",
         f"| TARGETS | {targets} |",
     ]
+    if facts.product_change == "none":
+        rows.append("| PRODUCT CHANGE | none |")
     if facts.authority_locator:
         rows.append(f"| AUTHORITY LOCATOR | `{facts.authority_locator}` |")
     if supports:

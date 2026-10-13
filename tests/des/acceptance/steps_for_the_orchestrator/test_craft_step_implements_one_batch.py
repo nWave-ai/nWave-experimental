@@ -19,10 +19,12 @@ import json
 import sys
 from pathlib import Path
 
+from tests.des._helpers.host_facts import design_manifest
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     accepted_values,
     block,
     git,
+    observation,
 )
 
 
@@ -41,36 +43,40 @@ def design_facts(
         "structured_output": {
             "outcome": "accepted",
             "diagnostic": "bound the value to its typed design facts",
-            "design_facts": {
-                "targets": [{"path": TARGET, "decision": "CREATE_NEW"}],
-                "paradigm": "object_oriented",
-                "decisions": list(decisions),
-                "oracle": ORACLE,
-                "acceptance_supports": [SUPPORT],
-                "verification": [[sys.executable, "-m", "pytest", ORACLE]],
-                "oracle_verification_index": 0,
-                "architectural_tests": {
-                    "applicability": "not_applicable",
-                    "reason": "The fixture has no structural boundary change.",
+            "manifest": design_manifest(
+                {
+                    "targets": [{"path": TARGET, "decision": "CREATE_NEW"}],
+                    "paradigm": "object_oriented",
+                    "decisions": list(decisions),
+                    "oracle": ORACLE,
+                    "acceptance_supports": [SUPPORT],
+                    "verification": [[sys.executable, "-m", "pytest", ORACLE]],
+                    "oracle_verification_index": 0,
+                    "architectural_tests": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture has no structural boundary change.",
+                    },
+                    "contract_tests": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture changes no shared contract.",
+                    },
+                    "prefactoring": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture requires no preservation move.",
+                    },
+                    "agreement_analysis": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture has no affected agreement.",
+                    },
+                    "reuse_analysis": {"candidates": []},
+                    "impact_closure": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                    },
                 },
-                "contract_tests": {
-                    "applicability": "not_applicable",
-                    "reason": "The fixture changes no shared contract.",
-                },
-                "prefactoring": {
-                    "applicability": "not_applicable",
-                    "reason": "The fixture requires no preservation move.",
-                },
-                "agreement_analysis": {
-                    "applicability": "not_applicable",
-                    "reason": "The fixture has no affected agreement.",
-                },
-                "reuse_analysis": {"candidates": []},
-                "impact_closure": {
-                    "applicability": "not_applicable",
-                    "reason": "The fixture reaches no public surface, consumer or build metadata.",
-                },
-            },
+                observation("A"),
+                1,
+            ),
         }
     }
 
@@ -165,7 +171,7 @@ def accepted_craft(body: str) -> list[dict]:
     ]
 
 
-def design_manifest(
+def design_constructor_input(
     decisions: tuple[str, ...] = ("one opaque semantic decision",),
 ) -> str:
     """The closed v1 manifest `des design --input -` binds without a turn."""
@@ -244,7 +250,7 @@ def crafted_through_the_design_constructor(root: Path, step) -> None:
         "1",
         "--input",
         "-",
-        stdin=design_manifest(),
+        stdin=design_constructor_input(),
     )
     assert code == 0, out + err
     # `--replace-current` rewrites only a TRACKED authority, as a live checkout
@@ -298,7 +304,7 @@ def rebind_through_the_design_constructor(
         "--replace-current",
         "--input",
         "-",
-        stdin=design_manifest(decisions=decisions),
+        stdin=design_constructor_input(decisions=decisions),
     )
     assert code == 0, out + err
 

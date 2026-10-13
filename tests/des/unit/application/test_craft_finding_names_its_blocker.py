@@ -43,7 +43,7 @@ import json
 import os
 import subprocess
 import sys
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
@@ -63,6 +63,7 @@ from des.ports.driven_ports.task_invocation_port import (
     ReuseAnalysis,
     TaskInvocationPort,
 )
+from tests.des._helpers.host_facts import design_manifest
 from tests.des._helpers.step_stimulus import crafted, through_oracle
 
 
@@ -204,9 +205,9 @@ class ScriptedPort(TaskInvocationPort):
             self.architect_turns.append(str(_fact(prompt, "observation")))
             if self._designed:
                 assert self.corrected is not None, "unscripted architect correction"
-                return _accepted(design_facts=self.corrected)
+                return _accepted()
             self._designed = True
-            return _accepted(design_facts=_facts())
+            return _accepted()
         if role_id == "nw-acceptance-designer":
             if _has(prompt, "observation"):
                 self._oracle = str(_fact(prompt, "oracle"))
@@ -255,7 +256,9 @@ REQUEST = "deliver one value"
 
 def one_craft_turn(subject: Path, port: ScriptedPort) -> DeliveryOutcome | tuple:
     """`po`, `design`, `oracle`, then ONE `craft` -- each invoked by this test."""
-    runner, stored, design = through_oracle(port, subject, REQUEST)
+    runner, stored, design = through_oracle(
+        port, subject, REQUEST, design_manifest(asdict(_facts()), OBSERVATION, 1)
+    )
     return crafted(runner, port, subject, stored, design)
 
 
@@ -264,7 +267,9 @@ def test_a_failed_standalone_verify_retains_native_evidence_after_candidate_clea
 ) -> None:
     """The terminal locator outlives the temporary candidate it observed."""
     port = ScriptedPort(subject, [_accepted()])
-    runner, stored, design = through_oracle(port, subject, REQUEST)
+    runner, stored, design = through_oracle(
+        port, subject, REQUEST, design_manifest(asdict(_facts()), OBSERVATION, 1)
+    )
     assert not isinstance(
         crafted(runner, port, subject, stored, design), DeliveryOutcome
     )
@@ -307,7 +312,9 @@ def test_candidate_worktree_is_removed_when_native_execution_raises(
     subject: Path, monkeypatch: pytest.MonkeyPatch, phase: str
 ) -> None:
     port = ScriptedPort(subject, [_accepted()])
-    runner, stored, design = through_oracle(port, subject, REQUEST)
+    runner, stored, design = through_oracle(
+        port, subject, REQUEST, design_manifest(asdict(_facts()), OBSERVATION, 1)
+    )
     assert not isinstance(
         crafted(runner, port, subject, stored, design), DeliveryOutcome
     )
@@ -358,7 +365,9 @@ def test_cleanup_failure_names_its_owned_path_and_keeps_native_receipts(
     subject: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     port = ScriptedPort(subject, [_accepted()])
-    runner, stored, design = through_oracle(port, subject, REQUEST)
+    runner, stored, design = through_oracle(
+        port, subject, REQUEST, design_manifest(asdict(_facts()), OBSERVATION, 1)
+    )
     assert not isinstance(
         crafted(runner, port, subject, stored, design), DeliveryOutcome
     )
@@ -426,7 +435,9 @@ def test_verification_record_becomes_historical_when_a_declared_target_changes(
     executable.symlink_to(sys.executable)
     monkeypatch.setenv("PATH", f"{executable.parent}:{os.environ['PATH']}")
     port = ScriptedPort(subject, [_accepted()])
-    runner, stored, design = through_oracle(port, subject, REQUEST)
+    runner, stored, design = through_oracle(
+        port, subject, REQUEST, design_manifest(asdict(_facts()), OBSERVATION, 1)
+    )
     assert not isinstance(
         crafted(runner, port, subject, stored, design), DeliveryOutcome
     )
@@ -475,7 +486,9 @@ def test_an_incomplete_declared_native_command_retains_prior_evidence_after_clea
     """A late native interruption cannot erase the command that already answered."""
     monkeypatch.setenv("NATIVE_EVIDENCE_SECRET", "must-not-be-recorded")
     port = ScriptedPort(subject, [_accepted()])
-    runner, stored, design = through_oracle(port, subject, REQUEST)
+    runner, stored, design = through_oracle(
+        port, subject, REQUEST, design_manifest(asdict(_facts()), OBSERVATION, 1)
+    )
     assert not isinstance(
         crafted(runner, port, subject, stored, design), DeliveryOutcome
     )
@@ -563,7 +576,9 @@ def test_native_success_evidence_survives_a_later_host_recorded_role_failure(
 ) -> None:
     """A separately recorded role result cannot discard native evidence."""
     port = ScriptedPort(subject, [_accepted()])
-    runner, stored, design = through_oracle(port, subject, REQUEST)
+    runner, stored, design = through_oracle(
+        port, subject, REQUEST, design_manifest(asdict(_facts()), OBSERVATION, 1)
+    )
     assert not isinstance(
         crafted(runner, port, subject, stored, design), DeliveryOutcome
     )

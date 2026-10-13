@@ -32,6 +32,7 @@ Then put in the manifests, in `decisions`:
 
 ## MANIFEST LANGUAGE (DES grammar, verbatim)
 {{grammar}}
+For a value requiring no product edits, declare `product_change: "none"` and `targets: []`. Omission or `"required"` preserves the existing requirement for real EXTEND/CREATE_NEW production targets. Put consultation-only owners in `reuse_analysis.candidates` as REUSE with real path:line locators and reasons. Never list EXTEND with prose such as "consult only" or "do not modify": a target row grants mutation authority regardless of its reason.
 
 ## IN ADDITION, PUT IN THE MANIFEST (template)
 - the cross-layer algebra of your Required Design Pass (item 6), in `decisions`: one entry per affected layer (domain, application/port, adapter/integration, infrastructure/recovery) with its states, operations, observations and laws; state each law as a claim a test could check
@@ -44,9 +45,10 @@ Then put in the manifests, in `decisions`:
 - your design assessment with Jev (nw-typesafe-system-one), in `decisions`: the typed questions you asked about your design decisions, boundaries and producer/consumer agreements, asked at each decision point where you chose between alternatives or judged a reuse candidate, and for each the answer with its confidence, your check against the original evidence, and the action you took; the model name Jev reported, and tokens, duration and cost when it prints them (`not available` when it does not); if Jev could not be used, `typesafe: unavailable` and why
 
 ## SUBMIT (native host-owned contract; overrides source self-submission wording above)
-The host submits the shared manifest first, then each value manifest, with the manifest on stdin:
+For each selected shared or value invocation, return one closed envelope with `outcome`, opaque `diagnostic`, and the requested complete schema_version 1 `manifest` on acceptance. The host extracts only that accepted manifest and submits it unchanged on stdin:
 {{submit_steps|bullets}}
-Do not execute these constructor commands or edit authority, ADR, handover, production or oracle files; DES is the sole authority writer. Return only the closed complete semantic manifest (schema_version 1) requested by the host, retaining every measured obligation above. For a whole-feature request, return the shared manifest followed by the ordered value manifests for the host to submit. If the caller enforces a typed output schema, obey it exactly and return its requested design_facts and outcome instead of substituting a manifest. A refusal returns its missing facts and remediation to the host; the host owns human interaction and any constructor retry. Do not replace semantic input with DELIVERY-OUTCOME/NEXT summaries; those are DES's observations after host submission, not your return contract.
+Do not execute these constructor commands or edit authority, ADR, handover, production or oracle files; DES is the sole authority writer. Return only the requested closed envelope, retaining every measured obligation above in an accepted manifest. Rejected or indeterminate envelopes omit `manifest` or set it to `null` and give a nonempty diagnostic naming the missing facts or finding and its remediation. A finding names `DEFECT-OWNER: <owner>`. The host alone submits accepted manifests and owns human interaction, further selected submissions and any constructor retry. Never return legacy provider facts, bare manifests, side-channel manifest files or DELIVERY-OUTCOME/NEXT summaries in place of the envelope; those summaries are DES observations after host submission, not your return contract.
+If you cannot execute a DESIGN-required verification or lack an authorization or input, return `rejected` through the caller's enforced schema with `BLOCKED-BY: <owner>` in `diagnostic`, naming the precise prerequisite (for example `formal checks not authorized` or `checker unavailable at <path>`). Use a typed blocker field only if that schema provides it; leave the refused design payload null, never put a candidate manifest in `diagnostic`, and never return `accepted`.
 
 ## FROM THE ROOT (verbatim, not verified by DES)
 {{root_input}}

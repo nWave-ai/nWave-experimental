@@ -10,7 +10,7 @@ needed.
 from __future__ import annotations
 
 import subprocess
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
@@ -31,6 +31,7 @@ from des.ports.driven_ports.task_invocation_port import (
     ReuseAnalysis,
     TaskInvocationPort,
 )
+from tests.des._helpers.host_facts import design_manifest
 from tests.des._helpers.step_stimulus import crafted, decomposed, designed, oracled
 
 
@@ -104,8 +105,8 @@ class RedesigningPort(TaskInvocationPort):
         if role_id == "nw-solution-architect":
             self._architect_calls += 1
             if self._architect_calls == 1:
-                return _accepted(design_facts=_design("D1"))
-            return _accepted(design_facts=self.next_design)
+                return _accepted()
+            return _accepted()
         if role_id == "nw-acceptance-designer":
             written = self.root / ORACLE
             written.parent.mkdir(parents=True, exist_ok=True)
@@ -142,7 +143,13 @@ def _authored_and_crafted(
     """Reach D1 authored (RED, recorded) and crafted (GREEN bytes, recorded)."""
     runner = DeliveryContinuationRunner()
     stored = decomposed(runner, port, subject, REQUEST)
-    stored, d1 = designed(runner, port, subject, stored)
+    stored, d1 = designed(
+        runner,
+        port,
+        subject,
+        stored,
+        design_manifest(asdict(_design("D1")), OBSERVATION, 1),
+    )
     first = oracled(runner, port, subject, stored, d1)
     assert first.refusal is None, first.refusal
     outcome = crafted(runner, port, subject, stored, d1)
@@ -170,7 +177,13 @@ def test_changed_design_invalidates_old_author_and_craft_completion(
     port = RedesigningPort(subject)
     runner, stored, d1 = _authored_and_crafted(subject, port)
 
-    corrected = designed(runner, port, subject, stored)
+    corrected = designed(
+        runner,
+        port,
+        subject,
+        stored,
+        design_manifest(asdict(port.next_design), OBSERVATION, 1),
+    )
     assert not isinstance(corrected, DeliveryOutcome), corrected
     stored, d2 = corrected
     assert d1.decisions != d2.decisions, "the probe requires a genuine design change"
@@ -206,7 +219,13 @@ def test_identical_design_correction_keeps_completion_and_cheap_resume(
     runner, stored, d1 = _authored_and_crafted(subject, port)
     port.next_design = _design("D1")  # byte-identical replacement
 
-    corrected = designed(runner, port, subject, stored)
+    corrected = designed(
+        runner,
+        port,
+        subject,
+        stored,
+        design_manifest(asdict(port.next_design), OBSERVATION, 1),
+    )
     assert not isinstance(corrected, DeliveryOutcome), corrected
     stored, d1_again = corrected
     assert d1_again == d1, "the probe requires a byte-identical replacement"
@@ -239,7 +258,13 @@ def test_changed_design_preserves_records_as_historical_without_ref_deletion(
         return real_git(root, *args, env=env)
 
     runner._git = deletion_hostile_git  # type: ignore[method-assign]
-    corrected = designed(runner, port, subject, stored)
+    corrected = designed(
+        runner,
+        port,
+        subject,
+        stored,
+        design_manifest(asdict(port.next_design), OBSERVATION, 1),
+    )
 
     assert not isinstance(corrected, DeliveryOutcome), corrected
     reread, d2 = corrected
@@ -257,13 +282,25 @@ def test_witness_history_tracks_authority_and_byte_currentness_without_losing_re
     assert first and first[0]["current"] is True
     assert first[0]["oracles"][0]["verdict"] == "red"
 
-    corrected, d2 = designed(runner, port, subject, stored)
+    corrected, d2 = designed(
+        runner,
+        port,
+        subject,
+        stored,
+        design_manifest(asdict(port.next_design), OBSERVATION, 1),
+    )
     historical = runner.oracle_witness(subject, corrected, OBSERVATION, d2)
     assert historical and historical[0]["current"] is False
     assert historical[0]["oracles"] == first[0]["oracles"]
 
     port.next_design = _design("D1")
-    restored, original = designed(runner, port, subject, corrected)
+    restored, original = designed(
+        runner,
+        port,
+        subject,
+        corrected,
+        design_manifest(asdict(port.next_design), OBSERVATION, 1),
+    )
     assert runner.oracle_witness(subject, restored, OBSERVATION, original) == first
     (subject / ORACLE).write_text(RED_ON_ITS_ASSERTION + "\n# changed acceptance\n")
     moved = runner.oracle_witness(subject, restored, OBSERVATION, original)
@@ -276,7 +313,13 @@ def test_a_first_green_witness_is_durable_and_follows_value_record_lifecycle(
     port = RedesigningPort(subject)
     runner = DeliveryContinuationRunner()
     stored = decomposed(runner, port, subject, REQUEST)
-    stored, design = designed(runner, port, subject, stored)
+    stored, design = designed(
+        runner,
+        port,
+        subject,
+        stored,
+        design_manifest(asdict(_design("D1")), OBSERVATION, 1),
+    )
     (subject / PRODUCTION).parent.mkdir(parents=True, exist_ok=True)
     (subject / PRODUCTION).write_text("ANSWER = 42\n")
     outcome = oracled(runner, port, subject, stored, design)

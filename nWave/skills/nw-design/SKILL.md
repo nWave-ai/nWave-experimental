@@ -278,12 +278,14 @@ from code facts, preserve the reuse, prefactoring, native-evidence, and
 uncertainty duties above, and bound each empirical probe to its load-bearing
 unknown under the self-falsification discipline below.
 
-A provider-enforced output schema remains authoritative. When a caller requires
-existing typed `design_facts`, obey that schema exactly and do not substitute a
-manifest for it. When no schema is enforced and the normal DESIGN host asks
-for constructor input, return the semantic manifest only. In either case,
-do not write authority, handover, production, or oracle bytes. `NEXT` is
-advisory; the producer does not select or invoke another delivery step.
+Return one closed envelope with `outcome`, opaque `diagnostic` and `manifest`.
+An `accepted` response requires the complete closed v1 manifest described below.
+A `rejected` or `indeterminate` response omits `manifest` or sets it to `null`
+and supplies a nonempty diagnostic naming `BLOCKED-BY` for a prerequisite or
+`DEFECT-OWNER` for a finding. The host submits only an accepted manifest,
+unchanged, to the selected constructor; no legacy facts carrier or side-channel.
+Do not write authority, handover, production or oracle bytes. `NEXT` is advisory;
+the producer does not select or invoke another delivery step.
 
 Plain `--input -` intentionally refuses different already-bound facts before a
 write. For a rework of the same configured destination and section heading, use
@@ -298,7 +300,8 @@ object with exactly:
   - `heading`: plain non-empty text, not a Markdown heading.
 - `purpose`: non-empty text.
 - `constraints`: non-empty unique list of non-empty text.
-- `targets`: non-empty unique list with distinct paths of object with exactly:
+- `product_change` (optional): `required` or `none`; omission means required with a mutable production target excluding the oracle; none requires targets=[]; consultation belongs in reuse_analysis.candidates.
+- `targets`: unique list with distinct paths of object with exactly:
     - `path`: repository-relative file path.
     - `decision`: `EXTEND` or `CREATE_NEW`
     - `reason`: non-empty text.

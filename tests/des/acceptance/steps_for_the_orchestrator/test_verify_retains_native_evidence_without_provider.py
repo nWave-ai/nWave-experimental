@@ -43,6 +43,9 @@ def _crafted(
     public_oracle: dict[str, str] | None = None,
 ) -> None:
     """Reach a real crafted state through explicit, pre-existing public steps."""
+    from tests.des._helpers.host_facts import design_manifest
+    from tests.des.acceptance.steps_for_the_orchestrator.conftest import observation
+
     assert (
         step(
             "po",
@@ -66,42 +69,46 @@ def _crafted(
                     "structured_output": {
                         "outcome": "accepted",
                         "diagnostic": "bound the typed facts for native verification",
-                        "design_facts": {
-                            "targets": [{"path": TARGET, "decision": "CREATE_NEW"}],
-                            "paradigm": "object_oriented",
-                            "decisions": ["one observable value"],
-                            "oracle": ORACLE,
-                            "acceptance_supports": [SUPPORT],
-                            "verification": verification
-                            or [[sys.executable, "-m", "pytest", ORACLE]],
-                            "oracle_verification_index": 0,
-                            "architectural_tests": {
-                                "applicability": "not_applicable",
-                                "reason": "The fixture has no structural boundary change.",
+                        "manifest": design_manifest(
+                            {
+                                "targets": [{"path": TARGET, "decision": "CREATE_NEW"}],
+                                "paradigm": "object_oriented",
+                                "decisions": ["one observable value"],
+                                "oracle": ORACLE,
+                                "acceptance_supports": [SUPPORT],
+                                "verification": verification
+                                or [[sys.executable, "-m", "pytest", ORACLE]],
+                                "oracle_verification_index": 0,
+                                "architectural_tests": {
+                                    "applicability": "not_applicable",
+                                    "reason": "The fixture has no structural boundary change.",
+                                },
+                                "contract_tests": {
+                                    "applicability": "not_applicable",
+                                    "reason": "The fixture changes no shared contract.",
+                                },
+                                "prefactoring": {
+                                    "applicability": "not_applicable",
+                                    "reason": "The fixture requires no preservation move.",
+                                },
+                                "agreement_analysis": {
+                                    "applicability": "not_applicable",
+                                    "reason": "The fixture has no affected agreement.",
+                                },
+                                "reuse_analysis": {"candidates": []},
+                                "impact_closure": {
+                                    "applicability": "not_applicable",
+                                    "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                                },
+                                **(
+                                    {"public_oracle": public_oracle}
+                                    if public_oracle is not None
+                                    else {}
+                                ),
                             },
-                            "contract_tests": {
-                                "applicability": "not_applicable",
-                                "reason": "The fixture changes no shared contract.",
-                            },
-                            "prefactoring": {
-                                "applicability": "not_applicable",
-                                "reason": "The fixture requires no preservation move.",
-                            },
-                            "agreement_analysis": {
-                                "applicability": "not_applicable",
-                                "reason": "The fixture has no affected agreement.",
-                            },
-                            "reuse_analysis": {"candidates": []},
-                            "impact_closure": {
-                                "applicability": "not_applicable",
-                                "reason": "The fixture reaches no public surface, consumer or build metadata.",
-                            },
-                            **(
-                                {"public_oracle": public_oracle}
-                                if public_oracle is not None
-                                else {}
-                            ),
-                        },
+                            observation("A"),
+                            1,
+                        ),
                     }
                 }
             ],

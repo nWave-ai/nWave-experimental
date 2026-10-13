@@ -27,10 +27,12 @@ import json
 import sys
 from pathlib import Path
 
+from tests.des._helpers.host_facts import design_manifest
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     accepted_values,
     block,
     git,
+    observation,
 )
 
 
@@ -51,36 +53,40 @@ def design_facts(target: str = TARGET) -> dict:
         "structured_output": {
             "outcome": "accepted",
             "diagnostic": "bound the typed facts",
-            "design_facts": {
-                "targets": [{"path": target, "decision": "CREATE_NEW"}],
-                "paradigm": "object_oriented",
-                "decisions": ["one opaque semantic decision"],
-                "oracle": ORACLE,
-                "acceptance_supports": [SUPPORT],
-                "verification": [[sys.executable, "-m", "pytest", ORACLE]],
-                "oracle_verification_index": 0,
-                "architectural_tests": {
-                    "applicability": "not_applicable",
-                    "reason": "The fixture has no structural boundary change.",
+            "manifest": design_manifest(
+                {
+                    "targets": [{"path": target, "decision": "CREATE_NEW"}],
+                    "paradigm": "object_oriented",
+                    "decisions": ["one opaque semantic decision"],
+                    "oracle": ORACLE,
+                    "acceptance_supports": [SUPPORT],
+                    "verification": [[sys.executable, "-m", "pytest", ORACLE]],
+                    "oracle_verification_index": 0,
+                    "architectural_tests": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture has no structural boundary change.",
+                    },
+                    "contract_tests": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture changes no shared contract.",
+                    },
+                    "prefactoring": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture requires no preservation move.",
+                    },
+                    "agreement_analysis": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture has no affected agreement.",
+                    },
+                    "reuse_analysis": {"candidates": []},
+                    "impact_closure": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                    },
                 },
-                "contract_tests": {
-                    "applicability": "not_applicable",
-                    "reason": "The fixture changes no shared contract.",
-                },
-                "prefactoring": {
-                    "applicability": "not_applicable",
-                    "reason": "The fixture requires no preservation move.",
-                },
-                "agreement_analysis": {
-                    "applicability": "not_applicable",
-                    "reason": "The fixture has no affected agreement.",
-                },
-                "reuse_analysis": {"candidates": []},
-                "impact_closure": {
-                    "applicability": "not_applicable",
-                    "reason": "The fixture reaches no public surface, consumer or build metadata.",
-                },
-            },
+                observation("A"),
+                1,
+            ),
         }
     }
 

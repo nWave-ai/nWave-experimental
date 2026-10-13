@@ -2,7 +2,7 @@
 
 This source preview helps you turn a request into a result you can inspect. Use it for work where you can tolerate changes to the workflow. For a whole feature, nWave can retain decisions, a public acceptance check, review, and delivery evidence. You can also run one DES step or work directly when less needs to survive the session.
 
-**Build:** `606700ee6` from `atdd_pure_staging` (`606700ee6a9105b6f8c2b994890d5990ffe1e085`). This channel installs from a clone of [this repository](https://github.com/nWave-ai/nWave-experimental); it does not publish to PyPI. Check the exact release receipt before using a wheel from another channel.
+**Build:** `ad02fa7f5` from `atdd_pure_staging` (`ad02fa7f52d1cc64d76229107ce35b72d79eacac`). This channel installs from a clone of [this repository](https://github.com/nWave-ai/nWave-experimental); it does not publish to PyPI. Check the exact release receipt before using a wheel from another channel.
 
 ## Start in your project
 

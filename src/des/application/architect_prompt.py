@@ -9,6 +9,10 @@ templates/NAME.spec.json  {"role", "required": {field: "str"|"list"}, "blocks": 
 
 Strict by design: unknown placeholder, missing/extra/mistyped fixture field, or an empty DES
 block is an error. Same template + fixture + DES contract text -> same bytes.
+
+The optional caller-owned used_fields set records fixture fields actually substituted,
+not merely required by the spec. Callers use root_input consumption to assign literal
+ROOT placement; fixture values and caller text are not scanned for matching content.
 """
 
 import json
@@ -40,6 +44,7 @@ def render(  # noqa: PLR0913
     root=None,
     role_id=None,
     skills_directory=None,
+    used_fields=None,
 ):
     if directory is None:
         resolution = resolve_packaged_asset(
@@ -103,6 +108,8 @@ def render(  # noqa: PLR0913
         if key not in fixture:
             raise PromptError(f"unknown placeholder {key!r}")
         v = fixture[key]
+        if used_fields is not None:
+            used_fields.add(key)
         if flt == "bullets":
             return "\n".join("- " + i for i in v)
         if flt == "csv":

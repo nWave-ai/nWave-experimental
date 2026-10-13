@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
-from dataclasses import asdict
 
-from des.application.handover import StoredHandover, stored_handover
 from des.domain.discuss_contract import MINIMAL_EXAMPLE
 
 
@@ -64,6 +62,7 @@ def _closure(facts: dict, targets: list[dict]) -> dict:
 
 
 def design_manifest(facts: dict, observation: str, position: int) -> dict:
+    """Produce a complete JSON-valued manifest from the internal fixture facts."""
     heading = (
         facts.get("authority_locator", "").partition("#")[2] or f"Value {position}"
     )
@@ -75,7 +74,7 @@ def design_manifest(facts: dict, observation: str, position: int) -> dict:
         dict(item, reason=item.get("reason", "Own the fixture's public behavior."))
         for item in facts["targets"]
     ]
-    return {
+    manifest = {
         "schema_version": 1,
         "authority": {"heading": heading},
         "purpose": observation,
@@ -114,6 +113,7 @@ def design_manifest(facts: dict, observation: str, position: int) -> dict:
         "verification": facts["verification"],
         "oracle_verification_index": facts.get("oracle_verification_index", 0),
     }
+    return json.loads(json.dumps(manifest))
 
 
 def supplied_arguments(root, argv, answers, stdin):
@@ -143,17 +143,11 @@ def supplied_arguments(root, argv, answers, stdin):
         ):
             command.extend(("--feature", "fixture"))
     elif action == "design":
-        stored = stored_handover(root)
-        if not isinstance(stored, StoredHandover) or not stored.values:
+        if payload.get("outcome") != "accepted" or not isinstance(
+            payload.get("manifest"), dict
+        ):
             return command, stdin
-        position = int(command[command.index("--value") + 1])
-        value = stored.values[max(0, min(position - 1, len(stored.values) - 1))]
-        facts = payload.get("design_facts")
-        if facts is None:
-            if value.authority is None:
-                return command, stdin
-            facts = asdict(value.authority)
-        manifest = design_manifest(facts, value.observation, position)
+        manifest = payload["manifest"]
     else:
         if action == "craft":
             payload = {**payload, "blocked_by": payload.get("blocked_by")}

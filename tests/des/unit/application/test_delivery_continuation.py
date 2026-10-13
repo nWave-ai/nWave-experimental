@@ -487,10 +487,10 @@ def test_a_target_table_that_declares_only_the_oracle_is_refused_before_binding(
     assert isinstance(outcome, DeliveryOutcome)
     assert outcome.disposition is Disposition.Indeterminate
     assert outcome.failure is not None
-    assert outcome.failure.what == "NoMutableProductionTarget"
+    assert outcome.failure.what == "DesignFactsMalformed"
     assert "targets" in outcome.failure.why
     assert "tests/acceptance/test_value.py" in outcome.failure.why
-    assert "tests/acceptance/test_value.py" in outcome.failure.how
+    assert "des design" in outcome.failure.how
 
 
 def _verification_facts(
@@ -702,15 +702,9 @@ def test_an_out_of_range_markdown_oracle_binding_names_its_repair(tmp_path) -> N
     assert "zero-based verification command ordinal" in outcome.failure.how
 
 
-def test_a_resumed_handover_bound_to_an_oracle_only_table_is_refused(tmp_path) -> None:
-    """A durable graph outlives the rule, so the resume path carries the verdict.
-
-    `_derive` runs on the resume path too, through `_validate_bound_scopes`,
-    and there the value is ALREADY bound: no rerun can re-elicit DESIGN for it,
-    so a HOW naming only the re-elicitation would send the operator into a run
-    that fails identically forever.  The durable case has one exit and the HOW
-    must name it -- the same clause `_admit_supports` already carries.
-    """
+def test_restoring_an_oracle_only_handover_is_refused_before_publication(
+    tmp_path,
+) -> None:
     root = repo(tmp_path, "notes/any.md")
     stored = create_handover(
         root,
@@ -725,17 +719,10 @@ def test_a_resumed_handover_bound_to_an_oracle_only_table_is_refused(tmp_path) -
             ),
         ),
     )
-    assert not isinstance(stored, Blocked)
-
-    outcome = DeliveryContinuationRunner()._validate_bound_scopes(root, stored)
-
-    assert outcome is not None
-    assert outcome.failure is not None
-    assert outcome.failure.what == "NoMutableProductionTarget"
-    # The HOW, executed: it names the handover, and deleting it is what the
-    # bound case actually needs.
-    assert ".nwave/des/handover.json" in outcome.failure.how
-    handover_path(root).unlink()
+    assert isinstance(stored, Blocked)
+    assert stored.what == "HandoverMalformed"
+    assert "test_value.py" in stored.why
+    assert "des design" in stored.how
     assert not handover_path(root).exists()
 
 
@@ -851,3 +838,30 @@ def test_facts_whose_impact_closure_omits_a_declared_consumer_are_refused() -> N
 
     assert defect is not None
     assert "bin/main.ml:1" in defect
+
+
+@pytest.mark.parametrize(
+    "consulted", [(), ("src/consulted.py",), ("src/a.py", "src/b.py")]
+)
+def test_bound_no_change_authority_has_no_crafter_mutation_population(
+    tmp_path, consulted
+):
+    root = repo(tmp_path, "notes/any.md")
+    declared = replace(
+        _typed_targets((), ()),
+        product_change="none",
+        reuse_analysis=ReuseAnalysis(
+            tuple(
+                ReuseCandidate(path, path + ":1", "REUSE", "Consult existing owner.")
+                for path in consulted
+            )
+        ),
+    )
+    facts = DeliveryContinuationRunner._derive(root, declared)
+    assert isinstance(facts, AuthorityFacts)
+    assert DeliveryContinuationRunner._mutable_targets(facts) == ()
+    assert facts.product_change == "none"
+    assert DeliveryContinuationRunner._typed_facts(facts)["product_change"] == "none"
+    assert not set(consulted).intersection(
+        DeliveryContinuationRunner._owned_paths(facts)
+    )

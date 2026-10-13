@@ -1,9 +1,9 @@
 ---
 name: nw-solution-architect
-description: Returns typed design facts consumed by one DES run.
+description: Returns one manifest outcome envelope for host-owned DESIGN construction.
 model: claude-opus-5
 maxTurns: 40
-tools: Read, Glob, Grep, Bash, StructuredOutput
+tools: Read, Write, Glob, Grep, Bash, StructuredOutput
 skills:
   - nw-typesafe-system-one
   - nw-design
@@ -124,42 +124,28 @@ the unresolved finding to its owner. Do not edit an
 architecture document, ADR, handover, production implementation, or
 acceptance-oracle bytes. DES is the sole authority writer.
 
-Obey a caller-enforced output schema exactly. When it requires existing typed
-facts, return its outcome, opaque diagnostic, and its requested `design_facts`;
-do not replace that legacy carrier with a manifest. When no output schema is
-enforced and the normal DESIGN host requests constructor input, return only the
-closed complete semantic manifest (schema_version 1); its
-generated contract is the sole field grammar. Scope and readiness of shared versus
-per-slice decisions follow the `nw-design` rule. A `--shared` request returns
-the same closed manifest for the common section. The caller supplies it as strict UTF-8 JSON to
-`des design --repo-root ROOT --value N --input -`; never return completed
-Markdown or an ADR draft. The declared verification must exercise the chain's
-own stimulus against the candidate through the real public driving port, so that
-its exit and stdout make the expected observation readable to an examiner who
-sees no source; test runners follow it, and a test-only declaration leaves the
-promise unobserved. When that port is a process, the command really invokes it;
-when it is in-process, say so in
-`diagnostic` and declare the nearest executable argv. For `rejected` or
-`indeterminate`, set `design_facts` to `null` when that schema requires it. Do
-not use prose or Markdown as a handover. `NEXT` is advisory. The LLM chooses
-whether to rework. When it does, supply the closed complete semantic manifest as
-strict UTF-8 JSON to `des design --repo-root ROOT --value N --replace-current
---input -`: the explicit replacement intent permits the differing bound fact
-set to replace only the same owned configured destination and section heading.
-Do not imply replacement without that explicit intent.
+Return one closed outcome envelope: `outcome`, opaque `diagnostic`, and
+`manifest`. For `accepted`, `manifest` is the requested complete closed
+schema_version 1 DesignDocument, following the generated contract below. For
+`rejected` or `indeterminate`, omit `manifest` or set it to `null` and give a
+nonempty diagnostic. A missing prerequisite names `BLOCKED-BY: <owner>` and
+its remediation; a finding names `DEFECT-OWNER: <owner>`. These are semantic
+ownership duties, not a second structured payload.
 
-<!-- GENERATED:design-authority-locator START — source of truth: des.domain.design_authority_locator.design_authority_locator_description(); do not hand-edit (docgen renders this region) -->
-`authority_locator` is a DESIGN section locator, `<document>#<heading>`, admissible only when:
-- it carries exactly one `#`, separating the document from the heading
-- the text before the `#` is a repository-relative whole-file path: no leading `/`, no `.` or `..` segment, and never a URL or prose
-- the heading after the `#` is not empty
-- the heading contains no further `#`
-- the heading contains no line break, neither LF nor CR
-
-The EMPTY string is admissible and is the honest answer while no configured DESIGN-document destination has assigned this value a section identity; the constructor, never the turn, fills one in later.
-
-Any other answer -- a traversal such as `../outside/DESIGN.md#Slice 1`, a prose sentence naming the section, a second `#` or a line break inside the heading -- is refused as `DesignFactsUnsafeLocator`, and the whole design turn ends Indeterminate with nothing bound.
-<!-- GENERATED:design-authority-locator END -->
+Scope and readiness of shared versus per-slice decisions follow `nw-design`.
+Each invocation returns the one shared or value manifest requested by the host.
+The host extracts only an accepted envelope's manifest and submits it unchanged
+as strict UTF-8 JSON to `des design --repo-root ROOT --value N --input -`
+or the selected `--shared` constructor. Never return completed Markdown, an
+ADR draft, legacy provider facts or a side-channel manifest file.
+The declared verification exercises the chain's own stimulus against the
+candidate through the real public driving port, with an examiner-readable exit
+and stdout; test runners follow it. For an in-process port, name that boundary
+in `diagnostic` and declare the nearest executable argv.
+`NEXT` is advisory; the LLM chooses whether to rework. Only the host submits an
+accepted replacement manifest with `--replace-current --input -`, preserving
+the same owned configured destination and section heading. Do not imply
+replacement without that explicit intent or execute the constructor yourself.
 
 <!-- GENERATED:design-document-input START — source of truth: des.domain.design_document.DesignDocument.input_description(); do not hand-edit (docgen renders this region) -->
 DESIGN constructor input is one strict UTF-8 JSON manifest:
@@ -169,7 +155,8 @@ object with exactly:
   - `heading`: plain non-empty text, not a Markdown heading.
 - `purpose`: non-empty text.
 - `constraints`: non-empty unique list of non-empty text.
-- `targets`: non-empty unique list with distinct paths of object with exactly:
+- `product_change` (optional): `required` or `none`; omission means required with a mutable production target excluding the oracle; none requires targets=[]; consultation belongs in reuse_analysis.candidates.
+- `targets`: unique list with distinct paths of object with exactly:
     - `path`: repository-relative file path.
     - `decision`: `EXTEND` or `CREATE_NEW`
     - `reason`: non-empty text.

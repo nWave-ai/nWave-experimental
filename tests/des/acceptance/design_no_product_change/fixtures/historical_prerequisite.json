@@ -1,0 +1,66 @@
+{
+  "source_commit": "0e905388edea3c51b9fccadede1ae337148f7049",
+  "executor": "/home/parajao/Projects/nWave-dev/.venv/bin/python",
+  "sha256": "d33e4a181fc127227c5024d866cafd3634319105ddf5f642ee77c648ce8ccc4f",
+  "canonical_prerequisite": {
+    "acceptance": [],
+    "acceptance_design_basis_sha256": null,
+    "acceptance_oracle": null,
+    "acceptance_oracle_verification_index": null,
+    "acceptance_supports": [],
+    "acceptance_verification": null,
+    "authority": {
+      "acceptance_supports": [],
+      "adr": null,
+      "agreement_analysis": {
+        "applicability": "not_applicable",
+        "reason": "No affected consumer."
+      },
+      "architect_handoff": null,
+      "architectural_tests": {
+        "applicability": "not_applicable",
+        "reason": "No changed structural boundary."
+      },
+      "authority_locator": "",
+      "contract_tests": {
+        "applicability": "not_applicable",
+        "reason": "No changed agreement."
+      },
+      "decisions": [
+        "Own the producer public contract."
+      ],
+      "impact_closure": {
+        "applicability": "not_applicable",
+        "reason": "The fixture reaches no public surface, consumer or build metadata."
+      },
+      "obligations": [],
+      "oracle": "producer_oracle.ml",
+      "oracle_verification_index": 0,
+      "paradigm": "functional",
+      "prefactoring": {
+        "applicability": "not_applicable",
+        "reason": "No selected structural move."
+      },
+      "public_oracle": null,
+      "reuse_analysis": {
+        "candidates": []
+      },
+      "targets": [
+        {
+          "decision": "EXTEND",
+          "path": "producer.ml"
+        }
+      ],
+      "verification": [
+        [
+          "/home/parajao/Projects/nWave-dev/.venv/bin/python",
+          "-c",
+          "raise SystemExit(0)"
+        ]
+      ]
+    },
+    "dependencies": [],
+    "design_semantic_sha256": null,
+    "observation": "producer"
+  }
+}

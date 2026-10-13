@@ -103,6 +103,18 @@ A named profile (`OMP_PROFILE`/`PI_PROFILE`) is refused: only the default
 profile is served. Uninstall uses the recorded manifest ownership and keeps
 foreign commands and extensions.
 
+The architect's canonical output is one discriminated `outcome`/`diagnostic`/
+`manifest` envelope. Acceptance requires a complete v1 DesignDocument manifest,
+generated from the DESIGN constructor's descriptors. Rejected or indeterminate
+responses carry no manifest (absent or null) and a nonempty opaque diagnostic.
+The host submits only an accepted manifest, unchanged, to
+`des design --repo-root ROOT --value N --input -` (or the selected `--shared`
+constructor). A nonaccepting envelope is diagnostic-only, not constructor input;
+neither legacy provider facts nor a side-channel file is a publication route.
+Claude and OMP use the shared canonical schema. Codex retains its existing
+`answer` transport wrapper and projects optional manifest fields into explicit
+absence/presence object branches, without inventing nullable constructor fields.
+
 ### Uninstallation
 
 ```bash

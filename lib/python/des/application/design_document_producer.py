@@ -23,15 +23,7 @@ from des.runtime.spawn import GIT_TIMEOUT_ENV, git_timeout_seconds, spawn
 
 
 class DesignAuthoritySection(Protocol):
-    """What this producer needs of the value it publishes, and nothing else.
-
-    TYPE-ONLY and structural: the closed-document `DesignDocument` and the
-    typed-facts `DesignFactsSection` are two renderings of one architecture
-    decision, and both are published by THIS producer so that one law decides
-    what `<document>#<heading>` names.  Widening the parameter rather than
-    adding a second publisher is what keeps the two paths from drifting apart
-    on ownership, ambiguity, drift and read-back resolution.
-    """
+    """The rendered DESIGN section needed by the existing publisher."""
 
     @property
     def heading(self) -> str: ...

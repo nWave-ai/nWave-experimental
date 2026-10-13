@@ -158,6 +158,67 @@ def test_end_of_file_scope_preserves_receipt_evidence_but_checks_siblings():
     )
 
 
+def test_measurement_evidence_keeps_its_bytes_while_canonical_reports_need_newlines(
+    tmp_path,
+):
+    measurement = "docs/feature/atd-policy-alignment/measurement/"
+    evidence_paths = (
+        "baseline-1/presence/annot-v1.json",
+        "baseline-1/scoring/L01.json",
+        "baseline-1/turns/matrix-r1-v1/process.json",
+        "baseline-1/prompts/atd-prompt-v1-gen1.txt",
+        "baseline-1/matrix-summary.json",
+        "iterations/scoring/iter9/L01a.json",
+        "iterations/turns/iter9-matrix-r1-v1/identity.json",
+        "iterations/prompts/atd-prompt-iter9-v1-gen1.txt",
+        "iterations/iter1-matrix-summary.json",
+    )
+    canonical_paths = (
+        "baseline-1/RESULTS.md",
+        "baseline-1/PROTOCOLLO-MISURA.md",
+        "iterations/RESULTS-iterations.md",
+        "iterations/CHANGE-INVENTORY.md",
+        "baseline-1/matrix-summary.json.md",
+        "baseline-1/scoring-sibling/README.md",
+    )
+    evidence = [measurement + path for path in evidence_paths]
+    canonical = [measurement + path for path in canonical_paths]
+    for path in evidence + canonical:
+        file = tmp_path / path
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_bytes(b"original bytes without a newline")
+
+    check = subprocess.run(
+        [sys.executable, str(END_OF_FILE_SCRIPT), "--check", *evidence, *canonical],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=tmp_path,
+    )
+    assert check.returncode == 1
+    assert all(
+        f"Missing newline at end of file: {path}\n" in check.stdout
+        for path in canonical
+    )
+    assert all(
+        f"Missing newline at end of file: {path}\n" not in check.stdout
+        for path in evidence
+    )
+
+    fix = subprocess.run(
+        [sys.executable, str(END_OF_FILE_SCRIPT), "--fix", *evidence, *canonical],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=tmp_path,
+    )
+    assert fix.returncode == 0
+    for path in evidence:
+        assert (tmp_path / path).read_bytes() == b"original bytes without a newline"
+    for path in canonical:
+        assert (tmp_path / path).read_bytes() == b"original bytes without a newline\n"
+
+
 # ---------------------------------------------------------------------------
 # GDP-4 / GDP-5 -- the cost of repair sits on the system, not the operator
 # ---------------------------------------------------------------------------

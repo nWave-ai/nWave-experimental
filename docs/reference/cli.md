@@ -580,6 +580,64 @@ The following subcommands are supported but are not part of the everyday user su
 
 ---
 
+## des handoff prompt
+
+Construct a native role prompt from the accumulated handover or a sealed prepared
+reviewer/examiner input. Prompt construction does not invoke the role model.
+
+### Synopsis
+
+```
+des handoff prompt --role ROLE --root-context PATH [--repo-root PATH]
+                   [--value N] [--targets PATHS] [--phase before|after]
+                   [--template-name NAME] [--template-dir PATH] [--skills-dir PATH]
+                   [--template PATH] [--candidate SHA --role-input PATH]
+```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--role` | Required published native role. |
+| `--root-context` | Required nonblank UTF-8 caller context; relative paths resolve from the repository root. |
+| `--repo-root` | Repository containing the accumulated handover. Defaults to the current repository. |
+| `--value` | Original one-based value position; required for selected-value roles. Prepared reviewer/examiner inputs consume the whole sealed population instead. |
+| `--targets` | Comma-separated target restriction. Crafter targets must be mutable production targets of the bound DESIGN. |
+| `--phase` | Explicit `before` or `after` prefactoring phase; the named prefactoring template requires applicable bound prefactoring. |
+| `--template-name` | Named template basename; retains its existing strict fixture specification. |
+| `--template-dir` | Explicit named-template asset directory, resolved relative to the repository root. |
+| `--skills-dir` | Explicit installed skill tree for portable instruction paths, resolved relative to the repository root. |
+| `--template` | Explicit instruction file; not processed as a named template or subjected to placeholder substitution. |
+| `--candidate`, `--role-input` | Required for reviewer/examiner prompts; consume input sealed by `des prepare-role`. |
+
+### Output
+
+**stdout** contains role instructions and one canonical JSON fact packet at
+`[C] orchestrator.native_input`. Scoped raw declarations retain their own paths;
+resolved selected authority is available separately at `selected_authority`.
+Consumed handoff rows, including their full hashes and absence markers, belong to
+`architect_projection`, not separate `[H]` displays. Original selection, target
+and phase parameters belong to `invocation` where applicable.
+
+Default and named custom templates receive navigation references for DES fact
+slots, including partial or repeated slots. TASK/RETURN invocation parameters
+remain literal instruction inputs. Empty effective supports and obligations mean
+none declared; missing public-oracle input remains explicitly `UNASSESSED`.
+Prepared packets retain their sealed role-specific population without live
+selected-authority or invocation enrichment.
+
+ROOT is inserted literally by named-template substitution when `root_input` is
+actually consumed; otherwise it is supplied literally in `[C]`. A custom template
+that omits the slot still receives ROOT. Explicit instruction files are not
+inspected for matching fact text, placeholders or prompt markers. Asset discovery
+is unchanged; `--template-dir` and `--skills-dir` select explicit assets when
+repository and installed assets differ.
+
+Unavailable or inconsistent required inputs produce a nonzero result with
+WHAT/WHY/HOW on **stderr**, rather than a partial successful prompt.
+
+---
+
 ## DES utility commands
 
 The following console scripts are available for DES (Deterministic Execution System) internals and are not part of the everyday user surface:

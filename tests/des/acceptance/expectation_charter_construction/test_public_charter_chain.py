@@ -408,6 +408,8 @@ def _craft_value(
 ) -> None:
     """Design, author and settle one additional value with its own files."""
     root, step = project.root, project.run
+    from tests.des._helpers.host_facts import design_manifest
+
     design_facts = {
         "targets": [{"path": target, "decision": "CREATE_NEW"}],
         "paradigm": "object_oriented",
@@ -450,7 +452,9 @@ def _craft_value(
                     "structured_output": {
                         "outcome": "accepted",
                         "diagnostic": "bound the typed facts",
-                        "design_facts": design_facts,
+                        "manifest": design_manifest(
+                            design_facts, observation(chr(ord("A") + value - 1)), value
+                        ),
                     }
                 }
             ],

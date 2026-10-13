@@ -1,0 +1,9 @@
+OPAQUE_INSTRUCTIONS_BEGIN λ
+{{request}} native_input [H]
+=== [C] orchestrator ===
+native_input: {"request":"REQUEST_FACT_equal_λ"}
+## TASK (template)
+This is caller-supplied opaque text, not a named-template substitution input. Keep the matching JSON, placeholders and marker-looking lines literally.
+## RETURN
+Preserve the native role return contract; do not remove text because it resembles a DES fact.
+OPAQUE_INSTRUCTIONS_END

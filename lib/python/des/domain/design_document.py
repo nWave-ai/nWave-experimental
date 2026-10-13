@@ -18,6 +18,7 @@ from des.domain.architecture_brief_resolver import (
 )
 from des.domain.input_defects import Defects, InputDefects
 from des.ports.driven_ports.task_invocation_port import (
+    MUTABLE_TARGET_DECISIONS,
     AgreementParty,
     ApplicableADR,
     ApplicableAgreementAnalysis,
@@ -274,7 +275,16 @@ class _Choice(_Form[object]):
         if self.tag is None:
             decoded = _text(value, name)
             if decoded not in self.alternatives:
-                raise DesignDocumentInvalid(f"{name} is not supported")
+                correction = (
+                    "; consultation belongs in reuse_analysis.candidates, not targets; "
+                    "submit corrected declarations through des design --repo-root ROOT --value N --input -"
+                    if self is _TARGET_DECISION or self is _PRODUCT_CHANGE
+                    else ""
+                )
+                raise DesignDocumentInvalid(
+                    f"WHAT: {name} is not supported; WHY: supplied {decoded!r}, "
+                    f"expected {self.alternatives!r}; HOW: choose a supported alternative{correction}"
+                )
             return decoded
         decoded = _object(value, name)
         selected = _text(decoded.get(self.tag), f"{name}.{self.tag}")
@@ -334,7 +344,8 @@ _SCHEMA_VERSION = _Leaf(
     ),
 )
 _PARADIGM = _Choice(("object_oriented", "functional", "procedural"))
-_TARGET_DECISION = _Choice(("EXTEND", "CREATE_NEW"))
+_TARGET_DECISION = _Choice(MUTABLE_TARGET_DECISIONS)
+_PRODUCT_CHANGE = _Choice(("required", "none"))
 _REUSE_DECISION = _Choice(("REUSE", "EXTEND", "REPLACE", "CREATE_NEW"))
 _FAILURE_OUTCOME = _Choice(("Refusal", "Retry", "Indeterminate"))
 
@@ -403,6 +414,7 @@ _TARGET = _Product(
 )
 _TARGETS = _ListOf(
     _TARGET,
+    non_empty=False,
     collection="list with distinct paths",
     identity=lambda item: item["path"],  # type: ignore[index]
 )
@@ -642,6 +654,12 @@ _MANIFEST = _Product(
         _Field("authority", _AUTHORITY),
         _Field("purpose", _TEXT),
         _Field("constraints", _TEXTS),
+        _Field(
+            "product_change",
+            _PRODUCT_CHANGE,
+            optional=True,
+            note="omission means required with a mutable production target excluding the oracle; none requires targets=[]; consultation belongs in reuse_analysis.candidates",
+        ),
         _Field("targets", _TARGETS),
         _Field("paradigm", _PARADIGM),
         _Field("decisions", _TEXTS),
@@ -750,22 +768,6 @@ def _decision_record(name: str, decision: object) -> object:
             if key != "applicability"
         }
     )
-
-
-def without_absent_optional_decisions(raw: dict[str, object]) -> dict[str, object]:
-    """Normalize a strict provider's `null` for an optional decision to absence.
-
-    A provider whose strict output must list every property carries an optional
-    decision as nullable; the constructor's grammar knows only absence.
-    """
-    optional = {field.name for field in _DECISION_FIELDS if field.optional} | {
-        "architect_handoff"
-    }
-    return {
-        key: value
-        for key, value in raw.items()
-        if not (key in optional and value is None)
-    }
 
 
 def design_decisions_defect(
@@ -921,6 +923,44 @@ def _decision_rule_defects(
             )
 
 
+def product_change_defect(
+    product_change: object, targets: tuple[DesignTarget, ...], oracle: str
+) -> str | None:
+    correction = (
+        "HOW: submit product_change=none with targets=[] and consultation in "
+        "reuse_analysis.candidates, or required with real EXTEND/CREATE_NEW "
+        "production targets through des design --repo-root ROOT --value N --input -"
+    )
+    if product_change not in ("required", "none"):
+        return f"WHAT: product_change is invalid; WHY: supplied {product_change!r}; {correction}"
+    invalid = tuple(
+        target for target in targets if target.decision not in MUTABLE_TARGET_DECISIONS
+    )
+    if invalid:
+        return (
+            "WHAT: targets[].decision is invalid; WHY: "
+            + ", ".join(f"{target.path} ({target.decision})" for target in invalid)
+            + "; "
+            + correction
+        )
+    if product_change == "none" and targets:
+        return (
+            "WHAT: product_change/targets conflict; WHY: none declares mutation paths "
+            + ", ".join(target.path for target in targets)
+            + "; "
+            + correction
+        )
+    if product_change == "required" and not any(
+        target.path != oracle.partition("::")[0] for target in targets
+    ):
+        return (
+            "WHAT: product_change/targets lack a mutable production target; "
+            f"WHY: required declares {[target.path for target in targets]!r}, "
+            f"excluding immutable oracle {oracle}; {correction}"
+        )
+    return None
+
+
 def _manifest_rule_defects(root: Mapping[str, object]) -> Iterator[str]:
     """Each cross-field defect of a manifest whose own fields decoded.
 
@@ -932,6 +972,14 @@ def _manifest_rule_defects(root: Mapping[str, object]) -> Iterator[str]:
     targets = root["targets"]
     verification = root["verification"]
     index = root["oracle_verification_index"]
+    if targets is not None and oracle is not None:
+        defect = product_change_defect(
+            root.get("product_change") or "required",
+            tuple(DesignTarget(item["path"], item["decision"]) for item in targets),
+            oracle,
+        )
+        if defect is not None:
+            yield defect
     if index is not None and verification is not None and index >= len(verification):  # type: ignore[operator, arg-type]
         yield "manifest.oracle_verification_index must name one declared verification command"
     if oracle is not None and supports is not None:
@@ -968,81 +1016,81 @@ def _manifest_rule_defects(root: Mapping[str, object]) -> Iterator[str]:
     )
 
 
-def design_decisions_schema() -> dict[str, object]:
-    """Provider schema projected from the same finite decision forms."""
+def _form_schema(form: _Form[object]) -> dict[str, object]:
+    """Compile a descriptor without changing its constructor admission."""
+    if isinstance(form, _Product):
+        return {
+            "type": "object",
+            "properties": {
+                field.name: {
+                    **_form_schema(field.form),
+                    **({"description": field.note} if field.note else {}),
+                }
+                for field in form.fields
+            },
+            "required": [field.name for field in form.fields if not field.optional],
+            "additionalProperties": False,
+        }
+    if isinstance(form, _ListOf):
+        return {
+            "type": "array",
+            "items": _form_schema(form.item),
+            "minItems": int(form.non_empty),
+            "uniqueItems": form.unique,
+        }
+    if isinstance(form, _Choice):
+        if form.tag is None:
+            return {"type": "string", "enum": list(form.alternatives)}
+        alternatives = []
+        for label, product in form.products:
+            compiled = _form_schema(product)
+            alternatives.append(
+                {
+                    **compiled,
+                    "properties": {
+                        form.tag: {"type": "string", "const": label},
+                        **compiled["properties"],
+                    },
+                    "required": [form.tag, *compiled["required"]],
+                }
+            )
+        return {"anyOf": alternatives}
+    if form is _SCHEMA_VERSION:
+        return {"type": "integer", "const": 1}
+    if form is _ORACLE_VERIFICATION_INDEX:
+        return {"type": "integer", "minimum": 0}
+    if form is _ARCHITECT_HANDOFF:
+        from des.application.architect_handoff import input_schema
 
-    def schema(form: _Form[object]) -> dict[str, object]:
-        if isinstance(form, _Product):
-            return {
-                "type": "object",
-                "properties": {field.name: schema(field.form) for field in form.fields},
-                "required": [field.name for field in form.fields if not field.optional],
-                "additionalProperties": False,
-            }
-        if isinstance(form, _ListOf):
-            return {
-                "type": "array",
-                "items": schema(form.item),
-                "minItems": int(form.non_empty),
-                "uniqueItems": form.unique,
-            }
-        if isinstance(form, _Choice):
-            if form.tag is None:
-                return {"type": "string", "enum": list(form.alternatives)}
-            return {
-                "anyOf": [
-                    {
-                        **schema(product),
-                        "properties": {
-                            form.tag: {"type": "string", "const": label},
-                            **schema(product)["properties"],
-                        },
-                        "required": [form.tag, *schema(product)["required"]],
-                    }
-                    for label, product in form.products
-                ]
-            }
-        if form is _ORACLE_VERIFICATION_INDEX:
-            return {"type": "integer", "minimum": 0}
+        return input_schema()
+    if form in (_ORACLE, _PATH, _REUSE_LOCATOR, _IMPACT_LOCATOR):
+        from des.domain.architecture_brief_resolver import (
+            DESIGN_ORACLE_LOCATOR_PATTERN,
+            REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN,
+        )
+
+        pattern = REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN
         if form is _ORACLE:
-            from des.domain.architecture_brief_resolver import (
-                DESIGN_ORACLE_LOCATOR_PATTERN,
-            )
-
-            return {"type": "string", "pattern": DESIGN_ORACLE_LOCATOR_PATTERN}
-        if form is _PATH:
-            from des.domain.architecture_brief_resolver import (
-                REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN,
-            )
-
-            return {"type": "string", "pattern": REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN}
+            pattern = DESIGN_ORACLE_LOCATOR_PATTERN
         if form is _REUSE_LOCATOR:
-            from des.domain.architecture_brief_resolver import (
-                REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN,
-            )
-
-            return {
-                "type": "string",
-                "pattern": REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN[:-1]
-                + r":[1-9][0-9]*$",
-            }
+            pattern = pattern[:-1] + r":[1-9][0-9]*$"
         if form is _IMPACT_LOCATOR:
-            from des.domain.architecture_brief_resolver import (
-                REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN,
-            )
-
-            return {
-                "type": "string",
-                "pattern": REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN[:-1]
-                + r"(?::[1-9][0-9]*)?$",
-            }
-        return {"type": "string", "minLength": 1}
-
-    from des.application.architect_handoff import input_schema
-
-    result = schema(_DESIGN_DECISIONS)
-    result["properties"]["architect_handoff"] = input_schema()
-    return result
+            pattern = pattern[:-1] + r"(?::[1-9][0-9]*)?$"
+        return {"type": "string", "pattern": pattern}
+    if form is _ARGV_TOKEN:
+        return {
+            "type": "string",
+            "minLength": 1,
+            "pattern": r"^[^\u0000]*[^\s\u0000][^\u0000]*$",
+        }
+    if isinstance(form, _Leaf) and form.decoder is _plain_heading:
+        return {
+            "type": "string",
+            "pattern": r"^(?!\s*#)[^\r\n]*\S[^\r\n]*$",
+        }
+    if form is not _TEXT:
+        raise TypeError(f"Unsupported DESIGN scalar form: {form!r}")
+    return {"type": "string", "minLength": 1, "pattern": r"\S"}
 
 
 _WRAP_WIDTH = 80
@@ -1300,134 +1348,6 @@ def _preservation_commands(facts: DesignFacts) -> list[list[str]]:
 
 
 @dataclass(frozen=True, slots=True)
-class DesignFactsSection:
-    """The authority section one architect turn's TYPED FACTS alone render.
-
-    The closed-document path renders from a whole human manifest.  A role turn
-    returns :class:`DesignFacts` and nothing else, so this value renders the
-    same `## heading` plus `### ` subsection vocabulary from exactly those
-    fields and INVENTS NOTHING: a field the architect did not return simply has
-    no subsection, because fabricating prose into a human-owned architecture
-    authority is the one thing this projection must never do.
-
-    It is deliberately the same SHAPE the producer already publishes -- a
-    `heading` and a `markdown()` -- so one producer and one law continue to
-    decide what `<document>#<heading>` names.
-    """
-
-    heading: str
-    facts: DesignFacts
-
-    @classmethod
-    def for_locator(cls, locator: str, facts: DesignFacts) -> DesignFactsSection | None:
-        """The section a declared `<document>#<heading>` locator names, or None.
-
-        `None` is "these facts name no renderable section", which is a contract
-        gap between the role and the step: its caller refuses and binds nothing,
-        rather than guessing a heading the role never declared.
-        """
-        _document, separator, heading = locator.partition("#")
-        heading = heading.strip()
-        if not separator or not heading or "\n" in heading or heading.startswith("#"):
-            return None
-        return cls(heading, facts)
-
-    def markdown(self) -> str:
-        lines: list[str] = [f"## {self.heading}", ""]
-        if self.facts.obligations:
-            lines += [
-                "### Constraints",
-                *(f"- {item}" for item in self.facts.obligations),
-                "",
-            ]
-        lines += [
-            "### Targets",
-            "| Path | Decision |",
-            "|---|---|",
-            *(
-                f"| `{target.path}` | {target.decision} |"
-                for target in self.facts.targets
-            ),
-            "",
-            "### Paradigm",
-            self.facts.paradigm,
-            "",
-        ]
-        if self.facts.decisions:
-            lines += [
-                "### Decisions",
-                *(f"- {item}" for item in self.facts.decisions),
-                "",
-            ]
-        if self.facts.acceptance_supports:
-            lines += [
-                "### Acceptance supports",
-                *(f"- `{support}`" for support in self.facts.acceptance_supports),
-                "",
-            ]
-        lines += [
-            "### Oracle and verification",
-            f"Oracle target locator: `{self.facts.oracle}`",
-            f"Oracle verification command index: `{self.facts.oracle_verification_index}`",
-            "",
-            *(
-                f"Verification command: `{' '.join(argv)}`"
-                for argv in self.facts.verification
-            ),
-        ]
-        lines += [
-            "",
-            "\n\n".join("\n".join(block) for block in _assurance_blocks(self.facts)),
-        ]
-        lines += ["", "### Prefactoring"]
-        if isinstance(self.facts.prefactoring, NotApplicable):
-            lines += _wrap(f"Not applicable: {self.facts.prefactoring.reason}")
-        else:
-            prefactoring = self.facts.prefactoring
-            lines += _wrap(f"Existing oracle: `{prefactoring.existing_oracle}`")
-            lines += _wrap(f"Move: {prefactoring.move}")
-            lines += _wrap(
-                f"Preserved observation: {prefactoring.preserved_observation}"
-            )
-            lines += [
-                "",
-                "\n\n".join(
-                    "\n".join(block) for block in _preservation_commands(self.facts)
-                ),
-            ]
-        reuse = _reuse_blocks(self.facts)
-        if reuse:
-            lines += ["", "\n\n".join("\n".join(block) for block in reuse)]
-        impact = _impact_closure_blocks(self.facts)
-        if impact:
-            lines += ["", "\n\n".join("\n".join(block) for block in impact)]
-        lines += ["", "### Agreement analysis", ""]
-        if isinstance(self.facts.agreement_analysis, NotApplicable):
-            lines += _wrap(f"Not applicable: {self.facts.agreement_analysis.reason}")
-        else:
-            for party in self.facts.agreement_analysis.parties:
-                lines += _wrap(
-                    f"Contract: {party.contract}; {party.role}: `{party.locator}`; "
-                    f"{party.decision}: {party.reason}"
-                )
-        if self.facts.architect_handoff is not None:
-            from des.application.architect_handoff import wire
-
-            lines += [
-                "",
-                "### Typed architect handoff",
-                "",
-                *_fenced(
-                    "json",
-                    json.dumps(
-                        wire(self.facts.architect_handoff), ensure_ascii=False, indent=2
-                    ),
-                ),
-            ]
-        return "\n".join(lines) + "\n"
-
-
-@dataclass(frozen=True, slots=True)
 class DesignDocument:
     heading: str
     purpose: str
@@ -1477,7 +1397,8 @@ class DesignDocument:
         identity = {
             key: value
             for key, value in root.items()
-            if key != "architect_handoff" or value is not None
+            if (key != "architect_handoff" or value is not None)
+            and (key != "product_change" or value == "none")
         }
         semantic_sha256 = hashlib.sha256(
             json.dumps(
@@ -1567,6 +1488,7 @@ class DesignDocument:
             oracle_verification_index,
             constraints,
             public_oracle=public_oracle,
+            product_change=root.get("product_change") or "required",
             architect_handoff=(
                 _decode_architect_handoff(root["architect_handoff"])
                 if root.get("architect_handoff") is not None
@@ -1592,6 +1514,11 @@ class DesignDocument:
             facts,
             semantic_sha256,
         )
+
+    @classmethod
+    def input_schema(cls) -> dict[str, object]:
+        """The complete closed manifest projected from the constructor forms."""
+        return _form_schema(_MANIFEST)
 
     @classmethod
     def input_description(cls) -> str:
@@ -1631,8 +1558,14 @@ class DesignDocument:
                 ),
             ]
 
+        product_change_blocks = (
+            [["Product change: none"], ["No product changes authorized."]]
+            if self.facts.product_change == "none"
+            else []
+        )
         blocks: list[list[str]] = [
             [f"## {self.heading}"],
+            *product_change_blocks,
             heading("Purpose"),
             _wrap(self.purpose),
             heading("Constraints"),
@@ -1844,6 +1777,7 @@ class DesignDocument:
             "oracle_verification_index": facts.oracle_verification_index,
             "obligations": list(facts.obligations),
             **design_decisions_wire(facts),
+            **({"product_change": "none"} if facts.product_change == "none" else {}),
         }
         if facts.authority_locator:
             projection["authority_locator"] = facts.authority_locator

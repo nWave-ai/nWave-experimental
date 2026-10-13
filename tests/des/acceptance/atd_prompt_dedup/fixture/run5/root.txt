@@ -1,0 +1,1 @@
+Write the public acceptance oracle for the slice doctor-version-sync / undeterminable-not-passed.

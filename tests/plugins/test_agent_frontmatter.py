@@ -194,14 +194,14 @@ class TestAgentFrontmatterAcceptance:
     @pytest.mark.parametrize(
         ("agent", "expected"),
         [
-            # The architect measures and returns typed design facts. DES owns
-            # the resulting architecture-document writes, so the role needs no
-            # direct Edit capability.
+            # DES owns architecture-document writes; the architect has no Edit.
+            # Write is restricted to external formal model/proof source files
+            # cited by Model.source, not authority, handover or oracle files.
             # The acceptance reviewer reads installed framework guidance only.
             # The examiner receives its knowledge preloaded and declares no Read.
             (
                 "nw-solution-architect",
-                ["Bash", "Glob", "Grep", "Read", "StructuredOutput"],
+                ["Bash", "Glob", "Grep", "Read", "StructuredOutput", "Write"],
             ),
             ("nw-product-owner", ["Read", "StructuredOutput"]),
             ("nw-acceptance-designer-reviewer", ["Read", "StructuredOutput"]),

@@ -26,6 +26,7 @@ from des.domain.declared_import_resolver import (
     resolve_declared_import,
 )
 from des.domain.oracle_locator_resolver import is_test_shaped_path
+from des.ports.driven_ports.task_invocation_port import MUTABLE_TARGET_DECISIONS
 
 
 if TYPE_CHECKING:
@@ -547,7 +548,7 @@ _TABLE_SEPARATOR_CELL_RE = re.compile(r"^:?-+:?$")
 
 #: The Decision-column closed vocabulary -- the same two tokens the
 #: targetPlan schema admits; transcription never widens it.
-_TARGET_TABLE_DECISIONS = frozenset({"EXTEND", "CREATE_NEW"})
+_TARGET_TABLE_DECISIONS = frozenset(MUTABLE_TARGET_DECISIONS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -624,6 +625,19 @@ def _pipe_table_blocks(brief_text: str) -> list[list[list[str]]]:
     return blocks
 
 
+def extract_product_change(brief_text: str) -> str | None:
+    declarations = [
+        line.strip().partition(":")[2].strip()
+        for line in brief_text.splitlines()
+        if line.strip().startswith("Product change:")
+    ]
+    if not declarations:
+        return "required"
+    if len(declarations) == 1 and declarations[0] in ("required", "none"):
+        return declarations[0]
+    return None
+
+
 def extract_declared_target_table(
     brief_text: str,
 ) -> list[DeclaredTargetTableRow] | TargetTableProblems | None:
@@ -648,7 +662,7 @@ def extract_declared_target_table(
     matching: list[list[list[str]]] = []
     for block in _pipe_table_blocks(brief_text):
         header = [_declaration_cell_text(cell).lower() for cell in block[0]]
-        if "target" in header and "decision" in header:
+        if ("target" in header or "path" in header) and "decision" in header:
             matching.append(block)
     if not matching:
         return None
@@ -674,7 +688,7 @@ def extract_declared_target_table(
 
     block = matching[0]
     header = [_declaration_cell_text(cell).lower() for cell in block[0]]
-    target_index = header.index("target")
+    target_index = header.index("target" if "target" in header else "path")
     decision_index = header.index("decision")
     rows: list[DeclaredTargetTableRow] = []
     problems: list[TargetTableProblem] = []
@@ -740,6 +754,8 @@ def extract_declared_target_table(
         rows.append(DeclaredTargetTableRow(path=path, decision=decision))
     if problems:
         return TargetTableProblems(problems=tuple(problems), rows=tuple(rows))
+    if not rows and extract_product_change(brief_text) == "none":
+        return []
     if not rows:
         return TargetTableProblems(
             problems=(

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -54,6 +55,7 @@ from des.ports.driven_ports.task_invocation_port import (
     ReuseAnalysis,
     TaskInvocationPort,
 )
+from tests.des._helpers.host_facts import design_manifest
 from tests.des._helpers.step_stimulus import decomposed, designed, oracled
 
 
@@ -138,6 +140,31 @@ class ScriptedPort(TaskInvocationPort):
         self.roles: list[str] = []
         self.prompts: list[tuple[str, str]] = []
 
+    def manifest(self, decision: str = "one observable value") -> dict:
+        facts = DesignFacts(
+            targets=(
+                DesignTarget(PRODUCTION, "CREATE_NEW"),
+                DesignTarget(self.oracle, "CREATE_NEW"),
+            ),
+            paradigm="object_oriented",
+            decisions=(decision,),
+            oracle=self.oracle,
+            acceptance_supports=self.acceptance_supports,
+            verification=(("python", "-m", "pytest", self.oracle, "-q"),),
+            oracle_verification_index=0,
+            architectural_tests=NotApplicable(
+                "The fixture has no structural boundary change."
+            ),
+            contract_tests=NotApplicable("The fixture changes no shared contract."),
+            prefactoring=NotApplicable("The fixture requires no preservation move."),
+            agreement_analysis=NotApplicable("The fixture has no affected agreement."),
+            reuse_analysis=ReuseAnalysis(()),
+            impact_closure=NotApplicable(
+                "The fixture reaches no public surface, consumer or build metadata."
+            ),
+        )
+        return design_manifest(asdict(facts), OBSERVATION, 1)
+
     def invoke(
         self,
         *,
@@ -152,36 +179,7 @@ class ScriptedPort(TaskInvocationPort):
         if role_id == "nw-product-owner":
             return _accepted(product_values=(ProductValue(OBSERVATION),))
         if role_id == "nw-solution-architect":
-            return _accepted(
-                design_facts=DesignFacts(
-                    targets=(
-                        DesignTarget(PRODUCTION, "CREATE_NEW"),
-                        DesignTarget(self.oracle, "CREATE_NEW"),
-                    ),
-                    paradigm="object_oriented",
-                    decisions=("one observable value",),
-                    oracle=self.oracle,
-                    acceptance_supports=self.acceptance_supports,
-                    verification=(("python", "-m", "pytest", self.oracle, "-q"),),
-                    oracle_verification_index=0,
-                    architectural_tests=NotApplicable(
-                        "The fixture has no structural boundary change."
-                    ),
-                    contract_tests=NotApplicable(
-                        "The fixture changes no shared contract."
-                    ),
-                    prefactoring=NotApplicable(
-                        "The fixture requires no preservation move."
-                    ),
-                    agreement_analysis=NotApplicable(
-                        "The fixture has no affected agreement."
-                    ),
-                    reuse_analysis=ReuseAnalysis(()),
-                    impact_closure=NotApplicable(
-                        "The fixture reaches no public surface, consumer or build metadata."
-                    ),
-                )
-            )
+            return _accepted()
         if role_id == "nw-acceptance-designer":
             written = self.root / self.oracle
             written.parent.mkdir(parents=True, exist_ok=True)
@@ -242,7 +240,7 @@ def one_oracle_turn(subject: Path, port: ScriptedPort, *, finding: str | None = 
     """
     runner = DeliveryContinuationRunner()
     stored = decomposed(runner, port, subject, REQUEST)
-    stored, design = designed(runner, port, subject, stored)
+    stored, design = designed(runner, port, subject, stored, port.manifest())
     return (
         runner,
         stored,
@@ -374,7 +372,7 @@ def test_unobservable_support_is_not_reported_as_a_missing_oracle(
     )
     runner = DeliveryContinuationRunner()
     stored = decomposed(runner, port, subject, REQUEST)
-    stored, design = designed(runner, port, subject, stored)
+    stored, design = designed(runner, port, subject, stored, port.manifest())
     regular_file = DeliveryContinuationRunner._regular_file
 
     def observe(path: Path) -> bool | None:

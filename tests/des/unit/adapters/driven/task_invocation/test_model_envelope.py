@@ -15,65 +15,60 @@ from des.adapters.driven.task_invocation.model_envelope import (
     codex_schema_for,
     decode_model_run,
 )
+from des.domain.design_document import DesignDocument
 from des.ports.driven_ports.task_invocation_port import (
     CraftBlocker,
     DefectOwner,
     MalformedModelEnvelope,
     ModelOutcome,
 )
+from tests.des._helpers.host_facts import design_manifest
 
 
-def test_architect_outcome_keeps_opaque_diagnostic_and_typed_facts() -> None:
+def test_architect_outcome_keeps_opaque_diagnostic_and_validates_manifest() -> None:
     diagnostic = "Updated the ADR; do not parse this sentence."
-
-    run = decode_model_run(
-        json.loads(
-            json.dumps(
-                {
-                    "structured_output": {
-                        "outcome": "accepted",
-                        "diagnostic": diagnostic,
-                        "design_facts": {
-                            "targets": [{"path": "src/x.py", "decision": "EXTEND"}],
-                            "paradigm": "functional",
-                            "decisions": ["opaque"],
-                            "oracle": "tests/test_x.py",
-                            "acceptance_supports": [],
-                            "verification": [["pytest", "-q"]],
-                            "oracle_verification_index": 0,
-                            "authority_locator": "",
-                            "architectural_tests": {
-                                "applicability": "not_applicable",
-                                "reason": "The fixture has no structural boundary change.",
-                            },
-                            "contract_tests": {
-                                "applicability": "not_applicable",
-                                "reason": "The fixture changes no shared contract.",
-                            },
-                            "prefactoring": {
-                                "applicability": "not_applicable",
-                                "reason": "The fixture requires no preservation move.",
-                            },
-                            "agreement_analysis": {
-                                "applicability": "not_applicable",
-                                "reason": "The fixture has no affected agreement.",
-                            },
-                            "reuse_analysis": {"candidates": []},
-                            "impact_closure": {
-                                "applicability": "not_applicable",
-                                "reason": "The fixture reaches no public surface, consumer or build metadata.",
-                            },
-                        },
-                    }
-                }
-            )
-        )["structured_output"],
-        role_id="nw-solution-architect",
-    )
-
+    answer = _current_architect_answer()
+    answer["diagnostic"] = diagnostic
+    run = decode_model_run(answer, role_id="nw-solution-architect")
     assert run.outcome is ModelOutcome.Accepted
     assert run.diagnostic == diagnostic
-    assert run.design_facts is not None
+    DesignDocument.from_json(json.dumps(answer["manifest"]))
+
+
+@pytest.mark.parametrize("outcome", ["rejected", "indeterminate"])
+@pytest.mark.parametrize("payload", [{}, {"manifest": None}])
+def test_nonaccepting_architect_preserves_opaque_diagnostic(
+    outcome: str, payload: dict
+) -> None:
+    diagnostic = (
+        "BLOCKED-BY: design\nDEFECT-OWNER: oracle\nDo not interpret this prose."
+    )
+    answer = {"outcome": outcome, "diagnostic": diagnostic, **payload}
+    jsonschema.Draft202012Validator(_architect_schema()).validate(answer)
+    jsonschema.Draft202012Validator(codex_schema_for("nw-solution-architect")).validate(
+        {"answer": answer}
+    )
+    run = decode_model_run(answer, role_id="nw-solution-architect")
+    assert run.outcome.value == outcome
+    assert run.diagnostic == diagnostic
+    with pytest.raises(MalformedModelEnvelope, match="DesignDiagnosticMissing"):
+        decode_model_run({**answer, "diagnostic": ""}, role_id="nw-solution-architect")
+    with pytest.raises(
+        MalformedModelEnvelope, match="EnvelopeOutcomeContradictsPayload"
+    ):
+        decode_model_run(
+            {**answer, "manifest": _current_architect_answer()["manifest"]},
+            role_id="nw-solution-architect",
+        )
+
+
+@pytest.mark.parametrize("payload", [{}, {"manifest": None}])
+def test_accepting_architect_requires_constructor_input(payload: dict) -> None:
+    with pytest.raises(MalformedModelEnvelope, match="DesignManifestMissing"):
+        decode_model_run(
+            {"outcome": "accepted", "diagnostic": "", **payload},
+            role_id="nw-solution-architect",
+        )
 
 
 def test_architect_design_field_is_rejected_at_the_provider_boundary() -> None:
@@ -212,20 +207,33 @@ _NO_IMPACT = {
 
 def _current_architect_answer() -> dict:
     """Synthetic current input; the historical provider receipt stays immutable."""
-    answer = _recorded_architect_answer()
-    for name, reason in (
-        ("architectural_tests", "The example changes no structural boundary."),
-        ("contract_tests", "The example changes no shared contract."),
-        ("prefactoring", "No preservation move is required."),
-        ("agreement_analysis", "No producer/consumer agreement changes."),
-    ):
-        answer["design_facts"][name] = {
-            "applicability": "not_applicable",
-            "reason": reason,
-        }
-    answer["design_facts"]["reuse_analysis"] = {"candidates": []}
-    answer["design_facts"]["impact_closure"] = dict(_NO_IMPACT)
-    return answer
+    facts = {
+        "targets": [{"path": "src/x.py", "decision": "EXTEND"}],
+        "paradigm": "functional",
+        "decisions": ["Extend the existing public behavior."],
+        "oracle": "tests/test_x.py",
+        "acceptance_supports": [],
+        "verification": [["pytest", "-q"]],
+        "oracle_verification_index": 0,
+        "reuse_analysis": {"candidates": []},
+        "impact_closure": dict(_NO_IMPACT),
+        **{
+            name: {"applicability": "not_applicable", "reason": reason}
+            for name, reason in (
+                ("architectural_tests", "The example changes no structural boundary."),
+                ("contract_tests", "The example changes no shared contract."),
+                ("prefactoring", "No preservation move is required."),
+                ("agreement_analysis", "No producer/consumer agreement changes."),
+            )
+        },
+    }
+    return {
+        "outcome": "accepted",
+        "diagnostic": "The complete manifest owns the public behavior.",
+        "manifest": design_manifest(
+            facts, "The public behavior remains observable.", 1
+        ),
+    }
 
 
 def _architect_schema() -> dict:
@@ -249,18 +257,14 @@ def test_architect_schema_refuses_the_recorded_prose_acceptance_supports() -> No
         jsonschema.Draft202012Validator(_architect_schema()).iter_errors(answer)
     )
 
-    paths = {tuple(error.absolute_path) for error in errors}
-    assert {
-        ("design_facts", "acceptance_supports", index) for index in range(6)
-    } <= paths
-    assert (
-        "design_facts",
-    ) in paths  # Historical facts lack the new explicit decisions.
+    assert errors
+    with pytest.raises(MalformedModelEnvelope, match="unexpected fields"):
+        decode_model_run(answer, role_id="nw-solution-architect")
 
 
-def test_architect_schema_admits_locator_shaped_design_facts() -> None:
+def test_architect_schema_admits_locator_shaped_manifest() -> None:
     answer = _current_architect_answer()
-    answer["design_facts"]["acceptance_supports"] = [
+    answer["manifest"]["acceptance_supports"] = [
         "src/des/adapters/driven/codefact/graphify_code_fact_adapter.py",
         "tests/des/unit/adapters/driven/codefact/test_graphify_code_fact_adapter.py",
     ]
@@ -271,16 +275,15 @@ def test_architect_schema_admits_locator_shaped_design_facts() -> None:
 @pytest.mark.parametrize(
     ("mutation", "expected_path"),
     [
-        ({"targets": []}, ("design_facts", "targets")),
-        ({"decisions": []}, ("design_facts", "decisions")),
-        ({"decisions": ["a", ""]}, ("design_facts", "decisions", 1)),
-        ({"oracle": "../escape.py"}, ("design_facts", "oracle")),
-        ({"verification": []}, ("design_facts", "verification")),
-        ({"verification": [[]]}, ("design_facts", "verification", 0)),
-        ({"verification": [["uv", ""]]}, ("design_facts", "verification", 0, 1)),
+        ({"decisions": []}, ("manifest", "decisions")),
+        ({"decisions": ["a", ""]}, ("manifest", "decisions", 1)),
+        ({"oracle": "../escape.py"}, ("manifest", "oracle")),
+        ({"verification": []}, ("manifest", "verification")),
+        ({"verification": [[]]}, ("manifest", "verification", 0)),
+        ({"verification": [["uv", ""]]}, ("manifest", "verification", 0, 1)),
         (
             {"acceptance_supports": ["src/a.py", "src/a.py"]},
-            ("design_facts", "acceptance_supports"),
+            ("manifest", "acceptance_supports"),
         ),
     ],
 )
@@ -294,14 +297,33 @@ def test_architect_schema_refuses_each_shape_the_guard_used_to_catch_alone(
     failing clause -- so the model is corrected inside its own turn.
     """
     answer = _current_architect_answer()
-    answer["design_facts"]["acceptance_supports"] = ["src/support.py"]
-    answer["design_facts"].update(mutation)
+    answer["manifest"]["acceptance_supports"] = ["src/support.py"]
+    answer["manifest"].update(mutation)
 
     errors = list(
         jsonschema.Draft202012Validator(_architect_schema()).iter_errors(answer)
     )
 
     assert expected_path in {tuple(error.absolute_path) for error in errors}
+
+
+@pytest.mark.parametrize("product_change", [None, "required", "none"])
+def test_empty_targets_require_an_explicit_no_product_change(product_change) -> None:
+    answer = _current_architect_answer()
+    manifest = answer["manifest"]
+    manifest["acceptance_supports"] = ["src/support.py"]
+    manifest["targets"] = []
+    if product_change is not None:
+        manifest["product_change"] = product_change
+
+    jsonschema.Draft202012Validator(_architect_schema()).validate(answer)
+    if product_change == "none":
+        document = DesignDocument.from_json(json.dumps(manifest))
+        assert document.facts.product_change == "none"
+        assert document.facts.targets == ()
+    else:
+        with pytest.raises(ValueError, match="lack a mutable production target"):
+            DesignDocument.from_json(json.dumps(manifest))
 
 
 def _recorded_product_owner_turn() -> dict:
@@ -406,39 +428,38 @@ def test_a_correction_that_refuses_still_carries_no_value() -> None:
 
 
 @pytest.mark.parametrize("outcome", ["rejected", "indeterminate"])
-def test_architect_schema_refuses_facts_on_a_non_accepting_outcome(
+def test_architect_schema_refuses_manifest_on_a_non_accepting_outcome(
     outcome: str,
 ) -> None:
-    """The state the runner used to catch post hoc as `DesignFactsMalformed`."""
     answer = _current_architect_answer()
-    answer["design_facts"]["acceptance_supports"] = ["src/support.py"]
+    answer["manifest"]["acceptance_supports"] = ["src/support.py"]
     answer["outcome"] = outcome
 
     errors = list(
         jsonschema.Draft202012Validator(_architect_schema()).iter_errors(answer)
     )
 
-    assert ("design_facts",) in {tuple(error.absolute_path) for error in errors}
+    assert ("manifest",) in {tuple(error.absolute_path) for error in errors}
 
 
 def test_architect_schema_admits_the_coherent_refusal() -> None:
     answer = {
         "outcome": "rejected",
         "diagnostic": "no reuse seam",
-        "design_facts": None,
+        "manifest": None,
     }
 
     jsonschema.Draft202012Validator(_architect_schema()).validate(answer)
 
 
 def test_architect_schema_refuses_a_null_payload_on_an_accepted_outcome() -> None:
-    answer = {"outcome": "accepted", "diagnostic": "", "design_facts": None}
+    answer = {"outcome": "accepted", "diagnostic": "", "manifest": None}
 
     errors = list(
         jsonschema.Draft202012Validator(_architect_schema()).iter_errors(answer)
     )
 
-    assert ("design_facts",) in {tuple(error.absolute_path) for error in errors}
+    assert ("manifest",) in {tuple(error.absolute_path) for error in errors}
 
 
 @pytest.mark.parametrize("outcome", ["rejected", "indeterminate"])
@@ -569,8 +590,8 @@ def test_no_role_may_refuse_without_explaining_itself(schema: dict) -> None:
     envelope: dict[str, object] = {"outcome": "rejected", "diagnostic": ""}
     if "values" in schema["properties"]:
         envelope["values"] = []
-    if "design_facts" in schema["properties"]:
-        envelope["design_facts"] = None
+    if "manifest" in schema["properties"]:
+        envelope["manifest"] = None
     if "blocked_by" in schema["properties"]:
         envelope["blocked_by"] = "product"
 
@@ -1014,63 +1035,32 @@ def test_a_refusing_review_without_the_word_is_still_refused(
 
 def _accepted_architect_answer() -> dict:
     answer = _current_architect_answer()
-    answer["design_facts"]["acceptance_supports"] = ["src/support.py"]
+    answer["manifest"]["acceptance_supports"] = ["src/support.py"]
     return answer
 
 
-def _accepted_design_facts_schema(schema: dict) -> dict:
-    branch = next(
-        branch
-        for branch in schema["properties"]["answer"]["anyOf"]
-        if branch["properties"]["outcome"]["const"] == "accepted"
-    )
-    return branch["properties"]["design_facts"]
-
-
-def test_adr_and_architect_handoff_are_optional_in_base_and_nullable_only_in_codex() -> (
-    None
-):
-    base = _architect_schema()["properties"]["design_facts"]
-    codex = _accepted_design_facts_schema(codex_schema_for("nw-solution-architect"))
-
-    optional_fields = {"adr", "architect_handoff"}
-    for name in optional_fields:
-        assert name in base["properties"] and name not in base["required"]
-        assert {"type": "null"} not in base["properties"][name].get("anyOf", [])
-        assert name in codex["required"]
-        assert codex["properties"][name]["anyOf"].count({"type": "null"}) == 1
-    for name in set(codex["properties"]) - optional_fields:
-        declared = codex["properties"][name]
-        assert {"type": "null"} not in declared.get("anyOf", [])
-        assert declared.get("type") != "null"
-
+@pytest.mark.parametrize("present", [False, True])
+def test_codex_preserves_optional_absence_without_inventing_null(present: bool) -> None:
     answer = _accepted_architect_answer()
+    if present:
+        answer["manifest"]["adr"] = {
+            "applicability": "not_applicable",
+            "reason": "No architectural decision record changes.",
+        }
     jsonschema.Draft202012Validator(_architect_schema()).validate(answer)
-    nullable = {
-        "outcome": answer["outcome"],
-        "diagnostic": answer["diagnostic"],
-        "design_facts": {
-            **answer["design_facts"],
-            "adr": None,
-            "architect_handoff": None,
-        },
-    }
-    jsonschema.Draft202012Validator(codex_schema_for("nw-solution-architect")).validate(
-        {"answer": nullable}
+    schema = codex_schema_for("nw-solution-architect")
+    jsonschema.Draft202012Validator(schema).validate({"answer": answer})
+    decoded = _extract_envelope("nw-solution-architect", answer)
+    assert decoded.outcome is ModelOutcome.Accepted
+    assert (
+        DesignDocument.from_json(json.dumps(answer["manifest"])).purpose
+        == answer["manifest"]["purpose"]
     )
-
-
-def test_a_null_adr_decodes_exactly_as_an_absent_adr() -> None:
-    absent = _accepted_architect_answer()
-    assert "adr" not in absent["design_facts"]
-    null = json.loads(json.dumps(absent))
-    null["design_facts"]["adr"] = None
-
-    decoded_absent = _extract_envelope("nw-solution-architect", absent)
-    decoded_null = _extract_envelope("nw-solution-architect", null)
-
-    assert decoded_null.design_facts.adr is None
-    assert decoded_null.design_facts == decoded_absent.design_facts
+    answer["manifest"]["adr"] = None
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.Draft202012Validator(schema).validate({"answer": answer})
+    with pytest.raises(MalformedModelEnvelope, match="DesignManifestMalformed"):
+        _extract_envelope("nw-solution-architect", answer)
 
 
 @pytest.mark.parametrize("missing", ["reuse_analysis", "impact_closure"])
@@ -1078,7 +1068,7 @@ def test_an_architect_answer_omitting_a_required_decision_is_malformed(
     missing: str,
 ) -> None:
     answer = _accepted_architect_answer()
-    del answer["design_facts"][missing]
+    del answer["manifest"][missing]
 
     with pytest.raises(MalformedModelEnvelope):
         _extract_envelope("nw-solution-architect", answer)
@@ -1088,7 +1078,7 @@ def test_an_impact_closure_leaving_a_declared_consumer_undisposed_is_malformed()
     None
 ):
     answer = _accepted_architect_answer()
-    facts = answer["design_facts"]
+    facts = answer["manifest"]
     facts["agreement_analysis"] = {
         "applicability": "applicable",
         "parties": [
@@ -1126,7 +1116,7 @@ def test_an_impact_closure_leaving_a_declared_consumer_undisposed_is_malformed()
 
 
 def test_the_schema_requires_both_decisions_and_bounds_impact_locators() -> None:
-    facts = _architect_schema()["properties"]["design_facts"]
+    facts = _architect_schema()["then"]["properties"]["manifest"]
     assert {"reuse_analysis", "impact_closure"} <= set(facts["required"])
 
     applicable = next(

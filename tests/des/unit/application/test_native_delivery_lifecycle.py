@@ -7,7 +7,7 @@ import json
 import shutil
 import subprocess
 import sys
-from dataclasses import asdict, replace
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -83,15 +83,39 @@ def _success(result):
 def _native_project(root: Path) -> None:
     (root / "lib").mkdir()
     (root / "dune-project").write_text("(lang dune 2.9)\n(name native_fixture)\n")
-    (root / "lib/dune").write_text("(library (name answer) (wrapped false))\n")
+    (root / "lib/dune").write_text(
+        "(library (name answer) (wrapped false) (modules answer))\n"
+    )
     (root / "lib/answer.ml").write_text('let value = 0\nlet protocol = "v1"\n')
     (root / "lib/answer.mli").write_text("val value : int\nval protocol : string\n")
     (root / "dune").write_text(
-        "(executable (name oracle) (modules oracle) (libraries answer))\n"
-        "(executable (name contract) (modules contract) (libraries answer))\n"
+        "(library (name native_observer) (wrapped false) (modules native_observer))\n"
+        "(executable (name oracle) (modules oracle) (libraries answer native_observer))\n"
+        "(executable (name contract) (modules contract) (libraries answer native_observer))\n"
     )
-    (root / "oracle.ml").write_text("let () = assert (Answer.value = 42)\n")
-    (root / "contract.ml").write_text('let () = assert (Answer.protocol = "v1")\n')
+    (root / "native_observer.ml").write_text(
+        r"""let report observed assertions_failed setup_failed =
+  Printf.printf
+    "DES-ORACLE-OBSERVATION: {\"version\":1,\"observed\":%d,\"assertions_failed\":%d,\"setup_failed\":%d}\n%!"
+    observed assertions_failed setup_failed
+
+let run (assertion : unit -> unit) =
+  match assertion () with
+  | () -> report 1 0 0
+  | exception (Assert_failure _ as error) ->
+      report 1 1 0;
+      raise error
+  | exception error ->
+      report 0 0 1;
+      raise error
+"""
+    )
+    (root / "oracle.ml").write_text(
+        "let () = Native_observer.run (fun () -> assert (Answer.value = 42))\n"
+    )
+    (root / "contract.ml").write_text(
+        'let () = Native_observer.run (fun () -> assert (Answer.protocol = "v1"))\n'
+    )
     _git(root, "add", ".")
     _git(root, "commit", "-qm", "Existing native implementation")
 
@@ -213,7 +237,10 @@ def test_dune_constructor_distill_oracle_craft_verify_and_owned_drift(
         ("dune", "exec", "./contract.exe"),
     )
     oracle = _success(steps.oracle(root, 1, ORACLE_ACCEPTED))
-    assert any("verdict=indeterminate" in row for row in oracle.facts), oracle
+    assert any(
+        "verdict=red" in row and "axis=native-observation" in row
+        for row in oracle.facts
+    ), oracle
     (root / "lib/answer.ml").write_text('let value = 42\nlet protocol = "v1"\n')
     _success(steps.craft(root, 1, ACCEPTED))
     verified = _success(steps.verify(root))
@@ -311,23 +338,86 @@ def test_cited_design_sections_hashes_prerequisite_with_architect_handoff(
 def test_cited_design_sections_preserves_prerequisite_hash_without_architect_handoff(
     tmp_path: Path,
 ) -> None:
-    prerequisite = HandoverValue("producer", (), _facts("producer"))
+    fixture = (
+        Path(__file__).resolve().parents[2]
+        / "acceptance/design_no_product_change/fixtures/historical_prerequisite.json"
+    )
+    fixture_bytes = fixture.read_bytes()
+    artifact_sha256 = hashlib.sha256(fixture_bytes).hexdigest()
+    pinned_artifact_sha256 = fixture.with_suffix(".sha256").read_text().strip()
+    assert artifact_sha256 == pinned_artifact_sha256, (
+        f"WHAT: historical fixture artifact SHA expected={pinned_artifact_sha256}, actual={artifact_sha256}; "
+        "WHY: the independent historical witness must retain its complete archived inputs; "
+        "HOW: restore the retained JSON wrapper and its whole-artifact SHA pin."
+    )
+    reference = json.loads(fixture_bytes)
+    expected = reference["sha256"]
+    assert (
+        expected == "d33e4a181fc127227c5024d866cafd3634319105ddf5f642ee77c648ce8ccc4f"
+    ), (
+        f"WHAT: retained historical identity is {expected!r}; "
+        "WHY: current representation must not redefine the independent historical expectation; "
+        "HOW: restore the fixed d33 historical witness, not a current-asdict-derived digest."
+    )
+    archived = reference["canonical_prerequisite"]
+    authority_input = dict(archived["authority"])
+    authority_input["targets"] = tuple(
+        DesignTarget(**target) for target in authority_input["targets"]
+    )
+    for field in ("decisions", "acceptance_supports", "obligations"):
+        authority_input[field] = tuple(authority_input[field])
+    authority_input["verification"] = tuple(
+        tuple(argv) for argv in authority_input["verification"]
+    )
+    for field in (
+        "architectural_tests",
+        "contract_tests",
+        "prefactoring",
+        "agreement_analysis",
+        "impact_closure",
+    ):
+        authority_input[field] = NotApplicable(authority_input[field]["reason"])
+    authority_input["reuse_analysis"] = ReuseAnalysis(
+        tuple(authority_input["reuse_analysis"]["candidates"])
+    )
+    prerequisite_input = dict(archived)
+    prerequisite_input["authority"] = DesignFacts(**authority_input)
+    for field in ("dependencies", "acceptance", "acceptance_supports"):
+        prerequisite_input[field] = tuple(prerequisite_input[field])
+    prerequisite = HandoverValue(**prerequisite_input)
     dependent = HandoverValue("consumer", ("producer",), _facts("consumer"))
     stored = StoredHandover(
         "Consume the producer contract", (prerequisite, dependent), b"{}", Project()
     )
-    expected = hashlib.sha256(
-        json.dumps(asdict(prerequisite), sort_keys=True, separators=(",", ":")).encode(
-            "utf-8"
-        )
-    ).hexdigest()
 
     sections = DeliveryContinuationRunner().cited_design_sections(
         tmp_path, stored, dependent
     )
 
-    assert sections is not None
-    assert dict(sections)["prerequisite:producer"] == expected
+    assert sections is not None, (
+        "WHAT: the real prerequisite projection is unavailable; "
+        "WHY: an execution/setup failure is not an identity observation; "
+        "HOW: restore construction from the retained historical inputs before measuring identity."
+    )
+    actual = dict(sections).get("prerequisite:producer")
+    print(
+        json.dumps(
+            {
+                "label": "historical-prerequisite-identity",
+                "source_commit": reference["source_commit"],
+                "executor": reference["executor"],
+                "fixture_sha256": artifact_sha256,
+                "expected": expected,
+                "actual": actual,
+            }
+        ),
+        flush=True,
+    )
+    assert actual == expected, (
+        f"WHAT: historical-prerequisite-identity-conservation: expected={expected}; actual={actual}; "
+        "WHY: default required must preserve the independently retained historical prerequisite identity; "
+        "HOW: omit default product_change in the prerequisite projection without changing the historical fixture."
+    )
 
 
 def _record(root: Path, runner, stored, value, design) -> None:
@@ -754,6 +844,8 @@ def test_native_implementation_prompt_states_a_recorded_red_oracle_only_when_one
 
 
 def test_crafter_prompt_advertises_only_selected_mutable_targets(repository, capsys):
+    import re
+
     from des.cli.handoff import main
 
     stored, runner, design = _prompt_subject(repository)
@@ -777,6 +869,68 @@ def test_crafter_prompt_advertises_only_selected_mutable_targets(repository, cap
         == 0
     )
     out = capsys.readouterr().out
-    assert "subject.ml (EXTEND)" in out
-    assert "other.ml (EXTEND)" not in out
-    assert "subject_oracle.ml (EXTEND)" not in out
+    instructions, separator, native_input = out.partition(
+        "=== [C] orchestrator ===\nnative_input: "
+    )
+    assert separator, (
+        "WHAT: the emitted crafter prompt has no canonical fact carrier. "
+        "WHY: selected mutation permissions must remain observable in the lossless prompt. "
+        "HOW: emit the canonical packet and bind the target advertisement to its facts."
+    )
+    try:
+        packet, _ = json.JSONDecoder().raw_decode(native_input.lstrip())
+    except json.JSONDecodeError as error:
+        pytest.fail(
+            f"WHAT: the emitted canonical target facts cannot be decoded: {error}. "
+            "WHY: the crafter cannot resolve its permitted mutation scope. "
+            "HOW: serialize the complete native fact packet as valid JSON."
+        )
+    assert isinstance(packet, dict), (
+        f"WHAT: canonical facts are {type(packet).__name__}, not an object. "
+        "WHY: mutation permissions must be addressable by their declared semantic paths. "
+        "HOW: retain the canonical structured native_input object."
+    )
+    selected = packet.get("selected_authority")
+    invocation = packet.get("invocation")
+    assert isinstance(selected, dict) and isinstance(invocation, dict), (
+        f"WHAT: selected authority or invocation facts are missing: {selected!r}, {invocation!r}. "
+        "WHY: the declared target population and the caller's restriction are distinct facts. "
+        "HOW: retain both fact records rather than replacing them with formatted target labels."
+    )
+    assert selected.get("targets") == [
+        ["subject.ml", "EXTEND"],
+        ["other.ml", "EXTEND"],
+    ], (
+        f"WHAT: emitted declared target population is {selected.get('targets')!r}. "
+        "WHY: the complete declaration must retain each actual path and decision, including unselected metadata. "
+        "HOW: preserve both declared EXTEND targets without treating their presence as permission to change both."
+    )
+    assert selected.get("oracle") == "subject_oracle.ml", (
+        f"WHAT: emitted immutable oracle is {selected.get('oracle')!r}. "
+        "WHY: the oracle must remain identifiable and separate from mutable production targets. "
+        "HOW: retain the bound oracle identity without advertising it as a mutation target."
+    )
+    assert invocation.get("targets") == ["subject.ml"], (
+        f"WHAT: emitted target restriction is {invocation.get('targets')!r}. "
+        "WHY: this invocation authorizes subject.ml only, not other.ml or the immutable oracle. "
+        "HOW: preserve the exact selected mutable-target population in invocation.targets."
+    )
+    assert re.search(
+        r"native_input\.selected_authority\.targets\s*,?\s*restricted\s+by\s+"
+        r"native_input\.invocation\.targets",
+        instructions,
+    ), (
+        "WHAT: the target advertisement does not restrict its authority reference by the invocation reference. "
+        "WHY: retaining a restriction in JSON alone must not advertise all declared targets as mutable. "
+        "HOW: use non-owning references that explicitly apply the caller's target restriction."
+    )
+    advertised_targets = [
+        (path, decision)
+        for path, decision in selected["targets"]
+        if path in invocation["targets"]
+    ]
+    assert advertised_targets == [("subject.ml", "EXTEND")], (
+        f"WHAT: resolving the emitted target references advertises {advertised_targets!r}. "
+        "WHY: the crafter must receive the selected subject with its EXTEND decision and no other mutation permission. "
+        "HOW: restrict the real declared target facts to subject.ml and keep other.ml and the oracle immutable here."
+    )

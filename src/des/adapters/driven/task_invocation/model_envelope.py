@@ -8,35 +8,22 @@ is provenance/accounting, never semantic model output.
 from __future__ import annotations
 
 import json
+from itertools import combinations
 from typing import Any
 
 from des.domain.architecture_brief_resolver import (
     DESIGN_ORACLE_LOCATOR_PATTERN,
     REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN,
-    is_design_oracle_locator,
-    is_repository_relative_whole_file_locator,
-)
-from des.domain.design_authority_locator import (
-    UNSAFE_LOCATOR_REFUSAL,
-    is_design_authority_locator,
 )
 from des.domain.design_document import (
+    DesignDocument,
     DesignDocumentInvalid,
-    decode_design_decisions,
-    design_decisions_defect,
-    design_decisions_schema,
-    without_absent_optional_decisions,
-)
-from des.domain.design_document import (
-    _decode_architect_handoff as decode_architect_handoff,
 )
 from des.domain.distill_document import DistillDocument, DistillDocumentInvalid
 from des.ports.driven_ports.task_invocation_port import (
     MINIMUM_OBSERVATION_CHARACTERS,
     CraftBlocker,
     DefectOwner,
-    DesignFacts,
-    DesignTarget,
     ExpectationCharterAnswer,
     MalformedModelEnvelope,
     ModelAccounting,
@@ -289,86 +276,18 @@ _SOLUTION_ARCHITECT_SCHEMA: dict[str, Any] = {
     **_OUTCOME_SCHEMA,
     "properties": {
         **_OUTCOME_SCHEMA["properties"],
-        "design_facts": {
-            "type": ["object", "null"],
-            "properties": {
-                "targets": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "path": _LOCATOR_STRING,
-                            "decision": {
-                                "type": "string",
-                                "enum": ["EXTEND", "CREATE_NEW"],
-                            },
-                        },
-                        "required": ["path", "decision"],
-                        "additionalProperties": False,
-                    },
-                },
-                "paradigm": {
-                    "type": "string",
-                    "enum": ["object_oriented", "functional", "procedural"],
-                },
-                "decisions": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": _NON_EMPTY_STRING,
-                },
-                "oracle": {"type": "string", "pattern": DESIGN_ORACLE_LOCATOR_PATTERN},
-                # No lower bound: a slice whose oracle needs no test dependency
-                # declares an EMPTY support list, which the guard admits too.
-                "acceptance_supports": {
-                    "type": "array",
-                    "items": _LOCATOR_STRING,
-                    "uniqueItems": True,
-                },
-                "verification": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "type": "array",
-                        "minItems": 1,
-                        "items": _NON_EMPTY_STRING,
-                    },
-                },
-                "oracle_verification_index": {"type": "integer", "minimum": 0},
-                # A provider that returns typed facts must carry the field even
-                # when no configured DESIGN-document constructor assigned a
-                # section identity.  The constructor, never the provider,
-                # later replaces the empty value with its configured locator.
-                "authority_locator": {"type": "string"},
-                **design_decisions_schema()["properties"],
-            },
-            "required": [
-                "targets",
-                "paradigm",
-                "decisions",
-                "oracle",
-                "acceptance_supports",
-                "verification",
-                "oracle_verification_index",
-                "authority_locator",
-                *design_decisions_schema()["required"],
-            ],
-            "additionalProperties": False,
-        },
+        "manifest": {"anyOf": [DesignDocument.input_schema(), {"type": "null"}]},
     },
-    "required": ["outcome", "diagnostic", "design_facts"],
-    # The same envelope law, on this role's payload.  `design_facts` is declared
-    # `["object", "null"]` because BOTH are legitimate answers -- but not for the
-    # same outcome.  Narrowing the union per branch is what makes "nonaccepting
-    # DESIGN supplied facts" unrepresentable at the producer instead of caught
-    # after the paid turn.
     "if": _ACCEPTING,
-    "then": {"properties": {"design_facts": {"type": "object"}}},
+    "then": {
+        "properties": {"manifest": DesignDocument.input_schema()},
+        "required": ["manifest"],
+    },
     "else": {
         "properties": {
-            "design_facts": {"type": "null"},
+            "manifest": {"type": "null"},
             "diagnostic": _NON_EMPTY_DIAGNOSTIC,
-        }
+        },
     },
 }
 
@@ -685,6 +604,33 @@ def codex_schema_for(
         kind = result.get("type")
         is_object = kind == "object" or (isinstance(kind, list) and "object" in kind)
         if is_object and isinstance(properties, dict):
+            if _base_role_id(role_id) == _SOLUTION_ARCHITECT:
+                required = set(result.get("required", ()))
+                optional = [name for name in properties if name not in required]
+                if optional:
+                    return {
+                        "anyOf": [
+                            {
+                                **result,
+                                "properties": {
+                                    name: declared
+                                    for name, declared in properties.items()
+                                    if name in required or name in present
+                                },
+                                "required": [
+                                    name
+                                    for name in properties
+                                    if name in required or name in present
+                                ],
+                                "additionalProperties": False,
+                            }
+                            for count in range(len(optional) + 1)
+                            for present in combinations(optional, count)
+                        ]
+                    }
+                result["required"] = list(properties)
+                result["additionalProperties"] = False
+                return result
             # Strict output lists every property.  A property the semantic law
             # leaves optional is carried nullable, and the shared decoder
             # normalizes null back to absence.
@@ -728,6 +674,12 @@ def codex_schema_for(
         outcomes: tuple[str, ...], constraints: dict[str, Any]
     ) -> dict[str, Any]:
         result = merge(schema, constraints)
+        if _base_role_id(role_id) == _SOLUTION_ARCHITECT:
+            result["properties"]["manifest"] = constraints["properties"]["manifest"]
+            result["required"] = [
+                *schema["required"],
+                *constraints.get("required", ()),
+            ]
         properties = result["properties"]
         properties["outcome"] = (
             {"type": "string", "const": outcomes[0]}
@@ -786,8 +738,7 @@ def decode_model_run(  # noqa: PLR0913 - see the note above
         expected.add("values")
     if charter_task:
         expected.add("charter")
-    if semantic_role_id == _SOLUTION_ARCHITECT:
-        expected.add("design_facts")
+    # Architect nonacceptance may omit the manifest entirely.
     recovery_task = (
         semantic_role_id == _ACCEPTANCE_DESIGNER
         and semantic_task == "selected-revision-recovery"
@@ -809,6 +760,8 @@ def decode_model_run(  # noqa: PLR0913 - see the note above
         if semantic_role_id in _DEFECT_NAMING
         else set()
     )
+    if semantic_role_id == _SOLUTION_ARCHITECT:
+        optional.add("manifest")
     if not set(structured) <= expected | optional or not expected <= set(structured):
         raise MalformedModelEnvelope(
             "ModelOutcomeMalformed: structured output has unexpected fields"
@@ -864,97 +817,31 @@ def decode_model_run(  # noqa: PLR0913 - see the note above
                 "outcome carries none"
             )
         values = tuple(extracted)
-    design_facts: DesignFacts | None = None
     if semantic_role_id == _SOLUTION_ARCHITECT:
-        raw_facts = structured["design_facts"]
-        if raw_facts is not None:
+        if outcome is not ModelOutcome.Accepted and not diagnostic:
+            raise MalformedModelEnvelope(
+                "DesignDiagnosticMissing: non-accepting DESIGN must explain its "
+                "finding or prerequisite; return a nonempty opaque diagnostic"
+            )
+        manifest = structured.get("manifest")
+        if outcome is ModelOutcome.Accepted:
+            if not isinstance(manifest, dict):
+                raise MalformedModelEnvelope(
+                    "DesignManifestMissing: accepted DESIGN requires a complete "
+                    "manifest; return the manifest described by des design --describe-input"
+                )
             try:
-                supports = raw_facts["acceptance_supports"]
-                # Codex strict output does not admit JSON Schema's
-                # `uniqueItems`; its transport projection therefore omits the
-                # keyword. The semantic collection is still a set by contract,
-                # so enforce its uniqueness before constructing a ModelRun for
-                # every provider and every replayed envelope. Do not
-                # canonicalize duplicates away: their presence is invalid data.
-                if (
-                    not isinstance(supports, list)
-                    or not all(isinstance(path, str) for path in supports)
-                    or len(supports) != len(set(supports))
-                ):
-                    raise MalformedModelEnvelope(
-                        "DesignFactsDuplicateAcceptanceSupport"
-                    )
-                raw_targets = raw_facts["targets"]
-                oracle = raw_facts["oracle"]
-                authority_locator = raw_facts["authority_locator"]
-                if (
-                    not isinstance(raw_targets, list)
-                    or not all(
-                        isinstance(item, dict) and isinstance(item.get("path"), str)
-                        for item in raw_targets
-                    )
-                    or not isinstance(oracle, str)
-                    or not isinstance(authority_locator, str)
-                ):
-                    raise MalformedModelEnvelope("DesignFactsMalformed")
-                if (
-                    not is_design_oracle_locator(oracle)
-                    or not all(
-                        is_repository_relative_whole_file_locator(item["path"])
-                        for item in raw_targets
-                    )
-                    or not all(
-                        is_repository_relative_whole_file_locator(path)
-                        for path in supports
-                    )
-                    or not is_design_authority_locator(authority_locator)
-                ):
-                    # The provider schema carries the same grammar, but replayed
-                    # and hand-written envelopes reach this shared decoder too.
-                    # Keep traversal/prose locators from becoming DesignFacts
-                    # after a provider-specific transport projection.
-                    #
-                    # The `<document>#<heading>` clauses are NOT spelled here:
-                    # they are `des.domain.design_authority_locator`'s ordered
-                    # table, which also publishes the statement the architect
-                    # reads while authoring the field -- the rule that refuses a
-                    # turn and the rule it was taught are one object.
-                    raise MalformedModelEnvelope(UNSAFE_LOCATOR_REFUSAL)
-                targets = tuple(
-                    DesignTarget(item["path"], item["decision"]) for item in raw_targets
-                )
-                verification = tuple(tuple(argv) for argv in raw_facts["verification"])
-                oracle_verification_index = raw_facts["oracle_verification_index"]
-                if (
-                    not isinstance(oracle_verification_index, int)
-                    or isinstance(oracle_verification_index, bool)
-                    or oracle_verification_index < 0
-                    or oracle_verification_index >= len(verification)
-                ):
-                    raise MalformedModelEnvelope("OracleVerificationIndexInvalid")
-                design_facts = DesignFacts(
-                    targets,
-                    raw_facts["paradigm"],
-                    tuple(raw_facts["decisions"]),
-                    oracle,
-                    tuple(supports),
-                    verification,
-                    oracle_verification_index,
-                    authority_locator=authority_locator,
-                    architect_handoff=(
-                        decode_architect_handoff(raw_facts["architect_handoff"])
-                        if raw_facts.get("architect_handoff") is not None
-                        else None
-                    ),
-                    **decode_design_decisions(
-                        without_absent_optional_decisions(raw_facts)
-                    ),
-                )
-                defect = design_decisions_defect(design_facts)
-                if defect is not None:
-                    raise MalformedModelEnvelope(f"DesignFactsMalformed: {defect}")
-            except (KeyError, TypeError, DesignDocumentInvalid):
-                raise MalformedModelEnvelope("DesignFactsMalformed") from None
+                DesignDocument.from_json(json.dumps(manifest, ensure_ascii=False))
+            except DesignDocumentInvalid as error:
+                raise MalformedModelEnvelope(
+                    f"DesignManifestMalformed: {error}; return the complete manifest "
+                    "described by des design --describe-input"
+                ) from None
+        elif manifest is not None:
+            raise MalformedModelEnvelope(
+                "EnvelopeOutcomeContradictsPayload: a non-accepting DESIGN cannot "
+                "carry a manifest; return diagnostic with manifest absent or null"
+            )
     charter: ExpectationCharterAnswer | None = None
     if charter_task:
         raw_charter = structured["charter"]
@@ -1029,7 +916,6 @@ def decode_model_run(  # noqa: PLR0913 - see the note above
         retry_safe=False,
         product_values=values,
         accounting=accounting,
-        design_facts=design_facts,
         review_defect=review_defect,
         craft_blocker=craft_blocker,
         distill_document=distill_document,

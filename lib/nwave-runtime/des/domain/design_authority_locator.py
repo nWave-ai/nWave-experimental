@@ -1,23 +1,8 @@
 """The ONE `<document>#<heading>` rule a DESIGN `authority_locator` obeys.
 
-The rule lives here as DATA -- an ordered table of clauses, each a sentence
-paired with the predicate that decides it -- because it has TWO consumers and
-they must never disagree:
-
-* :func:`is_design_authority_locator` is what the decoder
-  (``des.adapters.driven.task_invocation.model_envelope.decode_model_run``) and
-  the restored-handover guard (``des.application.handover.design_facts_defect``)
-  ask before a locator may become ``DesignFacts``;
-* :func:`design_authority_locator_description` is the human statement the
-  solution architect READS at its own authoring surface, projected there as a
-  GENERATED region.
-
-Both read the same table, so a prose-only edit cannot change what is enforced
-and a rule-only edit cannot leave the published text unchanged.  Measured
-before this module existed: an architect answering ``authority_locator`` with a
-traversal or a prose sentence ended the whole design turn ``Indeterminate /
-ModelEnvelopeUnavailable / DesignFactsUnsafeLocator`` for a grammar stated in no
-surface the role reads -- the turn was paid for, refused, and taught nothing.
+The ordered clauses are shared by restored-handover validation and the published
+description of persisted section identities. The DESIGN constructor assigns
+the configured locator; it is not part of the architect's response manifest.
 
 The PATH half of the grammar is NOT respelled here: it is
 ``des.domain.architecture_brief_resolver``'s, whose own header already declares
@@ -37,12 +22,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-#: The refusal a locator outside this grammar produces.  Named in the published
-#: statement so the architect can recognise the terminal it is being taught to
-#: avoid, and spelled ONCE so the word in the prose is the word in the terminal.
-UNSAFE_LOCATOR_REFUSAL = "DesignFactsUnsafeLocator"
-
-
 def _document(locator: str) -> str:
     return locator.partition("#")[0]
 
@@ -51,9 +30,7 @@ def _heading(locator: str) -> str:
     return locator.partition("#")[2]
 
 
-#: The grammar, ordered, one clause per shape it refuses.  Each row is the
-#: sentence the architect reads AND the predicate the decoder runs; there is no
-#: third spelling of either anywhere.
+#: Ordered clauses for persisted DESIGN section locators.
 LOCATOR_CLAUSES: tuple[tuple[str, Callable[[str], bool]], ...] = (
     (
         "it carries exactly one `#`, separating the document from the heading",
@@ -78,15 +55,11 @@ LOCATOR_CLAUSES: tuple[tuple[str, Callable[[str], bool]], ...] = (
     ),
 )
 
-#: The one admission beside the clauses: an EMPTY locator is not ill-formed, it
-#: is the statement that no configured DESIGN-document destination has assigned
-#: this value a section identity yet.  The provider schema therefore keeps a
-#: patternless ``{"type": "string"}`` for the field: a pattern would make the
-#: honest empty answer unrepresentable.
+#: An empty internal locator precedes configured section identity assignment.
 EMPTY_LOCATOR_ADMISSION = (
-    "The EMPTY string is admissible and is the honest answer while no configured "
-    "DESIGN-document destination has assigned this value a section identity; the "
-    "constructor, never the turn, fills one in later."
+    "The EMPTY string is admissible while no configured DESIGN-document "
+    "destination has assigned this value a section identity; the constructor "
+    "assigns the configured locator during publication."
 )
 
 
@@ -100,11 +73,7 @@ def is_design_authority_locator(locator: str) -> bool:
 
 
 def design_authority_locator_description() -> str:
-    """The same table, as the sentence the architect reads while authoring.
-
-    Derived from :data:`LOCATOR_CLAUSES` rather than written beside it, so the
-    published statement cannot drift from the rule that refuses the turn.
-    """
+    """Publish the shared persisted-locator grammar from its clause table."""
     return "\n".join(
         (
             "`authority_locator` is a DESIGN section locator, "
@@ -113,9 +82,10 @@ def design_authority_locator_description() -> str:
             "",
             EMPTY_LOCATOR_ADMISSION,
             "",
-            f"Any other answer -- a traversal such as `../outside/DESIGN.md#Slice 1`, "
-            f"a prose sentence naming the section, a second `#` or a line break "
-            f"inside the heading -- is refused as `{UNSAFE_LOCATOR_REFUSAL}`, and the "
-            "whole design turn ends Indeterminate with nothing bound.",
+            "Any other locator -- a traversal such as `../outside/DESIGN.md#Slice 1`, "
+            "a prose sentence naming the section, a second `#` or a line break "
+            "inside the heading -- is not a repository-relative DESIGN section "
+            "identity. Restore the canonical handover or reconstruct complete "
+            "DESIGN with `des design --replace-current --input -` before reuse.",
         )
     )

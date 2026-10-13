@@ -1038,8 +1038,52 @@ def test_design_import_refusal_names_the_handoff_instead_of_valid_stdin(
         assert "stdin must carry" not in output
 
 
-def test_native_architect_prompt_returns_semantic_input_for_host_owned_submission(
-    tmp_path, capsys
+@pytest.mark.parametrize(
+    "required_instruction",
+    [
+        "Drive every test through the declared public port: build the stimulus and "
+        "read the result through that port, never by importing production modules, "
+        "constructing production objects, calling below the port or patching internal "
+        "state, in test bodies or in support files. The only exception is an "
+        "obligation the DESIGN places at a declared contract or architecture locator: "
+        "there, construct only the members that DESIGN names for it, in one "
+        "composition-root helper in the support files, and keep test bodies calling "
+        "that helper; never use this exception to observe a public-port obligation "
+        "below the port.",
+        "Test DESIGN-declared construction restrictions and error-code identities "
+        "through their declared public contract surface: use the public port for "
+        "emitted codes and observe accepted and refused inputs through the declared "
+        "public port, using the injection seam where DESIGN declares one, in a "
+        "contract test at the DESIGN-declared locator. Never mark these "
+        "boundary obligations NOT TESTED. If no declared surface or locator can "
+        "observe one, return `rejected` with `BLOCKED-BY design`, naming the obligation, "
+        "the missing declaration and the DESIGN correction needed; do not import "
+        "internals or invent a seam.",
+        "Cover every DESIGN law with at least one Hypothesis @given property naming "
+        "its exact id in the test name or docstring. For a finite domain, use "
+        "st.sampled_from over the entire declared domain, including all alternatives "
+        "and combinations, not a selected subset; retain tables for explicit examples, "
+        "not as substitutes for the property. A full strategy domain is not evidence "
+        "that every value was executed.",
+        "For a DESIGN prohibition on retries, recovery or additional discovery, "
+        "observe the declared dependency interaction per public invocation; "
+        "unchanged final output or file bytes alone do not establish that prohibition.",
+        "For a DESIGN obligation that excludes a claim or preserves an output field, "
+        "assert the excluded claim's absence and the field's presence explicitly; "
+        "a positive label or a nullable lookup is not that observation.",
+        "Treat Hypothesis @example decorators and standalone finite examples as "
+        "example-table cases: keep each explicit stimulus/assertion pair in one place "
+        "across the primary oracle, finite tables and generated properties, retaining "
+        "another occurrence only for a different assertion.",
+        "Keep each concrete finite stimulus/assertion case once; when laws share it, "
+        "one table observes it once and cites all applicable laws; each generative "
+        "property adds only different cases or assertions.",
+        "Retain and extend every DESIGN-declared EXTEND or retained test helper; "
+        "replace one only with a specific reason in the diagnostic.",
+    ],
+)
+def test_atd_oracle_prompt_preserves_authorization_and_return_schema(
+    tmp_path, capsys, required_instruction
 ):
     from des.cli.handoff import main
 
@@ -1056,6 +1100,196 @@ def test_native_architect_prompt_returns_semantic_input_for_host_owned_submissio
                 str(tmp_path),
                 "prompt",
                 "--role",
+                "nw-acceptance-designer",
+                "--value",
+                "1",
+                "--root-context",
+                str(context),
+            ]
+        )
+        == 0
+    )
+    prompt = capsys.readouterr().out
+    assert prompt.count("jev_decide.py") == 1
+    assert required_instruction in prompt, (
+        f"WHAT: the rendered prompt lacks the required instruction {required_instruction!r}. "
+        "WHY: acceptance authors must receive the complete declared instruction contract. "
+        "HOW: correct the affected template clause without changing unrelated guidance."
+    )
+    assert "belong ONLY in the support files" not in prompt
+    assert (
+        "declared public constructor for accepted and refused inputs" not in prompt
+    ), (
+        "WHAT: the rendered prompt still directs accepted/refused inputs through a constructor. "
+        "WHY: these observations belong at the declared public port and declared injection seam. "
+        "HOW: replace the superseded constructor instruction with the public-port instruction."
+    )
+    return_section = prompt.split("## RETURN", 1)[1].split("## FROM THE ROOT", 1)[0]
+    object_match = re.search(r"`(\{[^`]+\})`", return_section)
+    assert object_match is not None
+    # The displayed JSON schema uses quoted alternatives for enum values.
+    example = re.sub(
+        r'("(?:[^"\\]|\\.)*")(?:\s*\|\s*"(?:[^"\\]|\\.)*")+',
+        r"\1",
+        object_match.group(1),
+    )
+    assert set(json.loads(example)) == {"outcome", "diagnostic"}
+
+
+def test_atd_oracle_prompt_requires_review_without_repeating_finite_prefixes(
+    tmp_path, capsys
+):
+    """The author receives the complete self-check before returning their oracle.
+
+    @contract-shape: real-io
+    """
+    from des.cli.handoff import main
+
+    handover = create_handover(tmp_path, "deliver", (HandoverValue("A", (), _facts()),))
+    assert isinstance(handover, StoredHandover), (
+        f"WHAT: the admitted handover was not stored; received {handover!r}. "
+        "WHY: the author needs a valid handover to receive the instruction. "
+        "HOW: persist the existing admitted facts through the handover entry point."
+    )
+    context = tmp_path / "root.txt"
+    context.write_text("host context\n")
+    result = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "prompt",
+            "--role",
+            "nw-acceptance-designer",
+            "--value",
+            "1",
+            "--root-context",
+            str(context),
+        ]
+    )
+    assert result == 0, (
+        f"WHAT: prompt delivery returned {result!r}, expected successful exit 0. "
+        "WHY: the author must receive the guidance through the public prompt entry. "
+        "HOW: render and emit the prompt for the admitted handover and root context."
+    )
+    prompt = capsys.readouterr().out
+    instruction = (
+        "- Before returning, inspect your oracle: no property may repeat a finite "
+        "case's stimulus-and-assertion sequence or prefix, even with new suffix "
+        "assertions; add only generated domain or new assertions, and cite shared "
+        "cases by reference to the owning table."
+    )
+    occurrences = prompt.count(instruction)
+    assert occurrences == 1, (
+        f"WHAT: the emitted prompt contains {occurrences} occurrences of the complete "
+        f"self-check, expected exactly one: {instruction!r}. "
+        "WHY: the author must receive the full finite-prefix self-check, including "
+        "suffix coverage and owning-table references, without duplicate guidance. "
+        "HOW: add the exact authorized instruction once to the template before RETURN."
+    )
+    task_position = prompt.find("## TASK (template)")
+    instruction_position = prompt.find(instruction)
+    return_position = prompt.find("## RETURN")
+    assert 0 <= task_position < instruction_position < return_position, (
+        f"WHAT: TASK, self-check and RETURN positions are {task_position}, "
+        f"{instruction_position} and {return_position}, expected that order. "
+        "WHY: the author must receive the self-check as task guidance before returning. "
+        "HOW: place the instruction in TASK immediately before the blank line preceding RETURN."
+    )
+
+
+def test_atd_oracle_prompt_uses_consistent_obligation_line_shapes(tmp_path, capsys):
+    from des.cli.handoff import main
+
+    assert isinstance(
+        create_handover(tmp_path, "deliver", (HandoverValue("A", (), _facts()),)),
+        StoredHandover,
+    )
+    context = tmp_path / "root.txt"
+    context.write_text("host context\n")
+    assert (
+        main(
+            [
+                "--repo-root",
+                str(tmp_path),
+                "prompt",
+                "--role",
+                "nw-acceptance-designer",
+                "--value",
+                "1",
+                "--root-context",
+                str(context),
+            ]
+        )
+        == 0
+    )
+    prompt = capsys.readouterr().out
+    return_section = prompt.split("## RETURN", 1)[1].split("## FROM THE ROOT", 1)[0]
+    shape_pattern = r"`(O<n> \[[^`]*?)`"
+    task_section = prompt.split("## RETURN", 1)[0]
+    tested_shape = (
+        "O<n> [<DESIGN id or name>]: stimulus <few words>; expected <few words>; "
+        "user result <what the user can observe or accomplish, in plain words>; "
+        "test <test file>::<test name>"
+    )
+    untested_shape = (
+        "O<n> [<DESIGN id or name>]: NOT TESTED - <reason from the DESIGN>; "
+        "owner: <owner the DESIGN declares, or none declared>"
+    )
+    expected_shapes = {tested_shape, untested_shape}
+    untested_product_rule = (
+        "Every permitted NOT TESTED O line about a product limit, guarantee or "
+        "restriction states the plain-word user result; keep pipeline, provenance "
+        "and model-bound facts separate, with no user result required."
+    )
+    for section in (task_section, return_section):
+        shapes = re.findall(shape_pattern, section)
+        assert set(shapes) == expected_shapes
+        assert shapes.count(tested_shape) == 1
+        assert section.count(untested_product_rule) == 1, (
+            f"WHAT: a prompt section does not contain exactly one complete rule "
+            f"{untested_product_rule!r}; actual section: {section!r}. "
+            "WHY: TASK and RETURN must identically require plain user results for "
+            "permitted untested product limits, guarantees and restrictions, not nonproduct facts. "
+            "HOW: state the identical rule once in each section and preserve O-line shapes "
+            "and the DESIGN permission and owner conditions."
+        )
+
+
+def test_native_architect_handoff_keeps_submission_host_owned_and_manifest_only(
+    tmp_path, capsys
+):
+    import shlex
+    from dataclasses import asdict
+
+    import jsonschema
+
+    from des.adapters.driven.task_invocation.model_envelope import (
+        _schema_for,
+        decode_model_run,
+    )
+    from des.cli.handoff import main
+    from des.domain.design_document import DesignDocument, DesignDocumentInvalid
+    from des.ports.driven_ports.task_invocation_port import ModelOutcome
+    from tests.des._helpers.host_facts import design_manifest
+
+    assert isinstance(
+        create_handover(tmp_path, "deliver", (HandoverValue("A", (), _facts()),)),
+        StoredHandover,
+    )
+    context = tmp_path / "root.txt"
+    context.write_text("host context\n")
+    before = {
+        path.relative_to(tmp_path): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+    assert (
+        main(
+            [
+                "--repo-root",
+                str(tmp_path),
+                "prompt",
+                "--role",
                 "nw-solution-architect",
                 "--root-context",
                 str(context),
@@ -1065,9 +1299,64 @@ def test_native_architect_prompt_returns_semantic_input_for_host_owned_submissio
     )
     output = capsys.readouterr().out
     submit = output.split("## SUBMIT", 1)[1].split("## FROM THE ROOT", 1)[0]
-    assert "The host submits" in submit
-    assert "Return only the closed complete semantic manifest" in submit
+    commands = [
+        shlex.split(line.removeprefix("- "))
+        for line in submit.splitlines()
+        if line.startswith("- des design ")
+    ]
+    assert commands == [
+        ["des", "design", "--repo-root", str(tmp_path), "--shared", "--input", "-"],
+        [
+            "des",
+            "design",
+            "--repo-root",
+            str(tmp_path),
+            "--value",
+            "1",
+            "--input",
+            "-",
+        ],
+    ]
+    assert {
+        path.relative_to(tmp_path): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    } == before
     assert "Do not execute" in submit
+    assert "BLOCKED-BY: <owner>" in submit
+
+    manifest = design_manifest(asdict(_facts()), "A", 1)
+    schema = jsonschema.Draft202012Validator(
+        json.loads(_schema_for("nw-solution-architect"))
+    )
+    accepted = {"outcome": "accepted", "diagnostic": "", "manifest": manifest}
+    schema.validate(accepted)
+    assert (
+        decode_model_run(accepted, role_id="nw-solution-architect").outcome
+        is ModelOutcome.Accepted
+    )
+    assert DesignDocument.from_json(json.dumps(accepted["manifest"])).purpose == "A"
+    with pytest.raises(DesignDocumentInvalid):
+        DesignDocument.from_json(json.dumps(accepted))
+
+    diagnostic = "BLOCKED-BY: design; formal checks are not authorized."
+    for outcome in ("rejected", "indeterminate"):
+        refusal = {"outcome": outcome, "diagnostic": diagnostic, "manifest": None}
+        schema.validate(refusal)
+        decoded = decode_model_run(refusal, role_id="nw-solution-architect")
+        assert decoded.outcome.value == outcome
+        assert decoded.diagnostic == diagnostic
+        with pytest.raises(jsonschema.ValidationError):
+            schema.validate({**refusal, "manifest": manifest})
+    assert (
+        "If you cannot execute a DESIGN-required verification or lack an authorization "
+        "or input, return `rejected` through the caller's enforced schema with "
+        "`BLOCKED-BY: <owner>` in `diagnostic`, naming the precise prerequisite "
+        "(for example `formal checks not authorized` or `checker unavailable at <path>`). "
+        "Use a typed blocker field only if that schema provides it; leave the refused "
+        "design payload null, never put a candidate manifest in `diagnostic`, and "
+        "never return `accepted`."
+    ) in submit
     assert "Submit each manifest yourself" not in submit
     assert "Hand a manifest to no one else" not in submit
 

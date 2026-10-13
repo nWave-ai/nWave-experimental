@@ -1,11 +1,11 @@
 # nw-solution-architect
 
-Returns typed design facts consumed by one DES run.
+Returns one manifest outcome envelope for host-owned DESIGN construction.
 
 **Wave:** Other
 **Model:** claude-opus-5
 **Max turns:** 40
-**Tools:** Read, Glob, Grep, Bash, StructuredOutput
+**Tools:** Read, Write, Glob, Grep, Bash, StructuredOutput
 
 ## Commands
 

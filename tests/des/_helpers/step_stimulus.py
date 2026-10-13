@@ -8,7 +8,6 @@ or fallback chooses the next role.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from typing import TYPE_CHECKING
 
 from des.application.delivery_continuation import (
@@ -18,7 +17,7 @@ from des.application.delivery_continuation import (
 )
 from des.application.delivery_steps import DeliverySteps, ReplacementModes
 from des.application.handover import StoredHandover, load_handover
-from tests.des._helpers.host_facts import design_manifest, product_manifest
+from tests.des._helpers.host_facts import product_manifest
 
 
 if TYPE_CHECKING:
@@ -60,14 +59,13 @@ def decomposed(runner, port, root, request):
     return _reread(root, request)
 
 
-def designed(runner, port, root, stored, position=0):
+def designed(runner, port, root, stored, manifest, *, position=0):  # noqa: PLR0913 - explicit host, repository and selected evidence context
     observation = stored.values[position].observation
-    supplied = port.invoke(
+    port.invoke(
         role_id="nw-solution-architect",
         prompt=_prompt(observation=observation),
         cwd=root,
     )
-    manifest = design_manifest(asdict(supplied.design_facts), observation, position + 1)
     outcome = DeliverySteps().design_document(
         root,
         position + 1,
@@ -130,10 +128,10 @@ def crafted(runner, port, root, stored, design, *, position=0):  # noqa: PLR0913
     )
 
 
-def through_oracle(port, root, request, position=0):
+def through_oracle(port, root, request, manifest, position=0):
     runner = DeliveryContinuationRunner()
     stored = decomposed(runner, port, root, request)
-    stored, design = designed(runner, port, root, stored, position)
+    stored, design = designed(runner, port, root, stored, manifest, position=position)
     measured = oracled(runner, port, root, stored, design, position=position)
     if measured.refusal is not None:
         raise StepRefused("oracle", measured.refusal)

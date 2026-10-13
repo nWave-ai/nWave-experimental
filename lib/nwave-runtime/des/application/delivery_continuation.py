@@ -532,6 +532,7 @@ class AuthorityFacts:
     adr: ApplicableADR | NotApplicable | None = None
     public_oracle: PublicOracle | None = None
     architect_handoff: dict | None = None
+    product_change: str = "required"
 
     @property
     def oracle_verification_argv(self) -> tuple[str, ...]:
@@ -558,6 +559,7 @@ class AuthorityFacts:
                 "selected": selected,
                 "locator": self.locator,
                 "targets": self.target_decisions,
+                **({"product_change": "none"} if self.product_change == "none" else {}),
                 "paradigm": self.paradigm,
                 "decisions": self.decisions,
                 "obligations": self.obligations,
@@ -1505,13 +1507,21 @@ class DeliveryContinuationRunner:
         never judged.
         """
         if isinstance(locator, DesignFacts):
+            from des.domain.design_document import product_change_defect
+
             defect = design_facts_defect(locator)
             if defect is not None:
                 return DeliveryContinuationRunner._fail(
                     Disposition.Indeterminate,
                     "DesignFactsMalformed",
                     f"bound DESIGN facts are inadmissible: {defect}",
-                    _DESIGN_FACTS_REPAIR,
+                    "submit corrected DESIGN with des design --repo-root ROOT --value N --input -; "
+                    "use --replace-current only for intentional bound replacement"
+                    if product_change_defect(
+                        locator.product_change, locator.targets, locator.oracle
+                    )
+                    is not None
+                    else _DESIGN_FACTS_REPAIR,
                 )
             inadmissible = DeliveryContinuationRunner._admit_supports(
                 root, locator.acceptance_supports
@@ -1574,6 +1584,7 @@ class DeliveryContinuationRunner:
                 adr=locator.adr,
                 public_oracle=locator.public_oracle,
                 architect_handoff=locator.architect_handoff,
+                product_change=locator.product_change,
             )
             if not admit_verification:
                 return typed
@@ -1613,6 +1624,25 @@ class DeliveryContinuationRunner:
                 "repair durable authority",
             )
         targets = extract_declared_target_table(section.text)
+        from des.domain.architecture_brief_resolver import extract_product_change
+
+        product_change = extract_product_change(section.text)
+        if product_change is None:
+            return DeliveryContinuationRunner._fail(
+                Disposition.Indeterminate,
+                "ProductChangeDeclarationMalformed",
+                "Product change declarations are duplicate or unknown: "
+                + repr(
+                    [
+                        line
+                        for line in section.text.splitlines()
+                        if line.strip().startswith("Product change:")
+                    ]
+                ),
+                "submit one required or none declaration through des design "
+                "--repo-root ROOT --value N --input -; none requires targets=[] "
+                "and consultation belongs in reuse_analysis.candidates",
+            )
         paradigms = [
             canonical_paradigm(item)
             for item in extract_declared_paradigms(section.text)
@@ -1626,7 +1656,8 @@ class DeliveryContinuationRunner:
         obligations = tuple(extract_obligations(section.text))
         if (
             not isinstance(targets, list)
-            or not targets
+            or (not targets and product_change != "none")
+            or product_change is None
             or len(paradigms) != 1
             or paradigms[0] is None
             or len(oracles) != 1
@@ -1673,6 +1704,7 @@ class DeliveryContinuationRunner:
             (oracle, *supports),
             tuple(tuple(command) for command in commands),
             oracle_verification_indices[0],
+            product_change=product_change,
         )
         binding = DeliveryContinuationRunner._admit_oracle_verification_binding(
             declared
@@ -1724,7 +1756,7 @@ class DeliveryContinuationRunner:
         materializable = {
             os.path.normpath(path)
             for path in (
-                *(target for target, _ in facts.target_decisions),
+                *DeliveryContinuationRunner._mutable_targets(facts),
                 *facts.acceptance_paths,
             )
         }
@@ -1758,42 +1790,26 @@ class DeliveryContinuationRunner:
 
     @staticmethod
     def _admit_targets(facts: AuthorityFacts) -> DeliveryOutcome | None:
-        """Refuse a target table whose only declared path is the oracle.
+        """Admit the declared product-change alternative through its owner."""
+        from des.domain.design_document import product_change_defect
+        from des.ports.driven_ports.task_invocation_port import DesignTarget
 
-        With the oracle removed from the mutable set, a table naming nothing
-        else authorizes the crafter to change no byte at all, and the runner
-        would send that contradiction to a paid turn exactly as it sent run
-        15's empty set.  Making it unrepresentable at the derivation is not
-        available -- the target table is the model's own semantic decision --
-        so the refusal fires at the earliest point the software holds the fact
-        (GDP-1), which is `_derive`, after the architect turn and BEFORE the
-        bind.  The value therefore stays unbound and the next run re-elicits
-        DESIGN for it, which is the HOW this names and the reason the
-        derive-before-bind order exists.
-
-        The decision column is NOT consulted: `EXTEND`/`CREATE_NEW` is a
-        designation about whether a FILE already exists, never about who
-        writes it (`integration_commit_message.py`), so an existing oracle
-        extended by its author is legitimate and refusing on that word would
-        decide on a designation (GDP-8).  What is refused is the property that
-        actually harms: no production path left for the crafter.
-        """
-        if DeliveryContinuationRunner._mutable_targets(facts):
+        defect = product_change_defect(
+            facts.product_change,
+            tuple(
+                DesignTarget(path, decision)
+                for path, decision in facts.target_decisions
+            ),
+            facts.acceptance_oracle_locator,
+        )
+        if defect is None:
             return None
-        oracle = facts.acceptance_paths[0]
-        declared = ", ".join(path for path, _ in facts.target_decisions)
         return DeliveryContinuationRunner._fail(
             Disposition.Indeterminate,
             "NoMutableProductionTarget",
-            f"targets declares only the acceptance oracle ({declared}), so no "
-            f"production path is mutable for the crafter and the oracle "
-            f"{oracle} never is",
-            f"have DESIGN declare in targets at least one production path "
-            f"other than the oracle {oracle}; when this run derived before the "
-            "bind the value stays unbound and re-running re-elicits DESIGN for "
-            "it, but when the authority is ALREADY bound no rerun can, so "
-            "delete .nwave/des/handover.json to re-elicit DESIGN for this "
-            "Request -- the generated artifacts themselves are never removed",
+            defect,
+            "submit corrected DESIGN through des design --repo-root ROOT --value N --input -; "
+            "use --replace-current only to intentionally replace bound facts",
         )
 
     def _validate_bound_scopes(
@@ -1826,7 +1842,7 @@ class DeliveryContinuationRunner:
                 for _, design in batch
                 for path in (
                     *design.acceptance_paths,
-                    *(target for target, _ in design.target_decisions),
+                    *self._mutable_targets(design),
                 )
             }
             for other in batches[index + 1 :]:
@@ -1836,7 +1852,7 @@ class DeliveryContinuationRunner:
                     for _, design in other
                     for path in (
                         *design.acceptance_paths,
-                        *(target for target, _ in design.target_decisions),
+                        *self._mutable_targets(design),
                     )
                 }
                 if (
@@ -3316,7 +3332,12 @@ class DeliveryContinuationRunner:
                 locators.append(cited)
         contract_paths: list[str] = []
         mutable = (
-            {target.path for target in authority.targets}
+            # Admitted DesignFacts carry only the shared mutable vocabulary.
+            {
+                target.path
+                for target in authority.targets
+                if target.path != authority.oracle.partition("::")[0]
+            }
             if isinstance(authority, DesignFacts)
             else set()
         )
@@ -3343,6 +3364,11 @@ class DeliveryContinuationRunner:
         result: list[tuple[str, str]] = []
         for item in consumed:
             projection = asdict(item)
+            if (
+                isinstance(item.authority, DesignFacts)
+                and item.authority.product_change == "required"
+            ):
+                projection["authority"].pop("product_change", None)
             if (
                 isinstance(item.authority, DesignFacts)
                 and item.authority.architect_handoff is not None
@@ -4145,6 +4171,7 @@ class DeliveryContinuationRunner:
         facts: dict[str, object] = {
             "authority": design.locator,
             "targets": design.target_decisions,
+            **({"product_change": "none"} if design.product_change == "none" else {}),
             "paradigm": design.paradigm,
             "decisions": design.decisions,
             "oracle": design.acceptance_oracle_locator,
@@ -4194,6 +4221,11 @@ class DeliveryContinuationRunner:
             "shared_design": {
                 "authority": bound.authority_locator,
                 "semantic_sha256": bound.semantic_sha256,
+                **(
+                    {"product_change": "none"}
+                    if design.product_change == "none"
+                    else {}
+                ),
                 "targets": [
                     {"path": target.path, "decision": target.decision}
                     for target in design.targets
@@ -4856,7 +4888,7 @@ class DeliveryContinuationRunner:
                 (
                     *design.modified_authority_paths,
                     *design.acceptance_paths,
-                    *(path for path, _ in design.target_decisions),
+                    *DeliveryContinuationRunner._mutable_targets(design),
                 )
             )
         )
@@ -4871,6 +4903,7 @@ class DeliveryContinuationRunner:
             design.target_decisions,
             design.paradigm,
             design.public_oracle,
+            design.product_change,
         )
 
     @staticmethod
@@ -5002,27 +5035,15 @@ class DeliveryContinuationRunner:
 
     @staticmethod
     def _mutable_targets(design: AuthorityFacts) -> tuple[str, ...]:
-        """One value's production targets: what a crafter alone may still change.
-
-        The ORACLE is the only exclusion, and it is the only one ADR-SSOT-002
-        §12 asks for: `Author/reviewer separation` keeps the immutable oracle
-        out of the crafter's hands, and the immutability windows are stated
-        over oracle bytes.  A declared SUPPORT carries no such promise -- it is
-        evidence the oracle's reviewer reads, captured before the craft turn
-        and surfaced to the whole-diff reviewer as bytes-of-then.
-
-        Subtracting the whole acceptance set instead cost a paid turn on
-        2026-09-05, run 15: the architect named one adapter both as the EXTEND
-        target and as a support, which is legitimate in meaning -- read this
-        file to judge the oracle, change it to deliver -- and the runner
-        resolved the two roles silently in favour of immutability.  The crafter
-        received `target_decisions` authorizing an EXTEND next to an EMPTY
-        `mutable_targets` and answered `indeterminate` on the contradiction.
-        The target table is the model's decision about what this delivery
-        changes; being read as evidence never withdraws it.
-        """
+        """Explicit mutation declarations, excluding the immutable oracle."""
         oracle = design.acceptance_paths[0]
-        return tuple(path for path, _ in design.target_decisions if path != oracle)
+        from des.ports.driven_ports.task_invocation_port import MUTABLE_TARGET_DECISIONS
+
+        return tuple(
+            path
+            for path, decision in design.target_decisions
+            if decision in MUTABLE_TARGET_DECISIONS and path != oracle
+        )
 
     @staticmethod
     def _request_argvs(
@@ -5826,7 +5847,7 @@ class DeliveryContinuationRunner:
                 + remeasure,
             )
         paths = [path for path in changed.stdout.split("\0") if path]
-        targets = {path for path, _ in design.target_decisions}
+        targets = set(self._mutable_targets(design))
         crafted = [path for path in paths if path in targets]
         why = (
             "declared acceptance bytes changed since the oracle witness: "

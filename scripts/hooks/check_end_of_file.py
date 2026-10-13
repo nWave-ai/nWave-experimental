@@ -10,8 +10,9 @@ Scope:
   pre-commit hook runs it, so a commit is graded on ITS OWN files and not on
   pre-existing offenders elsewhere in the tree. With no arguments it falls back
   to every git-tracked file, which is how CI runs it as the whole-tree backstop.
-  Imported v9lb1 receipt evidence is excluded in both modes: artifact SHA-256
-  values bind these bytes, so EOF normalization would corrupt the evidence.
+  Imported receipts and verbatim ATD measurement artifacts are excluded in both
+  modes: artifact SHA-256 values bind their bytes, so EOF normalization would
+  corrupt the evidence. Canonical measurement reports and protocols stay checked.
 
 The hook deliberately runs `--check`, never `--fix`: auto-modifying hooks were
 removed on 2026-05-28 (commit 11a24c637) because concurrent rewrites race across
@@ -49,7 +50,26 @@ BINARY_EXT = frozenset(
 )
 
 # Receipt artifact SHA-256 values bind these bytes; EOF normalization corrupts evidence.
-BYTE_EXACT_EVIDENCE_PREFIX = "tests/des/architect_handoff/fixtures/v9lb1/"
+BYTE_EXACT_EVIDENCE_PREFIXES = (
+    "tests/des/architect_handoff/fixtures/v9lb1/",
+    "docs/feature/atd-policy-alignment/measurement/baseline-1/presence/",
+    "docs/feature/atd-policy-alignment/measurement/baseline-1/scoring/",
+    "docs/feature/atd-policy-alignment/measurement/baseline-1/turns/",
+    "docs/feature/atd-policy-alignment/measurement/baseline-1/prompts/",
+    "docs/feature/atd-policy-alignment/measurement/iterations/scoring/",
+    "docs/feature/atd-policy-alignment/measurement/iterations/turns/",
+    "docs/feature/atd-policy-alignment/measurement/iterations/prompts/",
+)
+BYTE_EXACT_EVIDENCE_FILES = frozenset(
+    {
+        "docs/feature/atd-policy-alignment/measurement/baseline-1/matrix-summary.json",
+        "docs/feature/atd-policy-alignment/measurement/iterations/iter1-matrix-summary.json",
+        # DES handover codec writes canonical JSON without a final LF; read_handover
+        # refuses any other bytes (src/des/application/handover.py).
+        "tests/des/acceptance/atd_prompt_dedup/fixture/.nwave/des/handover.json",
+        "tests/des/acceptance/atd_prompt_dedup/fixture/run5/.nwave/des/handover.json",
+    }
+)
 
 
 FIX_COMMAND = "python3 scripts/hooks/check_end_of_file.py --fix"
@@ -58,7 +78,8 @@ FIX_COMMAND = "python3 scripts/hooks/check_end_of_file.py --fix"
 def _is_scannable(path: str) -> bool:
     return (
         bool(path)
-        and not path.startswith(BYTE_EXACT_EVIDENCE_PREFIX)
+        and path not in BYTE_EXACT_EVIDENCE_FILES
+        and not path.startswith(BYTE_EXACT_EVIDENCE_PREFIXES)
         and not any(path.lower().endswith(ext) for ext in BINARY_EXT)
     )
 

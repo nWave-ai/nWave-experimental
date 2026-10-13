@@ -13,7 +13,6 @@ from des.application.handover import (
 from des.domain.design_document import (
     DesignDocument,
     DesignDocumentInvalid,
-    DesignFactsSection,
     design_decisions_defect,
 )
 from des.ports.driven_ports.task_invocation_port import (
@@ -260,23 +259,6 @@ def test_legacy_absence_is_readable_history_not_approved_non_applicability() -> 
     assert reencoded == payload
 
 
-@pytest.mark.parametrize(
-    "locator",
-    [
-        "docs/brief.md",
-        "docs/brief.md#",
-        "docs/brief.md#   ",
-        "docs/brief.md### Native",
-        "docs/brief.md#Native\ncontract",
-    ],
-)
-def test_a_locator_naming_no_renderable_section_is_refused_not_guessed(
-    locator: str,
-) -> None:
-    facts = DesignDocument.from_json(json.dumps(manifest())).facts
-    assert DesignFactsSection.for_locator(locator, facts) is None
-
-
 def _closed(items: list[dict]) -> dict:
     return {"applicability": "applicable", "items": items}
 
@@ -352,14 +334,6 @@ def test_changing_one_impact_decision_changes_the_semantic_digest() -> None:
         DesignDocument.from_json(json.dumps(changed)).semantic_sha256
         != base.semantic_sha256
     )
-
-
-def test_facts_section_renders_reuse_and_impact_closure() -> None:
-    facts = DesignDocument.from_json(json.dumps(manifest())).facts
-    rendered = DesignFactsSection("Native reservation contract", facts).markdown()
-    assert "Reuse analysis" in rendered
-    assert "Impact closure" in rendered
-    assert "bin/main.ml:1" in rendered
 
 
 def test_non_source_targets_are_closed_by_role_kinds_not_language_names() -> None:
@@ -546,23 +520,33 @@ def test_strict_architect_receipt_schema_requires_array_artifacts_and_admits_aut
     from des.adapters.driven.task_invocation.model_envelope import codex_schema_for
     from des.application.architect_handoff import g10_codec, g10_types, input_schema
 
-    def find_run(value):
-        if isinstance(value, dict):
-            if {"argv", "artifacts"} <= set(value.get("properties", {})):
-                return value
-            for child in value.values():
-                found = find_run(child)
-                if found is not None:
-                    return found
-        elif isinstance(value, list):
-            for child in value:
-                found = find_run(child)
-                if found is not None:
-                    return found
-        return None
+    def receipt_input(run):
+        return {
+            "sections": [
+                {
+                    "kind": "receipts",
+                    "scope": "shared",
+                    "status": {"tag": "applicable", "payload": {"runs": [run]}},
+                }
+            ]
+        }
 
-    run_schema = find_run(codex_schema_for("nw-solution-architect"))
-    assert run_schema is not None
+    def accepted_reply(run):
+        return {
+            "answer": {
+                "outcome": "accepted",
+                "diagnostic": "",
+                "manifest": {**manifest(), "architect_handoff": receipt_input(run)},
+            }
+        }
+
+    surfaces = (
+        (jsonschema.Draft202012Validator(input_schema()), receipt_input),
+        (
+            jsonschema.Draft202012Validator(codex_schema_for("nw-solution-architect")),
+            accepted_reply,
+        ),
+    )
     raw = g10_codec.enc(
         g10_types.Run(
             id="CLAIM",
@@ -576,9 +560,14 @@ def test_strict_architect_receipt_schema_requires_array_artifacts_and_admits_aut
             checks=(),
         )
     )
-    with pytest.raises(jsonschema.ValidationError):
-        jsonschema.validate({**raw, "artifacts": None}, run_schema)
-    jsonschema.validate(raw, run_schema)
+    for validator, supplied_input in surfaces:
+        with pytest.raises(jsonschema.ValidationError):
+            validator.validate(supplied_input({**raw, "artifacts": None}))
+        missing_artifacts = dict(raw)
+        del missing_artifacts["artifacts"]
+        with pytest.raises(jsonschema.ValidationError):
+            validator.validate(supplied_input(missing_artifacts))
+        validator.validate(supplied_input(raw))
     defects = []
     decoded = g10_codec.dec(g10_types.Run, raw, "$.run", defects)
     assert not defects and decoded.artifacts == ()
@@ -593,8 +582,7 @@ def test_strict_architect_receipt_schema_requires_array_artifacts_and_admits_aut
         (["command", "", " \t\n"], True),
         (["\ncommand", "data"], True),
     )
-    for schema in (find_run(input_schema()), run_schema):
-        validator = jsonschema.Draft202012Validator(schema)
+    for validator, supplied_input in surfaces:
         observations = []
         for argv, expected in cases:
             instance = {**raw, "argv": argv}
@@ -604,7 +592,7 @@ def test_strict_architect_receipt_schema_requires_array_artifacts_and_admits_aut
                 (
                     argv,
                     expected,
-                    validator.is_valid(instance),
+                    validator.is_valid(supplied_input(instance)),
                     decoded is not g10_codec.BAD,
                 )
             )
@@ -612,3 +600,119 @@ def test_strict_architect_receipt_schema_requires_array_artifacts_and_admits_aut
             expected == schema_admits == decoder_admits
             for _, expected, schema_admits, decoder_admits in observations
         ), observations
+
+
+@pytest.mark.parametrize(
+    "consulted", [(), ("lib/read.ml",), ("lib/read.ml", "lib/other.ml")]
+)
+def test_explicit_no_change_preserves_consultation_without_mutation(consulted):
+    supplied = manifest()
+    supplied["product_change"] = "none"
+    supplied["targets"] = []
+    supplied["reuse_analysis"] = {
+        "candidates": [
+            {
+                "symbol": path,
+                "locator": path + ":1",
+                "decision": "REUSE",
+                "reason": "Consult existing owner.",
+            }
+            for path in consulted
+        ]
+    }
+    document = DesignDocument.from_json(json.dumps(supplied))
+    assert document.facts.product_change == "none"
+    assert document.facts.targets == ()
+    assert design_facts_defect(document.facts) is None
+    assert json.loads(document.facts_json())["product_change"] == "none"
+    assert "Product change: none" in document.markdown()
+    assert tuple(
+        candidate.locator for candidate in document.facts.reuse_analysis.candidates
+    ) == tuple(path + ":1" for path in consulted)
+
+
+@pytest.mark.parametrize("decision", ["EXTEND", "CREATE_NEW"])
+def test_required_and_omitted_product_change_have_identical_legacy_identity(decision):
+    supplied = manifest()
+    supplied["targets"][0]["decision"] = decision
+    omitted = DesignDocument.from_json(json.dumps(supplied))
+    supplied["product_change"] = "required"
+    explicit = DesignDocument.from_json(json.dumps(supplied))
+    assert explicit.semantic_sha256 == omitted.semantic_sha256
+    assert explicit.facts_json() == omitted.facts_json()
+    assert "product_change" not in json.loads(explicit.facts_json())
+    assert explicit.markdown() == omitted.markdown()
+
+
+@pytest.mark.parametrize(
+    "change,paths",
+    [
+        ("none", ["lib/reservations.ml"]),
+        ("required", []),
+        (None, []),
+        ("required", ["test/reservations.ml"]),
+        ("unknown", []),
+    ],
+)
+def test_product_change_refusal_explains_declared_relation(change, paths):
+    supplied = manifest()
+    if change is not None:
+        supplied["product_change"] = change
+    supplied["targets"] = [
+        {"path": path, "decision": "EXTEND", "reason": "Existing owner."}
+        for path in paths
+    ]
+    with pytest.raises(DesignDocumentInvalid) as refused:
+        DesignDocument.from_json(json.dumps(supplied))
+    message = str(refused.value)
+    assert all(label in message for label in ("WHAT", "WHY", "HOW", "des design"))
+
+
+@pytest.mark.parametrize("decision", ["REUSE", "CONSULT"])
+def test_consultation_target_decisions_route_to_existing_reuse_carrier(decision):
+    supplied = manifest()
+    supplied["targets"][0]["decision"] = decision
+    with pytest.raises(DesignDocumentInvalid, match="reuse_analysis.candidates"):
+        DesignDocument.from_json(json.dumps(supplied))
+
+
+def test_direct_fact_construction_cannot_bypass_no_change_admission():
+    document = DesignDocument.from_json(json.dumps(manifest()))
+    contradictory = replace(document.facts, product_change="none")
+    assert "product_change/targets conflict" in design_facts_defect(contradictory)
+    admitted = replace(contradictory, targets=())
+    assert design_facts_defect(admitted) is None
+
+
+def test_no_change_wire_restore_keeps_alternative_and_refuses_unknown():
+    from des.application.handover import _facts_wire, _restore_facts
+
+    supplied = manifest()
+    supplied.update(product_change="none", targets=[])
+    document = DesignDocument.from_json(json.dumps(supplied))
+    wire = _facts_wire(document.facts)
+    restored = _restore_facts(wire)
+    assert not isinstance(restored, Blocked)
+    assert restored == document.facts
+    wire["product_change"] = "consult"
+    refused = _restore_facts(wire)
+    assert isinstance(refused, Blocked)
+    assert all(label in refused.why for label in ("WHAT", "WHY", "HOW"))
+    assert "des design" in refused.how
+
+
+@pytest.mark.parametrize(
+    "declaration,admitted",
+    [
+        ("", False),
+        ("Product change: none\n", True),
+        ("Product change: unknown\n", False),
+        ("Product change: none\nProduct change: none\n", False),
+    ],
+)
+def test_markdown_empty_authority_requires_one_explicit_none(declaration, admitted):
+    from des.domain.architecture_brief_resolver import extract_declared_target_table
+
+    text = declaration + "| Path | Decision | Reason |\n| --- | --- | --- |\n"
+    result = extract_declared_target_table(text)
+    assert (result == []) is admitted

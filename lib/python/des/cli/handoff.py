@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import shlex
 import sys
-from dataclasses import asdict
 from pathlib import Path
 
 from des.adapters.driven.task_invocation.role_instructions import load_role_instructions
@@ -66,7 +65,7 @@ def _template(root, args, stored, facts, context, design, *, targets=None):  # n
             load_role_instructions(path)
             if path.stem == args.role
             else path.read_bytes().decode("utf-8")
-        )
+        ), False
     if args.role in (
         "nw-product-owner",
         "nw-software-crafter-reviewer",
@@ -78,11 +77,11 @@ def _template(root, args, stored, facts, context, design, *, targets=None):  # n
             raise ValueError(
                 f"role instructions unavailable: {asset.detail}; pass --template"
             )
-        return load_role_instructions(asset.path)
+        return load_role_instructions(asset.path), False
     if args.role == "nw-solution-architect":
         name = args.template_name or "design.architect-v9"
         fixture = {
-            "des_facts": _json(facts),
+            "des_facts": "See canonical native_input in [C] orchestrator.",
             "grammar": DesignDocument.input_description(),
             "submit_steps": [
                 shlex.join(
@@ -115,37 +114,39 @@ def _template(root, args, stored, facts, context, design, *, targets=None):  # n
             "root_input": context,
         }
     else:
-        value = stored.values[args.value - 1]
-        authority = [design.locator]
+        authority = ["See canonical native_input.selected_authority.authority."]
         if stored.product_authority is not None:
             authority.insert(
-                0,
-                stored.product_authority.locator
-                + " sha256="
-                + stored.product_authority.sha256,
+                0, "See canonical native_input.product_authority (locator and sha256)."
             )
         if stored.shared_design is not None:
             authority.append(
-                stored.shared_design.authority_locator
-                + " sha256="
-                + stored.shared_design.section_sha256
+                "See canonical native_input.shared_design (authority_locator and section_sha256)."
             )
+        if stored.feature_id:
+            feature = "See canonical native_input.scope.feature_id."
+        else:
+            facts["invocation"]["feature"] = "project scope"
+            feature = "See canonical native_input.invocation.feature."
         fixture = {
-            "feature": stored.feature_id or "project scope",
-            "request": stored.request,
+            "feature": feature,
+            "request": "See canonical native_input.request.",
             "value": str(args.value),
-            "observation": value.observation,
+            "observation": "See canonical native_input.values[0].observation.",
             "authority": authority,
             "targets": [
-                f"{path} ({decision})"
-                for path, decision in design.target_decisions
-                if targets is None or path in targets
+                "See canonical native_input.selected_authority.targets"
+                + (
+                    ", restricted by native_input.invocation.targets."
+                    if targets is not None
+                    else "."
+                )
             ],
-            "paradigm": design.paradigm,
+            "paradigm": "See canonical native_input.selected_authority.paradigm.",
             "verification": [
-                shlex.join(argv) for argv in design.native_verification_argvs
+                "See canonical native_input.selected_authority.verification."
             ],
-            "state_lines": [_json(facts)],
+            "state_lines": ["See canonical native_input in [C] orchestrator."],
             "repo_root": str(root),
             "root_input": context,
         }
@@ -153,29 +154,23 @@ def _template(root, args, stored, facts, context, design, *, targets=None):  # n
             name = args.template_name or "oracle.atd-v3"
             fixture.update(
                 {
-                    "oracle_path": design.acceptance_oracle_locator,
-                    "supports": list(design.acceptance_paths[1:])
-                    or ["(none declared)"],
-                    "public_oracle": _json(asdict(design.public_oracle))
-                    if design.public_oracle is not None
-                    else "UNASSESSED: no public oracle supplied",
-                    "obligations": list(design.obligations) or ["(none declared)"],
-                    "arch_tests": _json(
-                        DeliveryContinuationRunner._typed_facts(design)[
-                            "architectural_tests"
-                        ]
-                    ),
-                    "contract_tests": _json(
-                        DeliveryContinuationRunner._typed_facts(design)[
-                            "contract_tests"
-                        ]
-                    ),
+                    "oracle_path": "See canonical native_input.selected_authority.oracle.",
+                    "supports": [
+                        "See canonical native_input.selected_authority.acceptance_supports (empty means none declared)."
+                    ],
+                    "public_oracle": "See canonical native_input.selected_authority.public_oracle.",
+                    "obligations": [
+                        "See canonical native_input.selected_authority.obligations (empty means none declared)."
+                    ],
+                    "arch_tests": "See canonical native_input.selected_authority.architectural_tests.",
+                    "contract_tests": "See canonical native_input.selected_authority.contract_tests.",
                 }
             )
         else:
-            fixture["operations"] = (
+            facts["invocation"]["operations"] = (
                 "UNASSESSED: no operational authority supplied to this prompt; root must supply any applicable operational input"
             )
+            fixture["operations"] = "See canonical native_input.invocation.operations."
             if args.phase is not None:
                 name = args.template_name or "craft.prefactor-v3"
                 pf = design.prefactoring
@@ -186,22 +181,34 @@ def _template(root, args, stored, facts, context, design, *, targets=None):  # n
                 fixture.update(
                     {
                         "phase": args.phase,
-                        "move": pf.move,
-                        "preserved": pf.preserved_observation,
-                        "existing_oracle": pf.existing_oracle,
-                        "verification": [shlex.join(argv) for argv in pf.verification],
+                        "move": "See canonical native_input.selected_authority.prefactoring.move.",
+                        "preserved": "See canonical native_input.selected_authority.prefactoring.preserved_observation.",
+                        "existing_oracle": "See canonical native_input.selected_authority.prefactoring.existing_oracle.",
+                        "verification": [
+                            "See canonical native_input.selected_authority.prefactoring.verification."
+                        ],
                     }
                 )
             else:
                 name = args.template_name or "craft.impl-v3"
                 fixture.update(
                     {
-                        "oracle_line": design.acceptance_oracle_locator,
-                        "supports": list(design.acceptance_paths[1:])
-                        or ["(none declared)"],
-                        "obligations": list(design.obligations) or ["(none declared)"],
+                        "oracle_line": "See canonical native_input.selected_authority.oracle.",
+                        "supports": [
+                            "See canonical native_input.selected_authority.acceptance_supports (empty means none declared)."
+                        ],
+                        "obligations": [
+                            "See canonical native_input.selected_authority.obligations (empty means none declared)."
+                        ],
                     }
                 )
+                fixture["implementation_mode"] = (
+                    "No product changes authorized; preserve the recorded public observation "
+                    "without product edits."
+                    if design.product_change == "none"
+                    else "The public oracle for this value is recorded and RED; make it GREEN."
+                )
+    used_fields = set()
     text, _ = architect_prompt.render(
         name,
         fixture,
@@ -209,8 +216,9 @@ def _template(root, args, stored, facts, context, design, *, targets=None):  # n
         root=root,
         role_id=args.role,
         skills_directory=args.skills_dir,
+        used_fields=used_fields,
     )
-    return text
+    return text, "root_input" in used_fields
 
 
 def _prompt(root, args, stored):
@@ -229,7 +237,6 @@ def _prompt(root, args, stored):
     directory = args.dir
     targets = tuple(operations._targets(args)) if args.targets is not None else None
     design = None
-    prepared_projection = None
     if args.value is not None and not 1 <= args.value <= len(stored.values):
         raise ValueError(
             "--value must be a one-based position within the accumulated Request"
@@ -247,12 +254,8 @@ def _prompt(root, args, stored):
         _, facts, _ = load_prepared_at(
             root, role, args.candidate, Path(args.role_input)
         )
-        handoff = {}
-        prepared_projection = (
-            []
-            if role == "examiner"
-            else facts.get("architect_projection", projection(args.role, {}))
-        )
+        if role == "reviewer" and "architect_projection" not in facts:
+            facts = {**facts, "architect_projection": projection(args.role, {})}
     else:
         if args.role not in ("nw-solution-architect", "nw-product-owner"):
             if args.value is None or not 1 <= args.value <= len(stored.values):
@@ -286,7 +289,11 @@ def _prompt(root, args, stored):
                     DeliveryContinuationRunner._mutable_targets(design)
                 ):
                     raise ValueError(
-                        "prompt targets must be mutable production targets of the bound DESIGN"
+                        "WHAT: prompt targets are outside mutable production authority; "
+                        f"WHY: supplied {targets!r}, authorized "
+                        f"{DeliveryContinuationRunner._mutable_targets(design)!r}; "
+                        "HOW: omit --targets or select only bound EXTEND/CREATE_NEW production "
+                        "paths; change authority with des design --repo-root ROOT --value N --input -"
                     )
                 if args.phase is None:
                     # craft.impl-v3 tells the crafter its public oracle is
@@ -302,28 +309,36 @@ def _prompt(root, args, stored):
                             f"record it with des oracle --repo-root {root} --value {args.value} --input -, "
                             "then repeat this prompt"
                         )
-        handoff = accumulated(stored)
         facts = _facts(stored, args.role, args.value, targets, directory)
-    template = _template(root, args, stored, facts, context, design, targets=targets)
-    # The measured template contains the root bytes verbatim; untemplated role
-    # instructions receive them through the final caller-owned context block.
-    has_root = not args.template and args.role not in (
-        "nw-product-owner",
-        "nw-software-crafter-reviewer",
-        "nw-user-examiner",
-        "nw-acceptance-designer-reviewer",
+        if design is not None:
+            selected = DeliveryContinuationRunner._typed_facts(design)
+            selected.pop("architect_handoff", None)
+            selected.setdefault(
+                "public_oracle", "UNASSESSED: no public oracle supplied"
+            )
+            facts["selected_authority"] = selected
+        invocation = {"repo_root": str(root)}
+        if args.value is not None:
+            invocation["value"] = args.value
+        if targets is not None:
+            invocation["targets"] = list(targets)
+        if args.phase is not None:
+            invocation["phase"] = args.phase
+        facts["invocation"] = invocation
+    template, has_root = _template(
+        root, args, stored, facts, context, design, targets=targets
     )
     sys.stdout.write(
         compose(
             args.role,
-            handoff,
+            {},
             template,
             root_context="" if has_root else context,
             context={"native_input": _json(facts)},
             value=args.value,
             targets=targets,
             base_dir=directory,
-            prepared_projection=prepared_projection,
+            prepared_projection=[],
         )
     )
     return 0

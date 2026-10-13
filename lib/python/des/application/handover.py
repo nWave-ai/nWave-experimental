@@ -32,6 +32,7 @@ from des.domain.design_document import (
     design_decisions_defect,
     design_decisions_wire,
     native_verification_defect,
+    product_change_defect,
 )
 from des.domain.distill_document import AcceptanceObligation
 from des.domain.document_scope import (
@@ -44,6 +45,7 @@ from des.domain.document_scope import (
 )
 from des.domain.feature_documents import FeatureDocumentsInvalid, valid_feature_id
 from des.ports.driven_ports.task_invocation_port import (
+    MUTABLE_TARGET_DECISIONS,
     DesignFacts,
     DesignTarget,
     LegacyDesignFacts,
@@ -144,7 +146,7 @@ _HANDOVER_REPAIR = (
 )
 
 _PARADIGMS = ("object_oriented", "functional", "procedural")
-_DECISIONS = ("EXTEND", "CREATE_NEW")
+_DECISIONS = MUTABLE_TARGET_DECISIONS
 _QUOTED_VALUE_BUDGET = 120
 _JSON_NESTING_LIMIT = 4096
 
@@ -192,8 +194,6 @@ def design_facts_defect(facts: DesignFacts, *, historical: bool = False) -> str 
     must never reach the duplicate check, and a non-string oracle must never
     reach ``partition``.
     """
-    if not facts.targets:
-        return "targets is empty"
     if facts.paradigm not in _PARADIGMS:
         return f"paradigm is not one of {' or '.join(_PARADIGMS)}: {_shown(facts.paradigm)}"
     if not facts.decisions:
@@ -221,6 +221,9 @@ def design_facts_defect(facts: DesignFacts, *, historical: bool = False) -> str 
         if target.path in seen_paths:
             return f"targets[{index}].path repeats an earlier target: {_shown(target.path)}"
         seen_paths.add(target.path)
+    defect = product_change_defect(facts.product_change, facts.targets, facts.oracle)
+    if defect is not None:
+        return defect
     seen_supports: set[str] = set()
     for index, path in enumerate(facts.acceptance_supports):
         if not isinstance(path, str) or (
@@ -278,12 +281,8 @@ def design_facts_defect(facts: DesignFacts, *, historical: bool = False) -> str 
         return f"authority_locator is not a string: {_shown(facts.authority_locator)}"
     if facts.authority_locator:
         heading = facts.authority_locator.partition("#")[2]
-        # The five shared clauses are asked of the ONE table that also publishes
-        # them to the architect (`design_authority_locator`); only this guard's
-        # ADDITIONAL canonical clause is spelled here, because bytes restored
-        # from disk must also be the exact bytes a constructor would write.  It
-        # stays strictly stricter than the decoder, so nothing this refuses today
-        # becomes admissible.
+        # Restored identities must also have the exact canonical heading spelling;
+        # the shared published locator grammar alone admits surrounding whitespace.
         if (
             not is_design_authority_locator(facts.authority_locator)
             or heading != heading.strip()
@@ -296,16 +295,10 @@ def design_facts_defect(facts: DesignFacts, *, historical: bool = False) -> str 
 
 
 def valid_design_facts(facts: DesignFacts) -> bool:
-    """Kept as the boolean face of :func:`design_facts_defect`.
+    """Integrity check for persisted internal facts, including historical input.
 
-    The provider now refuses these shapes inside the architect's own turn: the
-    schema it enforces carries the same locator grammar, the same enums and the
-    same lower bounds (``_SOLUTION_ARCHITECT_SCHEMA``).  This guard is NOT that
-    constraint restated for the model -- it is the integrity check for the
-    OTHER consumer, ``read_handover``, which reconstructs design facts from
-    ``.nwave/des/handover.json``: bytes on disk that no provider validator ever
-    saw and that a hand edit or a partial write can corrupt.  Removing it would
-    leave that path deciding on a DESIGNATION.
+    Restored bytes may bypass the DESIGN constructor and therefore retain
+    their own validation boundary; the architect envelope is not this carrier.
     """
     return design_facts_defect(facts) is None
 
@@ -438,6 +431,7 @@ def _facts_wire(
         "verification": [list(argv) for argv in value.verification],
         "oracle_verification_index": value.oracle_verification_index,
         **design_decisions_wire(value),
+        **({"product_change": "none"} if value.product_change == "none" else {}),
     }
     if include_obligations:
         facts["obligations"] = list(value.obligations)
@@ -483,7 +477,7 @@ def design_basis_sha256(shared: SharedDesign | None, value: HandoverValue) -> st
     The single definition of the basis: the DISTILL writer stores it with every
     complete write and the one selected-authority reader compares against it.
     Unknown legacy identities contribute ``null``.  The value authority is
-    included exactly as the handover wire encodes it, so a provider change of
+    included exactly as the handover wire encodes it, so a constructor change of
     the bound facts is a different basis even when no full-input identity is
     known.  The public_oracle is excluded from the basis: it is included in
     the value's design_semantic_sha256, and a binding that closes the semantic
@@ -763,7 +757,7 @@ def _restore_facts(authority: dict) -> DesignFacts | Blocked:
     authority_keys = set(authority)
     if "public_oracle" in authority_keys:
         authority_keys = authority_keys - {"public_oracle"}
-    authority_keys -= {"adr", "architect_handoff"}
+    authority_keys -= {"adr", "architect_handoff", "product_change"}
     if authority_keys not in (
         legacy_keys,
         keys,
@@ -810,6 +804,7 @@ def _restore_facts(authority: dict) -> DesignFacts | Blocked:
             else (),
             authority.get("authority_locator", ""),
             public_oracle=public_oracle,
+            product_change=authority.get("product_change", "required"),
             architect_handoff=(
                 decode_architect_handoff(authority["architect_handoff"])
                 if "architect_handoff" in authority
@@ -824,6 +819,19 @@ def _restore_facts(authority: dict) -> DesignFacts | Blocked:
             f"design facts cannot be reconstructed: {_shown(str(error))}",
             _HANDOVER_REPAIR,
         )
+    if isinstance(facts.oracle, str) and all(
+        isinstance(target.path, str) for target in facts.targets
+    ):
+        defect = product_change_defect(
+            facts.product_change, facts.targets, facts.oracle
+        )
+        if defect is not None:
+            return Blocked(
+                "HandoverMalformed",
+                f"restored design facts are inadmissible: {defect}",
+                "reconstruct DESIGN with des design --repo-root ROOT --value N --input -; "
+                "use --replace-current only to intentionally replace bound facts",
+            )
     return facts
 
 

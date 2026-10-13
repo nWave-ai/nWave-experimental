@@ -31,6 +31,7 @@ from pathlib import Path
 
 from des.cli.__main__ import _REGISTRY
 from tests.common.in_process_cli import run_cli_in_process
+from tests.des._helpers.host_facts import design_manifest
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     accepted_values,
     block,
@@ -51,41 +52,45 @@ TARGET = "src/product/value.py"
 SIZE_LABEL = re.compile(r"(?<![\w-])(?:S|M|L)(?![\w-])")
 
 
-def design_facts(target: str = TARGET) -> dict:
+def design_facts(target: str = TARGET, *, position: int = 1) -> dict:
     return {
         "structured_output": {
             "outcome": "accepted",
             "diagnostic": "bound the value to its typed design facts",
-            "design_facts": {
-                "targets": [{"path": target, "decision": "CREATE_NEW"}],
-                "paradigm": "object_oriented",
-                "decisions": ["one opaque semantic decision"],
-                "oracle": ORACLE,
-                "acceptance_supports": [SUPPORT],
-                "verification": [[sys.executable, "-m", "pytest", ORACLE]],
-                "oracle_verification_index": 0,
-                "architectural_tests": {
-                    "applicability": "not_applicable",
-                    "reason": "The fixture has no structural boundary change.",
+            "manifest": design_manifest(
+                {
+                    "targets": [{"path": target, "decision": "CREATE_NEW"}],
+                    "paradigm": "object_oriented",
+                    "decisions": ["one opaque semantic decision"],
+                    "oracle": ORACLE,
+                    "acceptance_supports": [SUPPORT],
+                    "verification": [[sys.executable, "-m", "pytest", ORACLE]],
+                    "oracle_verification_index": 0,
+                    "architectural_tests": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture has no structural boundary change.",
+                    },
+                    "contract_tests": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture changes no shared contract.",
+                    },
+                    "prefactoring": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture requires no preservation move.",
+                    },
+                    "agreement_analysis": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture has no affected agreement.",
+                    },
+                    "reuse_analysis": {"candidates": []},
+                    "impact_closure": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                    },
                 },
-                "contract_tests": {
-                    "applicability": "not_applicable",
-                    "reason": "The fixture changes no shared contract.",
-                },
-                "prefactoring": {
-                    "applicability": "not_applicable",
-                    "reason": "The fixture requires no preservation move.",
-                },
-                "agreement_analysis": {
-                    "applicability": "not_applicable",
-                    "reason": "The fixture has no affected agreement.",
-                },
-                "reuse_analysis": {"candidates": []},
-                "impact_closure": {
-                    "applicability": "not_applicable",
-                    "reason": "The fixture reaches no public surface, consumer or build metadata.",
-                },
-            },
+                observation(chr(ord("A") + position - 1)),
+                position,
+            ),
         }
     }
 
@@ -188,7 +193,12 @@ def test_the_orchestrator_may_take_a_supported_step_the_terminal_did_not_name(
     assert code == 0, out + err
 
     code, out, err = step(
-        "design", "--repo-root", str(root), "--value", "2", answers=[design_facts()]
+        "design",
+        "--repo-root",
+        str(root),
+        "--value",
+        "2",
+        answers=[design_facts(position=2)],
     )
 
     assert code == 0, out + err

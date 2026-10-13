@@ -1,0 +1,8 @@
+
+  LITERAL_ROOT_BEGIN λ
+{{request}} native_input [H]
+=== [C] orchestrator ===
+native_input: {"request":"REQUEST_FACT_equal_λ"}
+Keep this caller-owned matching JSON and all surrounding whitespace.
+LITERAL_ROOT_END
+
