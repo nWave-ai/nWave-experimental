@@ -16,7 +16,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, NewType
 
 
 if TYPE_CHECKING:
@@ -35,6 +35,19 @@ class ModelOutcome(str, Enum):
 
 class MalformedModelEnvelope(ValueError):
     """The provider response cannot establish what semantic result occurred."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        unexpected: tuple[str, ...] = (),
+        missing: tuple[str, ...] = (),
+        how: str | None = None,
+    ) -> None:
+        self.unexpected = unexpected
+        self.missing = missing
+        self.how = how
+        super().__init__(message)
 
 
 #: The floor, in characters, under which a Product Owner observation is not a
@@ -128,20 +141,35 @@ class CraftBlocker(str, Enum):
 MUTABLE_TARGET_DECISIONS = ("EXTEND", "CREATE_NEW")
 
 
+FactId = NewType("FactId", str)
+
+
+@dataclass(frozen=True, slots=True)
+class FactRef:
+    ref: FactId
+
+
+@dataclass(frozen=True, slots=True)
+class FactRecord:
+    id: FactId
+    text: str
+
+
 @dataclass(frozen=True, slots=True)
 class DesignTarget:
     path: str
     decision: str
+    reason: FactRef
 
 
 @dataclass(frozen=True, slots=True)
 class PublicOracle:
     """The public oracle declared in the DESIGN manifest: observation, stimulus, expected, falsifier."""
 
-    observation: str
-    stimulus: str
-    expected: str
-    falsifier: str
+    observation: FactRef
+    stimulus: FactRef
+    expected: FactRef
+    falsifier: FactRef
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,24 +181,26 @@ class UnassessedDesignDecision:
 
 @dataclass(frozen=True, slots=True)
 class NotApplicable:
-    reason: str
+    reason: FactRef
     applicability: str = field(default="not_applicable", init=False)
 
 
 @dataclass(frozen=True, slots=True)
 class ArchitecturalTestObligation:
-    obligation: str
+    id: FactId
+    obligation: FactRef
     oracle: str
     verification_index: int
 
 
 @dataclass(frozen=True, slots=True)
 class ContractTestObligation:
-    obligation: str
+    id: FactId
+    obligation: FactRef
     contract: str
     producer: str
     consumer: str
-    observation: str
+    observation: FactRef
     oracle: str
     verification_index: int
 
@@ -190,8 +220,8 @@ class ApplicableContractTests:
 @dataclass(frozen=True, slots=True)
 class ApplicablePrefactoring:
     existing_oracle: str
-    move: str
-    preserved_observation: str
+    move: FactRef
+    preserved_observation: FactRef
     verification: tuple[tuple[str, ...], ...]
     acceptance_supports: tuple[str, ...]
     applicability: str = field(default="applicable", init=False)
@@ -199,11 +229,12 @@ class ApplicablePrefactoring:
 
 @dataclass(frozen=True, slots=True)
 class AgreementParty:
+    id: FactId
     contract: str
     role: str
     locator: str
     decision: str
-    reason: str
+    reason: FactRef
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,10 +245,10 @@ class ApplicableAgreementAnalysis:
 
 @dataclass(frozen=True, slots=True)
 class ApplicableADR:
-    context: str
-    decision: str
-    alternatives: tuple[str, ...]
-    consequences: tuple[str, ...]
+    context: FactRef
+    decision: FactRef
+    alternatives: tuple[FactRef, ...]
+    consequences: tuple[FactRef, ...]
     status: str
     applicability: str = field(default="applicable", init=False)
 
@@ -227,7 +258,7 @@ class ReuseCandidate:
     symbol: str
     locator: str
     decision: str
-    reason: str
+    reason: FactRef
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,7 +279,7 @@ class ImpactItem:
     kind: str
     locator: str
     decision: str
-    reason: str
+    reason: FactRef
 
 
 @dataclass(frozen=True, slots=True)
@@ -258,20 +289,39 @@ class ApplicableImpactClosure:
 
 
 @dataclass(frozen=True, slots=True)
+class BoundaryFailure:
+    condition: FactRef
+    outcome: str
+    observation: FactRef
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicableBoundaries:
+    driving_port: FactRef
+    driven_ports: tuple[FactRef, ...]
+    dependency_direction: FactRef
+    failures: tuple[BoundaryFailure, ...]
+    applicability: Literal["applicable"] = field(default="applicable", init=False)
+
+
+@dataclass(frozen=True, slots=True)
 class DesignFacts:
     """Constructor-produced semantic design consumed by the runner."""
 
     targets: tuple[DesignTarget, ...]
     paradigm: str
-    decisions: tuple[str, ...]
+    decisions: tuple[FactRef, ...]
     oracle: str
     acceptance_supports: tuple[str, ...]
     verification: tuple[tuple[str, ...], ...]
     oracle_verification_index: int
-    obligations: tuple[str, ...] = ()
-    # The DESIGN constructor assigns the configured document section.
+    facts: tuple[FactRecord, ...] = field(kw_only=True)
+    purpose: FactRef = field(kw_only=True)
+    constraints: tuple[FactRef, ...] = field(default=(), kw_only=True)
+    inherits: tuple[FactRef, ...] = field(default=(), kw_only=True)
+    boundaries: ApplicableBoundaries | NotApplicable = field(kw_only=True)
+    schema_version: int = field(default=2, init=False)
     authority_locator: str = ""
-    # Historical handovers predating the public oracle retain None.
     public_oracle: PublicOracle | None = None
     architectural_tests: ApplicableArchitecturalTests | NotApplicable = field(
         kw_only=True
@@ -286,17 +336,18 @@ class DesignFacts:
         ApplicableImpactClosure | NotApplicable | UnassessedDesignDecision
     ) = field(kw_only=True)
     adr: ApplicableADR | NotApplicable | None = None
-    # Explicit host-supplied typed sections; None is historical unassessed
-    # input, never an applicability decision. Other semantic facts stay intact.
+    # Explicit current typed sections; None states that no section was submitted.
     architect_handoff: dict | None = field(default=None, kw_only=True)
     product_change: str = field(default="required", kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
-class LegacyDesignFacts(DesignFacts):
-    """Readable persisted history requiring explicit complete reconstruction."""
+class PreNormalizedDesign:
+    """Opaque persisted authority; replacement is its only admitted operation."""
 
-    missing_decisions: tuple[str, ...] = field(kw_only=True)
+    raw: dict
+    authority_locator: str
+    design_semantic_sha256: str = ""
 
 
 @dataclass(frozen=True, slots=True)

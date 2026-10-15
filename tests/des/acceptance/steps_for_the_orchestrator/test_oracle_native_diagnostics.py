@@ -1,32 +1,8 @@
-"""Public oracle: `des oracle` must not collapse two distinct native failures.
+"""Exit-only oracles are refused without collapsing their native diagnostics.
 
-THE INCIDENT THIS MEASURES. `_executed_oracle_set` already computes a per-item
-`"diagnostic"` field (the tail of whichever channel the native process spoke
-on) alongside `path`, `verdict`, `axis` and `exit` -- but `_oracle_red_facts`,
-the ONLY place those measured rows reach the public terminal, prints just
-`path`/`verdict`/`axis`/`exit`. Two vectors that are BOTH real native
-subprocess runs, BOTH exit nonzero, BOTH ask for no JUnit report (so both earn
-the identical `verdict=indeterminate axis=exit-status-only`), and use the SAME
-oracle path constant, produce an ORACLE-RED line that is byte-for-byte
-IDENTICAL even though the two subprocesses failed for entirely different,
-already-observed reasons. The LLM reading the terminal cannot tell an
-`assert False` refusal from an `ImportError` refusal -- both facts it needs to
-decide the next step -- though the software measured the difference already.
-
-WHAT IS MEASURED HERE, through the one public port and nothing else: `des po`,
-`des design`, `des oracle`, run TWICE over two independent checkouts (the
-`another` fixture) so neither arm's oracle bytes or turn log leak into the
-other. Each arm's native oracle is a small Python script AUTHORED to
-`tests/acceptance/test_value.py` and executed as `[sys.executable, ORACLE]`
-(a real subprocess run of that file, never `python -c` and never `pytest`),
-so the report axis stays `exit-status-only` and the two arms differ ONLY in
-what the process itself said.
-
-THIS IS A REPRO, NOT YET A REGRESSION OF THE FIX. `test_the_two_native_refusals_are_distinguishable_in_the_terminal`
-is the RED case against the unmodified `_oracle_red_facts`: it is expected to
-fail until that function is asked to print the already-measured diagnostic.
-Once it does, this becomes the permanent regression guarding against the
-surface regressing to path/verdict/axis/exit alone.
+Two real native subprocesses use the same oracle path, verdict, axis and exit
+status, but say different things. Their terminal refusals must retain that
+difference, including safely escaped hostile diagnostic text.
 """
 
 from __future__ import annotations
@@ -156,7 +132,11 @@ def measure(root: Path, step, body: str) -> tuple[str, str]:
         "1",
         answers=[authored(body)],
     )
-    assert code == 0, out + err
+    assert code != 0, out + err
+    lines = block(out, err)
+    assert lines["WHAT"] == "OracleRedUnobservable", lines
+    assert "DES-ORACLE-OBSERVATION:" in lines["HOW"], lines
+    assert "des craft" not in lines.get("NEXT", ""), lines
     return out, err
 
 
@@ -164,23 +144,17 @@ def oracle_red_lines(terminal: str) -> list[str]:
     return [line for line in terminal.splitlines() if line.startswith("ORACLE-RED: ")]
 
 
-def test_the_two_native_refusals_are_admitted_and_equally_classified(
+def test_the_two_native_refusals_are_refused_and_equally_classified(
     root: Path, step, another
 ) -> None:
-    """CONTROL, over the unmodified surface: both arms stay ADMITTED alike.
-
-    Fixing the diagnostic must never move either arm off `Success`, off
-    `verdict=indeterminate` or off `axis=exit-status-only` -- ADR-DES-003's own
-    routing for an oracle that only offers an exit observation is untouched by
-    this change (mirrors `test_a_vector_that_asked_for_no_report_keeps_exit_status_only`).
-    """
+    """Both exit-only arms are refused before craft with the same measured axis."""
     alpha_out, alpha_err = measure(root, step, ALPHA_ORACLE)
     other_root, other_step, _ = another()
     beta_out, beta_err = measure(other_root, other_step, BETA_ORACLE)
 
     for out, err in ((alpha_out, alpha_err), (beta_out, beta_err)):
         lines = block(out, err)
-        assert lines["DELIVERY-OUTCOME"] == "Success", lines
+        assert lines["DELIVERY-OUTCOME"] == "Indeterminate", lines
         assert "verdict=indeterminate" in lines["ORACLE-RED"], lines["ORACLE-RED"]
         assert "axis=exit-status-only" in lines["ORACLE-RED"], lines["ORACLE-RED"]
         assert "exit=2" in lines["ORACLE-RED"], lines["ORACLE-RED"]

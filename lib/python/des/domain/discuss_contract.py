@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import json
 
+from des.domain.integration_commit_message import (
+    DEFAULT_CONVENTIONAL_TYPES,
+    UNRECORDED_TYPE,
+)
+
 
 CURRENT_VERSION = 2
 LEGACY_VERSIONS = (1,)
@@ -47,6 +52,16 @@ any part is invalid.
                "applicable"|"not_applicable", "reason": str, "items": [...]}}}}
                (items non-empty exactly when applicable)
   values       ordered [{{"observation": str, "dependencies": [earlier observations]}}]
+               Optional per value: "change": {{"type": TYPE, "description": str}}
+               TYPE is one of {", ".join(DEFAULT_CONVENTIONAL_TYPES)}.
+               Description is one non-empty line starting with a letter.
+               Unknown change keys and every invalid member are refused together.
+               The first recorded change in canonical value order supplies the
+               candidate subject's type and description; no prose is classified.
+               Without recorded intent: {UNRECORDED_TYPE}, first observation,
+               and body marker "change-intent unrecorded". That marker also
+               appears whenever any value in a batch has no recorded intent.
+               A persisted intent change requires --replace-current.
 
 Each section is ALWAYS rendered; state explicitly what you did:
   jtbd             {{"status": "not_explored"}}
@@ -78,7 +93,10 @@ HELP_EPILOG = (
     f"{LEGACY_VERSIONS[0]} accepted). Required: schema_version request outcomes "
     f"scope decisions values {' '.join(SECTION_NAMES)}; each section is explicit "
     '({"status":"not_explored"} / "provided"; quint_scenarios "not_run" / '
-    f'"generated"). Full schema and a copyable example: `{DESCRIBE_FLAG}`.'
+    '"generated"). Optional per value: change {"type": TYPE, "description": str}; '
+    "the first recorded intent supplies the candidate subject; absence is "
+    f"explicitly unrecorded ({UNRECORDED_TYPE}, first observation). "
+    f"Full schema and a copyable example: `{DESCRIBE_FLAG}`."
 )
 
 HOW_TO_FIX = (

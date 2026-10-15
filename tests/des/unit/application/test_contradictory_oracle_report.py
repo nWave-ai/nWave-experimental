@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 from pathlib import Path
 
 import pytest
 
 from des.application.delivery_continuation import (
-    AuthorityFacts,
     DeliveryContinuationRunner,
     DeliveryOutcome,
     Disposition,
@@ -19,6 +19,10 @@ from des.domain.oracle_observation import (
     OracleObservation,
     OracleObservationKind,
     observation_from_counts,
+)
+from tests.des.unit.application.test_authored_oracle_is_executed_red import (
+    execution_authority,
+    oracle_manifest,
 )
 
 
@@ -217,17 +221,14 @@ def test_native_oracle_judges_its_explicit_report_without_pytest_exit_convention
 
     oracle_locator = "tests/acceptance/fake_oracle.check"
     declared_argv = (str(fake_checker), "--junitxml=native-report.xml")
-    authority = AuthorityFacts(
-        locator="docs/architecture.md#native oracle contradicts its own exit status",
-        modified_authority_paths=(),
-        target_decisions=(("src/answer.py", "CREATE_NEW"),),
-        paradigm="object_oriented",
-        decisions=(),
-        obligations=(),
-        acceptance_oracle_locator=oracle_locator,
-        acceptance_paths=(oracle_locator,),
-        native_verification_argvs=(declared_argv,),
-        oracle_verification_index=0,
+    authority = execution_authority(
+        root,
+        oracle_manifest(
+            "Native oracle contradicts its own exit status.",
+            oracle=oracle_locator,
+            targets=(("src/answer.py", "CREATE_NEW"),),
+            verification=(declared_argv,),
+        ),
     )
 
     runner = DeliveryContinuationRunner()
@@ -237,8 +238,10 @@ def test_native_oracle_judges_its_explicit_report_without_pytest_exit_convention
     retained = json.loads(records[0].read_text())[0]
     assert retained["argv"] == list(declared_argv)
     assert retained["exit"] == exit_status
-    assert "PYTEST_ADDOPTS" not in retained["declared_environment"]
-    assert "PYTHONPATH" not in retained["declared_environment"]
+    assert all(
+        retained["declared_environment"].get(name) == os.environ.get(name)
+        for name in ("PYTEST_ADDOPTS", "PYTHONPATH")
+    )
     assert not isinstance(measured, DeliveryOutcome), measured
     assert measured.measured[0]["verdict"] == verdict
     assert measured.measured[0]["axis"] == axis

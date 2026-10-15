@@ -107,11 +107,13 @@ the caller before using those shared outputs.
   roots or external caches merely because an inherited environment names them.
   Other lane-only generated outputs may be removed once their users release them
   and required evidence is preserved; prove ownership, not a familiar basename.
-- **Durable snapshots:** keep source and necessary `.nwave` state, plus the
-  minimal retained evidence that their consumers need. Exclude generated
-  builds, dependency environments and cache copies. A hash or a Git commit
-  cannot recover untracked evidence; retain its bytes and verify every retained
-  symlink target before removing its source checkout.
+- **Durable snapshots:** keep source and minimal retained evidence their consumers
+  need. Preserve DES runtime `.nwave/des/**` in the retained `ROOT/lanes/NAME`
+  worktree (`des lane integrate --keep-worktree`), never by staging, force-adds
+  or per-step WIP commits. Leave historical runtime commits untouched. Exclude
+  generated builds, dependency environments and cache copies. A hash or Git
+  commit cannot recover untracked evidence; retain its bytes and verify every
+  retained symlink target before removing its source checkout.
 - **Delivery lanes:** create them with `des lane open --repo-root ROOT
   --name NAME` inside the user's `ROOT/lanes/NAME`, not under temporary or cache
   directories. Their source survives until the lifecycle below is satisfied.
@@ -205,6 +207,15 @@ Problems and lessons use explicit applicability plus a nonblank reason; use
 project override. On resumed finalization retry the exact same input; it is
 idempotent. This command invokes no provider and does not choose a phase,
 feature size or cleanup action.
+
+In-lane `des integrate` moves the lane only; its NEXT names the remaining
+lane-to-root integration. On `IntegrationStale`, merge the moved destination
+into the lane, run `des verify --repo-root LANE --integrated-candidate C`
+using the retained ancestor named by HOW, then retry
+`des lane integrate --repo-root ROOT --worktree LANE --keep-worktree`.
+The explicit verification measures the merged HEAD without reviving the
+historical graph or minting candidate/review approval; the same ancestor works
+after a later root move.
 
 Example shape: `{"schema_version":1,"date":"2026-09-09","feature_id":"feature-id","purpose":"...","key_decisions":["..."],"delivered_work":["..."],"verification_results":["..."],"problems":{"applicability":"not_applicable","reason":"...","items":[]},"lessons":{"applicability":"applicable","reason":"...","items":["..."]},"durable_artifacts":[{"label":"evidence","path":"docs/evidence.md"}]}`. Artifact paths are repository-relative or HTTPS.
 

@@ -13,7 +13,6 @@ import dataclasses as dc
 import io
 import json
 import os
-import shutil
 import sys
 import tempfile
 import unittest
@@ -24,8 +23,10 @@ from tests.des.architect_handoff.tests.test_g10 import (
     MINIMAL,
     base_doc,
     decode,
+    fixture_catalog,
     fresh_copy,
     section,
+    stage_detached_fixture,
 )
 
 from des.application.architect_handoff import g10 as G
@@ -52,6 +53,11 @@ def cli(*args: str) -> tuple[int, str, str]:
 
 
 class Printing(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.minimal = stage_detached_fixture(MINIMAL, directory.name)
+
     def test_describe_and_rules_print_their_text_and_succeed(self):
         code, out, _ = cli("describe")
         self.assertEqual((0, P.describe_types() + "\n"), (code, out))
@@ -61,18 +67,20 @@ class Printing(unittest.TestCase):
     def test_summary_prints_one_json_object_with_sorted_keys_and_a_file_that_does_not_decode_exits_one(
         self,
     ):
-        code, out, _ = cli("summary", MINIMAL)
+        code, out, _ = cli("summary", self.minimal)
         self.assertEqual(0, code)
         keys = list(json.loads(out))
         self.assertEqual(sorted(keys), keys)
-        self.assertEqual(P.summary(G.load_files([MINIMAL])[0]), json.loads(out))
+        handoff, catalog, defects = G.load_context([self.minimal])
+        self.assertEqual([], defects)
+        self.assertEqual(P.summary(handoff, catalog), json.loads(out))
         with tempfile.TemporaryDirectory() as d:
             bad = os.path.join(d, "bad.json")
             with open(bad, "w", encoding="utf-8") as fh:
                 fh.write("{}")
             code, out, _ = cli("summary", bad)
         self.assertEqual(1, code)
-        self.assertIn("G4", out)
+        self.assertIn("DesignKeyNotInGrammar", out)
         self.assertIn("Not run:", out)
 
     def test_render_to_a_page_says_where_it_wrote_and_without_a_page_prints_markdown(
@@ -80,16 +88,19 @@ class Printing(unittest.TestCase):
     ):
         with tempfile.TemporaryDirectory() as d:
             page = os.path.join(d, "page.html")
-            code, out, _ = cli("render", MINIMAL, "--html", page)
+            code, out, _ = cli("render", self.minimal, "--html", page)
             self.assertEqual((0, f"wrote {page}\n"), (code, out))
             with open(page, encoding="utf-8") as fh:
                 self.assertTrue(fh.read().startswith("<!doctype html>"))
             code, out, _ = cli(
-                "render", MINIMAL, "--html", os.path.join(d, "no-such-dir", "page.html")
+                "render",
+                self.minimal,
+                "--html",
+                os.path.join(d, "no-such-dir", "page.html"),
             )
             self.assertEqual(1, code)
             self.assertIn("cannot write the page", out)
-        code, out, _ = cli("render", MINIMAL)
+        code, out, _ = cli("render", self.minimal)
         self.assertEqual(0, code)
         self.assertIn("## laws (shared)", out)
 
@@ -119,7 +130,7 @@ class Directories(unittest.TestCase):
             for name in ("f", "c", "e", "a", "d", "b"):
                 d = os.path.join(tmp, name)
                 Path(d).mkdir()
-                shutil.copy(MINIMAL, os.path.join(d, "g10.json"))
+                stage_detached_fixture(MINIMAL, d)
                 files.append(os.path.join(d, "g10.json"))
                 dirs.append(d)
             code, out, err = cli("check", *files)
@@ -576,7 +587,9 @@ class Scope(unittest.TestCase):
                 [],
                 [
                     x.rule
-                    for x in RU.check(decode(doc), None, "auto", d)[0]
+                    for x in RU.check(
+                        decode(doc), None, "auto", d, fixture_catalog(doc)
+                    )[0]
                     if x.rule == "CL7"
                 ],
             )
@@ -588,7 +601,9 @@ class Scope(unittest.TestCase):
                 ["CL7"],
                 [
                     x.rule
-                    for x in RU.check(decode(doc), None, "auto", d)[0]
+                    for x in RU.check(
+                        decode(doc), None, "auto", d, fixture_catalog(doc)
+                    )[0]
                     if x.rule == "CL7"
                 ],
             )

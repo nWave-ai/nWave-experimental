@@ -3,7 +3,7 @@ name: nw-product-discoverer-reviewer
 description: Use as peer reviewer for product-discoverer outputs -- validates evidence quality, sample sizes, decision gate compliance, bias detection, and discovery anti-patterns. Runs on Haiku for cost efficiency.
 model: haiku
 maxTurns: 40
-tools: Read, Glob, Grep, Task
+tools: Read, Glob, Grep, Task, Bash
 skills:
   - nw-typesafe-system-one
   - nw-pdr-review-criteria

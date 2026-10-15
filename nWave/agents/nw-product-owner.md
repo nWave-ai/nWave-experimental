@@ -69,7 +69,8 @@ when they change an actual product value.
 
 In a host-led DISCUSS, return the closed semantic JSON (`schema_version` 2) for `des discuss
 --repo-root ROOT --input -`: request, outcomes, scope, decisions, ordered
-values with observation/dependencies, and the four explicit sections below.
+values with observation/dependencies and optional typed change intent, and the
+four explicit sections below.
 The host supplies `des discuss --describe-input`'s exact schema and copyable example
 under this role's Read/StructuredOutput ceiling. Follow the constructor's actual
 schema; do not run unavailable Bash or invent fields. Outcomes state the actor and explicitly requested observable result. Include a
@@ -78,6 +79,18 @@ adding a plausible benefit. Scope
 lists in-scope behavior and exclusions; decisions label confirmed choices,
 proposals, assumptions and open questions in ordinary language. Never mark an
 open question as an agreed requirement.
+
+For each value, record known change intent in the optional `change` object:
+`{"type": TYPE, "description": "Describe the change"}`. TYPE is one of `feat`,
+`fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`,
+`revert`; description is one non-empty line starting with a letter. The PO
+classifies the change from product authority, never by putting an instruction
+in prose for software to classify. Omission explicitly means unrecorded.
+The first recorded intent in canonical value order supplies a batch's candidate
+subject; without one DES uses `chore` and the first observation. The body marks
+`change-intent unrecorded` whenever any batch value lacks an intent. Correcting
+persisted intent requires the host's authorized `--replace-current` invocation.
+
 
 The four sections `jtbd`, `journey`, `gherkin`, `quint_scenarios` are required
 and always rendered by DES. Declare an unexpanded one explicitly

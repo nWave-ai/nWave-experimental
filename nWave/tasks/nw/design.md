@@ -43,7 +43,9 @@ DEVOPS handoff.
    selected architect's required design obligations.
 
 5. **Return the smallest decision as one typed design** — In a managed
-   invocation the architect is read-only: it returns paradigm, ordered targets
+   invocation the architect writes no repository file and no durable authority;
+   it may write scratch or probe files only outside the repository, where its
+   tools allow. It returns paradigm, ordered targets
    with `EXTEND`/`CREATE_NEW`, obligations, oracle locator and supports, native
    verification argv vectors and the public contract, and SOFTWARE renders the
    canonical section at the configured destination for the persisted scope. In a human-driven

@@ -19,6 +19,9 @@ no message — or a message that only restates the code — is itself a defect: 
 the crafter exactly what to make true, not force them to reverse-engineer the intent. Same
 what/why/how rule the product's own error surfaces obey.
 
+Then/Assert steps own these business-named assertions and carry WHAT/WHY/HOW internally;
+scenario bodies call clean domain steps, not wordy assertion-message builders.
+
 ## Durable outcome naming (STANDING)
 
 Every acceptance-test identifier must name the durable observable value it
@@ -127,8 +130,8 @@ never permission to switch the project's stack.
 Handoff to software-crafter includes proof all mandates pass (definitions per the cited module):
 
 - **CM-A** (Mandate 1 — scenario-design): All test files import entry points (driving ports), zero internal component imports
-- **CM-B** (Business Language Abstraction — scenario-design): Scenarios and helpers use business terms; Gherkin is optional and technical protocol details live in project-native helpers.
-- **CM-C** (Mandate 3 — scenario-design): Scenarios validate complete user journeys with business value
+- **CM-B** (Business Language Abstraction — scenario-design): Scenario bodies visibly compose typed business-language Given/When/Then steps for journeys or Arrange/Act/Assert steps for focused contract/property tests, with exactly one When/Act. Gherkin files are optional; the native test framework is valid. Technical protocol details live behind reusable domain steps in project-native helpers.
+- **CM-C** (Mandate 3 — scenario-design): Journey scenarios validate complete user journeys with business value; focused contract/property scenarios validate a named observable contract at its declared boundary.
 - **CM-D** (Mandate 4 — scenario-design): Business logic extracted to pure functions. Impure code isolated behind adapters. Fixture parametrization applies only to adapter layer.
 - **CM-E** (Universe-bound assertion — layered-mechanics): State-mutating observations declare changed and preserved public state using native assertions or sufficient incumbent helpers; no compulsory matcher API.
 - **CM-F** (Mandate 9 — layered-mechanics): the representative layer 3+ wiring/sad-path test is example-only; for every declared broad-input/state/failure law (e.g. `BROAD_INPUT_DOMAIN`), the smallest sufficient set of separate, budgeted semantic-PBT tests exists instead — normally one property per distinct law, combined only when one generated observation honestly falsifies all combined laws — each sited at a deterministic, replayable, law-bearing surface (real I/O not required, but the generated observation carries an explicit preservation map to the promised real-port observation), proving the SAME promised observation as the representative example — never a proxy, never a replacement for it. When no such surface exists, the result is `EVIDENCE_GAP` back to DESIGN before authoring — DESIGN names the surface and preservation map or corrects the law; the obligation is never silently downgraded to example-only

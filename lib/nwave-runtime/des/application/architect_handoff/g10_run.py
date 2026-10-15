@@ -31,6 +31,7 @@ except ImportError:
 import contextlib
 import json
 import os
+import re
 import stat
 import subprocess
 import tempfile
@@ -185,10 +186,62 @@ def _load(path: str) -> T.Handoff:
     if not os.path.exists(path):
         return {}
     doc, ds = C.load_json(path)
-    h, more = C.decode_handoff(doc) if not ds else (None, [])
-    if h is None:
-        raise RunError((ds + more)[0])
-    return h
+    if ds:
+        raise RunError(ds[0])
+    if (
+        not isinstance(doc, dict)
+        or set(doc) != {"sections"}
+        or not isinstance(doc["sections"], list)
+    ):
+        raise _err(
+            "G4",
+            f"invalid driven receipt document {path}",
+            "the receipt store has a closed sections envelope",
+            "record receipts through des handoff run or des handoff record",
+        )
+    handoff: T.Handoff = {}
+    for index, entry in enumerate(doc["sections"]):
+        status = entry.get("status") if isinstance(entry, dict) else None
+        if (
+            not isinstance(entry, dict)
+            or set(entry) != {"kind", "scope", "status"}
+            or entry["kind"] != "receipts"
+            or not isinstance(entry["scope"], str)
+            or re.fullmatch(T.SCOPE_RE, entry["scope"]) is None
+            or not isinstance(status, dict)
+            or set(status) != {"tag", "payload"}
+            or status["tag"] != "applicable"
+        ):
+            raise RunError(
+                Defect(
+                    "G4",
+                    f"$.sections[{index}]",
+                    f"invalid driven receipt section in {path}",
+                    "the driven receipt store contains scoped run populations",
+                    "record receipts through des handoff run or des handoff record",
+                )
+            )
+        defects: list[Defect] = []
+        payload = C.dec(
+            T.Receipts,
+            status["payload"],
+            f"$.sections[{index}].status.payload",
+            defects,
+        )
+        if payload is C.BAD:
+            raise RunError(defects[0])
+        key = ("receipts", entry["scope"])
+        if key in handoff:
+            raise _err(
+                "G6",
+                f"repeated driven receipt section in {path}",
+                "the driven store has one run population",
+                "record receipts through des handoff run or des handoff record",
+            )
+        handoff[key] = T.Entry(
+            kind="receipts", scope=entry["scope"], status=T.Applicable(payload=payload)
+        )
+    return handoff
 
 
 def _store(path: str, h: T.Handoff) -> None:

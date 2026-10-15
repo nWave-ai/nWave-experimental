@@ -16,7 +16,7 @@ import time
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, TypeVar
 from xml.etree import ElementTree
 
 from des.adapters.driven.codefact.code_fact_chain import CodeFactChain
@@ -26,6 +26,7 @@ from des.adapters.driven.config.workspace_paths import (
     resolve_workspace_paths,
 )
 from des.adapters.driven.git.git_observation import (
+    GitByteObservation,
     GitObservation,
     declared_child_environment,
     observe_bytes,
@@ -56,19 +57,14 @@ from des.application.verification_workspace import (
     VerificationWorkspace,
 )
 from des.domain.architecture_brief_resolver import (
-    canonical_paradigm,
-    extract_acceptance_support_locators,
-    extract_declared_oracle_verification_indices,
-    extract_declared_paradigms,
-    extract_declared_target_table,
-    extract_declared_verification_commands,
-    extract_obligations,
-    extract_oracle_citations,
     is_repository_relative_whole_file_locator,
-    target_acceptance_support_conflict,
-    target_acceptance_support_conflict_text,
 )
 from des.domain.delivery_disposition import Disposition
+from des.domain.design_document import (
+    ResolvedDesign,
+    normalized_wire,
+    resolve_inheritance,
+)
 from des.domain.distill_document import selected_revision_sha256
 from des.domain.exercised_modules import (
     NOT_APPLICABLE,
@@ -81,6 +77,12 @@ from des.domain.integration_commit_message import (
     CommitMessageRule,
     IntegrationFacts,
     compose_integration_message,
+)
+from des.domain.oracle_baseline import (
+    BaselineCommit,
+    BaselineSource,
+    recorded_baseline,
+    select_oracle_baseline,
 )
 from des.domain.oracle_observation import (
     ObservationUnavailable,
@@ -109,11 +111,7 @@ from des.domain.turn_record_ref import (
     turn_ref,
     verify_upstream_ref,
 )
-from des.domain.verification_authority_resolver import (
-    ResolvedAuthoritySection,
-    authority_section_sha256,
-    resolve_authority_section,
-)
+from des.domain.verification_authority_resolver import authority_section_sha256
 from des.ports.driven_ports.task_invocation_port import (
     ApplicableADR,
     ApplicableAgreementAnalysis,
@@ -123,7 +121,10 @@ from des.ports.driven_ports.task_invocation_port import (
     ApplicablePrefactoring,
     DefectOwner,
     DesignFacts,
+    DesignTarget,
+    FactRef,
     NotApplicable,
+    PreNormalizedDesign,
     PublicOracle,
     ReuseAnalysis,
     UnassessedDesignDecision,
@@ -151,6 +152,9 @@ _DESIGN_FACTS_REPAIR = (
 )
 
 
+_Measurement = TypeVar("_Measurement")
+
+
 #: The turn-record namespace and its two roles now have a SECOND reader -- the
 #: read-only state projection -- so the grammar is SSOT in
 #: `des.domain.turn_record_ref` and these are its local spellings.
@@ -170,6 +174,22 @@ class FailureDetail:
     what: str
     why: str
     how: str
+
+
+@dataclass(frozen=True, slots=True)
+class OwnedBytesCovered:
+    """Every owned path has the candidate's regular bytes and mode or absence."""
+
+
+@dataclass(frozen=True, slots=True)
+class OwnedBytesDrifted:
+    paths: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class OwnedBytesUnobservable:
+    what: str
+    why: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -334,6 +354,7 @@ class MeasuredOracleSet:
 
     measured: tuple[dict[str, object], ...]
     refusal: AcceptanceFinding | DeliveryOutcome | None
+    baseline: tuple[BaselineCommit, BaselineSource] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -512,8 +533,8 @@ class AuthorityFacts:
     modified_authority_paths: tuple[str, ...]
     target_decisions: tuple[tuple[str, str], ...]
     paradigm: str
-    decisions: tuple[str, ...]
-    obligations: tuple[str, ...]
+    decisions: tuple[FactRef, ...]
+    constraints: tuple[FactRef, ...]
     acceptance_oracle_locator: str
     acceptance_paths: tuple[str, ...]
     native_verification_argvs: tuple[tuple[str, ...], ...]
@@ -533,6 +554,9 @@ class AuthorityFacts:
     public_oracle: PublicOracle | None = None
     architect_handoff: dict | None = None
     product_change: str = "required"
+    normalized_design: DesignFacts | None = None
+    resolved: ResolvedDesign | None = None
+    targets: tuple[DesignTarget, ...] = ()
 
     @property
     def oracle_verification_argv(self) -> tuple[str, ...]:
@@ -561,8 +585,17 @@ class AuthorityFacts:
                 "targets": self.target_decisions,
                 **({"product_change": "none"} if self.product_change == "none" else {}),
                 "paradigm": self.paradigm,
-                "decisions": self.decisions,
-                "obligations": self.obligations,
+                "decisions": normalized_wire(self.decisions),
+                "constraints": normalized_wire(self.constraints),
+                "resolved_facts": (
+                    self.resolved.catalog.reachable(
+                        self.normalized_design,
+                        self.resolved.inherited_records,
+                        self.architect_handoff,
+                    )
+                    if self.resolved is not None
+                    else {}
+                ),
                 "required_verification": self.required_verification_argvs,
                 "architectural_tests": self._decision_wire(self.architectural_tests),
                 "contract_tests": self._decision_wire(self.contract_tests),
@@ -1497,7 +1530,12 @@ class DeliveryContinuationRunner:
 
     @staticmethod
     def _derive(
-        root: Path, locator: str | DesignFacts, *, admit_verification: bool = True
+        root: Path,
+        locator: str | DesignFacts | PreNormalizedDesign,
+        *,
+        admit_verification: bool = True,
+        resolution: ResolvedDesign | None = None,
+        inspect_only: bool = False,
     ) -> AuthorityFacts | DeliveryOutcome:
         """Derive runner facts by rereading one durable authority section.
 
@@ -1505,11 +1543,15 @@ class DeliveryContinuationRunner:
         admission to the caller, which overrides it with a selected revision's
         own commands and then admits THAT tuple, so a discarded DESIGN argv is
         never judged.
+
+        Inspection projects the bound contract without admitting its Git
+        supports or targets, but still refuses an unresolvable verification
+        executable. Execution paths admit all three.
         """
         if isinstance(locator, DesignFacts):
             from des.domain.design_document import product_change_defect
 
-            defect = design_facts_defect(locator)
+            defect = design_facts_defect(locator) if resolution is None else None
             if defect is not None:
                 return DeliveryContinuationRunner._fail(
                     Disposition.Indeterminate,
@@ -1523,11 +1565,12 @@ class DeliveryContinuationRunner:
                     is not None
                     else _DESIGN_FACTS_REPAIR,
                 )
-            inadmissible = DeliveryContinuationRunner._admit_supports(
-                root, locator.acceptance_supports
-            )
-            if inadmissible is not None:
-                return inadmissible
+            if not inspect_only:
+                inadmissible = DeliveryContinuationRunner._admit_supports(
+                    root, locator.acceptance_supports
+                )
+                if inadmissible is not None:
+                    return inadmissible
             oracle = locator.oracle.partition("::")[0]
             check_obligations = tuple(
                 obligation
@@ -1564,7 +1607,7 @@ class DeliveryContinuationRunner:
                 tuple((target.path, target.decision) for target in locator.targets),
                 locator.paradigm,
                 locator.decisions,
-                locator.obligations,
+                locator.constraints,
                 locator.oracle,
                 tuple(
                     dict.fromkeys(
@@ -1585,6 +1628,8 @@ class DeliveryContinuationRunner:
                 public_oracle=locator.public_oracle,
                 architect_handoff=locator.architect_handoff,
                 product_change=locator.product_change,
+                normalized_design=locator,
+                targets=locator.targets,
             )
             if not admit_verification:
                 return typed
@@ -1593,130 +1638,16 @@ class DeliveryContinuationRunner:
             )
             if unresolvable is not None:
                 return unresolvable
+            if inspect_only:
+                return typed
             return DeliveryContinuationRunner._admit_targets(typed) or typed
-        document, separator, heading = locator.partition("#")
-        text = _markdown_text(root, document) if separator and heading else None
-        # `:(literal)` disarms pathspec magic: without it Git wildmatches the
-        # untrusted locator, so an untracked `notes/[x].md` passes on a tracked
-        # `notes/x.md`.  Tracked identity is the exact path, never a glob.
-        if (
-            text is None
-            or DeliveryContinuationRunner._git_bytes(
-                root, "ls-files", "--error-unmatch", "--", f":(literal){document}"
-            )
-            is None
-        ):
-            return DeliveryContinuationRunner._fail(
-                Disposition.Indeterminate,
-                "ArchitectureAuthorityUnresolved",
-                "authority locator must name one readable section of a tracked "
-                "repo-local Markdown document",
-                "bind a valid durable authority locator",
-            )
-        section = resolve_authority_section(
-            text, heading, locator=locator, doc_part=document
+        return DeliveryContinuationRunner._fail(
+            Disposition.Indeterminate,
+            "DesignFactsPreNormalized",
+            f"bound authority {locator.authority_locator if isinstance(locator, PreNormalizedDesign) else locator!r} "
+            "is pre-normalized and cannot supply executable DESIGN facts",
+            "des design --repo-root ROOT --value N --replace-current --input -",
         )
-        if not isinstance(section, ResolvedAuthoritySection):
-            return DeliveryContinuationRunner._fail(
-                Disposition.Indeterminate,
-                "ArchitectureAuthorityUnresolved",
-                "authority locator is missing or ambiguous",
-                "repair durable authority",
-            )
-        targets = extract_declared_target_table(section.text)
-        from des.domain.architecture_brief_resolver import extract_product_change
-
-        product_change = extract_product_change(section.text)
-        if product_change is None:
-            return DeliveryContinuationRunner._fail(
-                Disposition.Indeterminate,
-                "ProductChangeDeclarationMalformed",
-                "Product change declarations are duplicate or unknown: "
-                + repr(
-                    [
-                        line
-                        for line in section.text.splitlines()
-                        if line.strip().startswith("Product change:")
-                    ]
-                ),
-                "submit one required or none declaration through des design "
-                "--repo-root ROOT --value N --input -; none requires targets=[] "
-                "and consultation belongs in reuse_analysis.candidates",
-            )
-        paradigms = [
-            canonical_paradigm(item)
-            for item in extract_declared_paradigms(section.text)
-        ]
-        oracles = extract_oracle_citations(section.text)
-        supports = extract_acceptance_support_locators(section.text)
-        commands = extract_declared_verification_commands(section.text)
-        oracle_verification_indices = extract_declared_oracle_verification_indices(
-            section.text
-        )
-        obligations = tuple(extract_obligations(section.text))
-        if (
-            not isinstance(targets, list)
-            or (not targets and product_change != "none")
-            or product_change is None
-            or len(paradigms) != 1
-            or paradigms[0] is None
-            or len(oracles) != 1
-            or not commands
-            or len(oracle_verification_indices) != 1
-            or len(set(oracles + supports)) != len(oracles + supports)
-            or not all(
-                is_repository_relative_whole_file_locator(row.path) for row in targets
-            )
-            or not all(
-                command and all(part for part in command) for command in commands
-            )
-        ):
-            return DeliveryContinuationRunner._fail(
-                Disposition.Indeterminate,
-                "ArchitectureAuthorityIncomplete",
-                "resolved authority lacks complete unambiguous consumed facts",
-                "declare exactly one oracle verification command index that names "
-                "one declared verification command in the existing durable authority",
-            )
-        inadmissible = DeliveryContinuationRunner._admit_supports(root, tuple(supports))
-        if inadmissible is not None:
-            return inadmissible
-        oracle = oracles[0].partition("::")[0]
-        conflict = target_acceptance_support_conflict(
-            oracles[0], (row.path for row in targets), supports
-        )
-        if conflict is not None:
-            return DeliveryContinuationRunner._fail(
-                Disposition.Indeterminate,
-                "TargetAcceptanceSupportConflict",
-                target_acceptance_support_conflict_text(conflict),
-                "correct the durable authority's target table or its acceptance "
-                "support locators so no craft target is also a support",
-            )
-        declared = AuthorityFacts(
-            locator,
-            (document,),
-            tuple((row.path, row.decision) for row in targets),
-            paradigms[0],
-            (),
-            obligations,
-            oracles[0],
-            (oracle, *supports),
-            tuple(tuple(command) for command in commands),
-            oracle_verification_indices[0],
-            product_change=product_change,
-        )
-        binding = DeliveryContinuationRunner._admit_oracle_verification_binding(
-            declared
-        )
-        if binding is not None:
-            return binding
-        unresolvable = DeliveryContinuationRunner._admit_verification_executables(
-            root, declared
-        )
-        if unresolvable is not None:
-            return unresolvable
-        return DeliveryContinuationRunner._admit_targets(declared) or declared
 
     @staticmethod
     def _admit_oracle_verification_binding(
@@ -1792,14 +1723,10 @@ class DeliveryContinuationRunner:
     def _admit_targets(facts: AuthorityFacts) -> DeliveryOutcome | None:
         """Admit the declared product-change alternative through its owner."""
         from des.domain.design_document import product_change_defect
-        from des.ports.driven_ports.task_invocation_port import DesignTarget
 
         defect = product_change_defect(
             facts.product_change,
-            tuple(
-                DesignTarget(path, decision)
-                for path, decision in facts.target_decisions
-            ),
+            facts.targets,
             facts.acceptance_oracle_locator,
         )
         if defect is None:
@@ -1827,10 +1754,10 @@ class DeliveryContinuationRunner:
         stays separate, and the forward batch order already runs it in turn.
         """
         bound: list[tuple[str, AuthorityFacts]] = []
-        for value in stored.values:
+        for position, value in enumerate(stored.values, 1):
             if value.authority is None:
                 continue
-            design = self._derive(root, value.authority)
+            design = self.selected_authority(root, stored, position)
             if isinstance(design, DeliveryOutcome):
                 return design
             bound.append((value.observation, design))
@@ -2669,42 +2596,16 @@ class DeliveryContinuationRunner:
             executable=observed.executable,
         )
 
-    @staticmethod
+    @classmethod
     def _native_execution_context(
-        root: Path, env: dict[str, str]
+        cls, root: Path, env: dict[str, str]
     ) -> tuple[str, tuple[tuple[str, str], ...]]:
-        """The PUBLIC display subset of the child environment, never its identity.
+        """The complete secret-safe environment this vector actually receives.
 
-        A closed list of names cannot be the equality identity of a native child:
-        `DOTNET_ROOT`, `NODE_OPTIONS`, `GOFLAGS`, `RUSTFLAGS` and every other
-        toolchain selector a stack adds would fall outside it.  Equality is
-        `_child_environment_digest`; this projection only shows a reader the
-        nonsecret toolchain selections they most often ask about.
+        Volatile names belong in the execution record, including the ephemeral
+        shim PATH and probe adaptations. Identity is a separate digest.
         """
-        return (
-            str(root),
-            tuple(
-                (name, env[name])
-                for name in (
-                    "PYTHONPATH",
-                    "PYTEST_ADDOPTS",
-                    "VIRTUAL_ENV",
-                    "OPAM_SWITCH_PREFIX",
-                    "DUNE_ROOT",
-                    "DUNE_CACHE",
-                    "DUNE_CACHE_ROOT",
-                    "CC",
-                    "CXX",
-                    "CARGO_HOME",
-                    "RUSTUP_HOME",
-                    "JAVA_HOME",
-                    "GOCACHE",
-                    "GOMODCACHE",
-                    "TMPDIR",
-                )
-                if name in env
-            ),
-        )
+        return str(root), cls._secret_safe_child_environment(env)
 
     #: The ONLY names ignored by the environment identity, each because its
     #: value is chosen per invocation and says nothing about what the child
@@ -2724,6 +2625,7 @@ class DeliveryContinuationRunner:
             "OLDPWD",
             "SHLVL",
             "_",
+            "INVOCATION_ID",
         }
     )
 
@@ -2750,6 +2652,20 @@ class DeliveryContinuationRunner:
     )
 
     @classmethod
+    def _secret_safe_child_environment(
+        cls, env: dict[str, str]
+    ) -> tuple[tuple[str, str], ...]:
+        """One credential policy for execution disclosure and identity."""
+        return tuple(
+            sorted(
+                (name, value)
+                for name, value in env.items()
+                if not cls._SECRET_CHILD_ENVIRONMENT_NAME.search(name)
+                and not cls._SECRET_CHILD_ENVIRONMENT_VALUE.search(value)
+            )
+        )
+
+    @classmethod
     def _child_environment_digest(cls, env: dict[str, str]) -> str:
         """The equality identity of the COMPLETE secret-safe child environment.
 
@@ -2763,13 +2679,11 @@ class DeliveryContinuationRunner:
         probe) are deterministic functions of it, the subject and the argv, and
         the executor path and digest are bound separately.
         """
-        visible = sorted(
+        visible = [
             (name, value)
-            for name, value in env.items()
+            for name, value in cls._secret_safe_child_environment(env)
             if name not in cls._VOLATILE_CHILD_ENVIRONMENT
-            and not cls._SECRET_CHILD_ENVIRONMENT_NAME.search(name)
-            and not cls._SECRET_CHILD_ENVIRONMENT_VALUE.search(value)
-        )
+        ]
         return hashlib.sha256(
             json.dumps(visible, ensure_ascii=True, separators=(",", ":")).encode()
         ).hexdigest()
@@ -3299,10 +3213,17 @@ class DeliveryContinuationRunner:
         checks.  An empty or non-heading locator is not a citation; a cited
         document or section that cannot be measured makes the answer unknown.
 
-        Prerequisites retain their dataclass hash projection, except that typed
-        architect handoffs use their canonical JSON wire representation. Values
-        without a handoff retain byte-identical prerequisite hashes.
+        Prerequisites retain their historical dataclass hash projection, except
+        that typed architect handoffs use their canonical JSON wire representation.
+        Change intent is commit metadata, not consumed by a dependent's turns,
+        so neither recorded nor absent intent participates in prerequisite identity.
         """
+        if not isinstance(value.authority, DesignFacts):
+            return None
+        if stored.shared_design is not None and not isinstance(
+            stored.shared_design.design, DesignFacts
+        ):
+            return None
         locators: list[str] = []
         if stored.shared_design is not None:
             locators.append(stored.shared_design.authority_locator)
@@ -3318,7 +3239,9 @@ class DeliveryContinuationRunner:
         by_observation = {item.observation: item for item in stored.values}
         for dependency in value.dependencies:
             prerequisite = by_observation.get(dependency)
-            if prerequisite is None or prerequisite.authority is None:
+            if prerequisite is None or not isinstance(
+                prerequisite.authority, DesignFacts
+            ):
                 return None
             if (
                 isinstance(prerequisite.authority, DesignFacts)
@@ -3364,6 +3287,7 @@ class DeliveryContinuationRunner:
         result: list[tuple[str, str]] = []
         for item in consumed:
             projection = asdict(item)
+            projection.pop("change", None)
             if (
                 isinstance(item.authority, DesignFacts)
                 and item.authority.product_change == "required"
@@ -3906,9 +3830,11 @@ class DeliveryContinuationRunner:
         self,
         root: Path,
         candidate: str,
-        commands: tuple[tuple[str, ...], ...],
+        commands: tuple[tuple[str, ...], ...] = (),
         changed: tuple[str, ...] = (),
-    ) -> tuple[str, tuple[NativeEvidence, ...]] | DeliveryOutcome:
+        *,
+        measure: Callable[[Path], _Measurement] | None = None,
+    ) -> tuple[str, tuple[NativeEvidence, ...]] | _Measurement | DeliveryOutcome:
         """Measure isolated source inside the project's configured workspace.
 
         Both isolation modes place real work under the configured workspace
@@ -3946,9 +3872,15 @@ class DeliveryContinuationRunner:
                 self._reusing_verification_workspace = True
                 self._verification_measurement_group = True
                 try:
-                    result = self._measured_candidate(
-                        root, candidate, workspace.directory, commands, changed
+                    result = (
+                        measure(workspace.directory)
+                        if measure is not None
+                        else self._measured_candidate(
+                            root, candidate, workspace.directory, commands, changed
+                        )
                     )
+                    if measure is not None and not self._verification_writers_quiescent:
+                        return self._candidate_writers_unquiescent(workspace.directory)
                     if self._verification_writers_quiescent:
                         workspace.finish()
                         # Post-measurement accounting: the workspace is idle,
@@ -3995,7 +3927,9 @@ class DeliveryContinuationRunner:
             if added.returncode:
                 result = self._git_failure(
                     added,
-                    disposition=Disposition.Retry,
+                    disposition=Disposition.Indeterminate
+                    if measure is not None
+                    else Disposition.Retry,
                     what="CandidateCheckoutUnavailable",
                     how="restore Git worktree support",
                 )
@@ -4026,8 +3960,12 @@ class DeliveryContinuationRunner:
                 # never leak into another step's spawns.
                 self._verification_measurement_group = True
                 try:
-                    result = self._measured_candidate(
-                        root, candidate, directory, commands, changed
+                    result = (
+                        measure(directory)
+                        if measure is not None
+                        else self._measured_candidate(
+                            root, candidate, directory, commands, changed
+                        )
                     )
                     if not self._verification_writers_quiescent:
                         # The receipt stays non-idle and the checkout stays
@@ -4167,42 +4105,29 @@ class DeliveryContinuationRunner:
 
     @staticmethod
     def _typed_facts(design: AuthorityFacts) -> dict[str, object]:
-        """Project the facts that the resolved authority actually declares."""
-        facts: dict[str, object] = {
-            "authority": design.locator,
-            "targets": design.target_decisions,
-            **({"product_change": "none"} if design.product_change == "none" else {}),
-            "paradigm": design.paradigm,
-            "decisions": design.decisions,
-            "oracle": design.acceptance_oracle_locator,
-            "acceptance_supports": design.acceptance_paths[1:],
-            "verification": [list(argv) for argv in design.native_verification_argvs],
-            "oracle_verification_index": design.oracle_verification_index,
-            "obligations": design.obligations,
-            "architectural_tests": AuthorityFacts._decision_wire(
-                design.architectural_tests
-            ),
-            "contract_tests": AuthorityFacts._decision_wire(design.contract_tests),
-            "prefactoring": AuthorityFacts._decision_wire(design.prefactoring),
-            "agreement_analysis": AuthorityFacts._decision_wire(
-                design.agreement_analysis
-            ),
-            "reuse_analysis": AuthorityFacts._decision_wire(design.reuse_analysis),
-            "impact_closure": AuthorityFacts._decision_wire(design.impact_closure),
-            "required_verification": design.required_verification_argvs,
-        }
-        if design.public_oracle is not None:
-            facts["public_oracle"] = asdict(design.public_oracle)
+        """Project value-local references without repeating catalog definitions."""
+        if design.normalized_design is None:
+            raise ValueError(
+                "DesignFactsPreNormalized: no normalized value DESIGN is available; "
+                "use des design --value N --replace-current --input -"
+            )
+        facts = normalized_wire(design.normalized_design)
+        facts.pop("facts", None)
+        facts.pop("architect_handoff", None)
+        facts["authority"] = design.locator
+        facts["oracle"] = design.acceptance_oracle_locator
+        facts["acceptance_supports"] = list(design.acceptance_paths[1:])
+        facts["verification"] = [
+            list(argv) for argv in design.native_verification_argvs
+        ]
+        facts["oracle_verification_index"] = design.oracle_verification_index
+        facts["required_verification"] = [
+            list(argv) for argv in design.required_verification_argvs
+        ]
         if design.acceptance_obligations:
             facts["acceptance_obligations"] = tuple(
                 {"id": item.id, "stimulus": item.stimulus, "expected": item.expected}
                 for item in design.acceptance_obligations
-            )
-        if design.adr is not None:
-            facts["adr"] = AuthorityFacts._decision_wire(design.adr)
-        if design.architect_handoff is not None:
-            facts["architect_handoff"] = architect_handoff_wire(
-                design.architect_handoff
             )
         return facts
 
@@ -4216,52 +4141,11 @@ class DeliveryContinuationRunner:
         bound = stored.shared_design
         if bound is None:
             return {}
-        design = bound.design
         return {
             "shared_design": {
-                "authority": bound.authority_locator,
+                "authority_locator": bound.authority_locator,
+                "section_sha256": bound.section_sha256,
                 "semantic_sha256": bound.semantic_sha256,
-                **(
-                    {"product_change": "none"}
-                    if design.product_change == "none"
-                    else {}
-                ),
-                "targets": [
-                    {"path": target.path, "decision": target.decision}
-                    for target in design.targets
-                ],
-                "paradigm": design.paradigm,
-                "decisions": list(design.decisions),
-                "obligations": list(design.obligations),
-                "architectural_tests": AuthorityFacts._decision_wire(
-                    design.architectural_tests
-                ),
-                "contract_tests": AuthorityFacts._decision_wire(design.contract_tests),
-                "prefactoring": AuthorityFacts._decision_wire(design.prefactoring),
-                "agreement_analysis": AuthorityFacts._decision_wire(
-                    design.agreement_analysis
-                ),
-                "reuse_analysis": AuthorityFacts._decision_wire(design.reuse_analysis),
-                "impact_closure": AuthorityFacts._decision_wire(design.impact_closure),
-                **(
-                    {"public_oracle": asdict(design.public_oracle)}
-                    if design.public_oracle is not None
-                    else {}
-                ),
-                **(
-                    {"adr": AuthorityFacts._decision_wire(design.adr)}
-                    if design.adr is not None
-                    else {}
-                ),
-                **(
-                    {
-                        "architect_handoff": architect_handoff_wire(
-                            design.architect_handoff
-                        )
-                    }
-                    if design.architect_handoff is not None
-                    else {}
-                ),
             }
         }
 
@@ -4370,6 +4254,22 @@ class DeliveryContinuationRunner:
             "no completed assertion observation is available"
         )
     }
+
+    #: The MOVE for a vector that printed no observation and offers only its
+    #: exit status, whether that status is zero or not. An exit status cannot
+    #: tell a passing oracle from one that ran no test, so the same vector could
+    #: never be recorded GREEN at craft; refusing here keeps that late refusal
+    #: from being bought with a craft turn (ADR-DES-003). The protocol is
+    #: tool-agnostic: any runner, reporter or wrapper may print the line from
+    #: its own results.
+    _ORACLE_EXIT_ONLY_HOW = (
+        "make the declared oracle vector report what it observed: at completion "
+        "print exactly one stdout line 'DES-ORACLE-OBSERVATION: "
+        '{"version":1,"observed":<n>,"assertions_failed":<n>,"setup_failed":<n>}\' '
+        "from the runner's own results (a reporter, plugin or wrapper in the "
+        "acceptance supports); update the DESIGN verification vector, then "
+        "remeasure the oracle"
+    )
 
     @staticmethod
     def _junit_counts(report: Path) -> tuple[int, int, int] | None:
@@ -4619,10 +4519,120 @@ class DeliveryContinuationRunner:
             return None
         return observed.st_ino, observed.st_mtime_ns, observed.st_ctime_ns
 
+    def _baseline_pythonpath(
+        self, root: Path, tree: Path, guard: Path
+    ) -> str | DeliveryOutcome:
+        """Rebase repository-owned imports and arm the copied startup guard."""
+        registered = self._git(root, "worktree", "list", "--porcelain", "-z")
+        try:
+            measuring = tree.resolve()
+            roots = tuple(
+                Path(item.removeprefix("worktree ")).resolve()
+                for item in registered.stdout.split("\0")
+                if item.startswith("worktree ")
+            )
+            if registered.returncode or not roots:
+                return self._fail(
+                    Disposition.Indeterminate,
+                    "OracleProbeUnavailable",
+                    f"repository worktree roots cannot be enumerated for {root}: "
+                    f"{registered.stderr or registered.stdout}",
+                    "restore Git worktree enumeration before measuring the baseline",
+                )
+            foreign = tuple(
+                sorted(
+                    (path for path in roots if path != measuring),
+                    key=lambda path: len(path.parts),
+                    reverse=True,
+                )
+            )
+            exemptions = (
+                measuring,
+                *((path / self._SUBJECT_VENV).resolve() for path in foreign),
+            )
+            rebased = []
+            ambient = os.environ.get("PYTHONPATH", "")
+            for entry in ambient.split(os.pathsep) if ambient else ():
+                resolved = Path(entry or ".").resolve()
+                owner = next(
+                    (
+                        path
+                        for path in foreign
+                        if resolved.is_relative_to(path)
+                        and not any(
+                            resolved.is_relative_to(exempt) for exempt in exemptions
+                        )
+                    ),
+                    None,
+                )
+                if owner is None:
+                    rebased.append(entry)
+                    continue
+                replacement = measuring / resolved.relative_to(owner)
+                if replacement.exists():
+                    rebased.append(str(replacement))
+            guard.mkdir()
+            shutil.copyfile(
+                Path(__file__).with_name("oracle_baseline_guard.py"),
+                guard / "sitecustomize.py",
+            )
+            (guard / "foreign_roots.json").write_text(
+                json.dumps(
+                    {
+                        "roots": [str(path) for path in foreign],
+                        "exemptions": [str(path) for path in exemptions],
+                        "tree": str(measuring),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return os.pathsep.join(
+                [str(guard), str(measuring / "src"), str(measuring), *rebased]
+            )
+        except (OSError, ValueError) as error:
+            return self._fail(
+                Disposition.Indeterminate,
+                "OracleProbeUnavailable",
+                f"baseline Python import isolation for {tree} is unavailable: {error}",
+                "restore readable worktree paths and the shipped baseline guard, "
+                "then repeat des oracle",
+            )
+
+    def _baseline_guard_defect(
+        self, argv: tuple[str, ...], receipts: Path, nonce: str
+    ) -> str | None:
+        """Admit only startup evidence produced by this native invocation."""
+        armed = False
+        try:
+            for path in receipts.glob("*.json"):
+                receipt = json.loads(path.read_bytes())
+                if not isinstance(receipt, dict):
+                    return f"guard receipt {path} is not an object"
+                status = receipt.get("status")
+                if status == "refused":
+                    return f"guard receipt {path} refused: {receipt.get('reason')}"
+                if status != "armed":
+                    return f"guard receipt {path} has unknown status {status!r}"
+                if self._uses_python(argv) and receipt.get("nonce") != nonce:
+                    return f"guard receipt {path} carries a different invocation nonce"
+                armed = True
+        except (OSError, ValueError) as error:
+            return f"guard receipts at {receipts} cannot be read: {error}"
+        if self._uses_python(argv) and not armed:
+            return f"no armed receipt with this invocation's nonce at {receipts}"
+        # Non-Python wrappers can erase the environment or suppress site in a
+        # Python descendant. Its missing receipt is an ATD-owned unknown, not
+        # proof of isolation; this mechanism is not a filesystem sandbox.
+        return None
+
     def _executed_oracle_set(
-        self, root: Path, prepared: list[tuple[str, AuthorityFacts]]
+        self,
+        root: Path,
+        prepared: list[tuple[str, AuthorityFacts]],
+        *,
+        tree: Path | None = None,
     ) -> OracleExecution | DeliveryOutcome:
-        """Execute every authored oracle in the WORKSPACE, before any craft turn.
+        """Execute every authored oracle in its declared measurement checkout.
 
         MEASURED TWICE, runs 22 and 23 (2026-09-05).  An oracle that never
         reached its own assertion -- a freshness gate refusing the installed
@@ -4638,8 +4648,8 @@ class DeliveryContinuationRunner:
         scaffolding" is a property the SOFTWARE owns and measures
         (`boundary:software-measures-model-decides`), and observing an execution
         is a fixed floor rather than a rigor knob (GDP-7, ADR-025 RED before
-        GREEN).  It runs in the workspace and not in a candidate, because at
-        this point no candidate exists: that is the whole point of running here.
+        GREEN). Oracle measurements use an isolated baseline probe; craft
+        measurements retain the workspace default.
 
         One `_native` call per oracle rather than one for all of them, because
         each needs its OWN report path and `_native_evidence` builds one
@@ -4653,6 +4663,7 @@ class DeliveryContinuationRunner:
         where the runner refuses would discard it exactly where it is needed
         (GDP-8: decide on the property, never the designation).
         """
+        cwd = tree if tree is not None else root
         oracle_bindings = tuple(
             dict.fromkeys(
                 (design.acceptance_paths[0], design.oracle_verification_argv)
@@ -4664,27 +4675,56 @@ class DeliveryContinuationRunner:
         measured: list[dict[str, object]] = []
         refused: list[str] = []
         with tempfile.TemporaryDirectory(prefix="nwave-oracle-red-") as reports:
+            pythonpath = os.pathsep.join(
+                [
+                    str(cwd / "src"),
+                    str(cwd),
+                    *(
+                        [os.environ["PYTHONPATH"]]
+                        if os.environ.get("PYTHONPATH")
+                        else []
+                    ),
+                ]
+            )
+            if tree is not None:
+                pythonpath = self._baseline_pythonpath(
+                    root, cwd, Path(reports) / "baseline-imports"
+                )
+                if isinstance(pythonpath, DeliveryOutcome):
+                    return pythonpath
             for index, (oracle, argv) in enumerate(oracle_bindings):
-                declared_report = self._declared_junit_report(root, argv)
+                declared_report = self._declared_junit_report(cwd, argv)
                 report = declared_report or Path(reports) / f"{index}.xml"
                 prior_report = self._report_stamp(report)
+                guard_env = {}
+                receipts = Path(reports) / f"guard-receipts-{index}"
+                nonce = ""
+                if tree is not None:
+                    try:
+                        receipts.mkdir()
+                        nonce = os.urandom(16).hex()
+                    except OSError as error:
+                        return self._fail(
+                            Disposition.Indeterminate,
+                            "OracleProbeUnavailable",
+                            f"guard receipts for {argv!r} cannot be prepared: {error}",
+                            "restore writable invocation-owned receipt storage and repeat des oracle",
+                        )
+                    guard_env = {
+                        "NWAVE_ORACLE_GUARD_DIR": str(
+                            Path(reports) / "baseline-imports"
+                        ),
+                        "NWAVE_ORACLE_GUARD_RECEIPTS": str(receipts),
+                        "NWAVE_ORACLE_GUARD_NONCE": nonce,
+                    }
                 evidence = self._native(
-                    root,
+                    cwd,
                     (argv,),
                     root,
                     (
                         {
-                            "PYTHONPATH": os.pathsep.join(
-                                [
-                                    str(root / "src"),
-                                    str(root),
-                                    *(
-                                        [os.environ["PYTHONPATH"]]
-                                        if os.environ.get("PYTHONPATH")
-                                        else []
-                                    ),
-                                ]
-                            ),
+                            "PYTHONPATH": pythonpath,
+                            **guard_env,
                             **(
                                 {
                                     self._ORACLE_REPORT_VAR: " ".join(
@@ -4693,11 +4733,11 @@ class DeliveryContinuationRunner:
                                         if part
                                     )
                                 }
-                                if declared_report is None
+                                if self._uses_python(argv) and declared_report is None
                                 else {}
                             ),
                         }
-                        if self._uses_python(argv)
+                        if tree is not None or self._uses_python(argv)
                         else None
                     ),
                     run=NativeRun(capture_incomplete=True),
@@ -4705,6 +4745,25 @@ class DeliveryContinuationRunner:
                 if isinstance(evidence, DeliveryOutcome):
                     return evidence
                 item = evidence[0]
+                locator = self._retain_native_failure_evidence(root, "oracle", evidence)
+                if locator is None:
+                    return self._fail(
+                        Disposition.Indeterminate,
+                        "OracleEvidenceUnretained",
+                        "the actual native oracle observation could not be retained",
+                        "restore write access to the project-local native evidence directory and remeasure the oracle",
+                    )
+                if tree is not None:
+                    defect = self._baseline_guard_defect(argv, receipts, nonce)
+                    if defect is not None:
+                        return self._fail(
+                            Disposition.Indeterminate,
+                            "OracleProbeUnavailable",
+                            f"baseline import isolation for {argv!r} is unproven: "
+                            f"{defect}; native evidence retained at {locator}",
+                            "run the oracle under a Python that loads site and honours "
+                            "PYTHONPATH (without -I/-E/-S), or declare an argv that does",
+                        )
                 counts = self._junit_counts(report)
                 failures = self._junit_failures(report)
                 report_supplied = self._report_stamp(report) is not None
@@ -4743,14 +4802,6 @@ class DeliveryContinuationRunner:
                             observation.setup_failed,
                             observation.assertions_failed,
                         )
-                locator = self._retain_native_failure_evidence(root, "oracle", evidence)
-                if locator is None:
-                    return self._fail(
-                        Disposition.Indeterminate,
-                        "OracleEvidenceUnretained",
-                        "the actual native oracle observation could not be retained",
-                        "restore write access to the project-local native evidence directory and remeasure the oracle",
-                    )
                 measured.append(
                     {
                         "path": oracle,
@@ -4809,7 +4860,7 @@ class DeliveryContinuationRunner:
                     f"argv={' '.join(argv)}",
                     file=sys.stderr,
                 )
-                if verdict == "indeterminate" and axis != "exit-status-only":
+                if verdict == "indeterminate":
                     return OracleExecution(
                         tuple(measured),
                         OracleRedRefusal(
@@ -4821,16 +4872,18 @@ class DeliveryContinuationRunner:
                                 f"{measured[-1]['diagnostic']}; assertion outcome "
                                 "cannot be established",
                                 (
-                                    "run the printed native vector from the repository "
+                                    self._ORACLE_EXIT_ONLY_HOW
+                                    if axis
+                                    in (
+                                        "exit-status-only",
+                                        "native-observation-no-observation",
+                                    )
+                                    else "run the printed native vector from the repository "
                                     "root and make the target-native oracle observe the "
                                     "promised behavior, emitting its native completion "
                                     "record or a genuine populated optional report, "
                                     "then remeasure the oracle"
-                                    if axis
-                                    in (
-                                        "native-observation-no-observation",
-                                        "junit-report-no-observation",
-                                    )
+                                    if axis == "junit-report-no-observation"
                                     else "run the printed native vector from the repository "
                                     "root and repair its target-native runner/reporter "
                                     "or producing recipe, then remeasure the oracle"
@@ -4905,6 +4958,37 @@ class DeliveryContinuationRunner:
             design.public_oracle,
             design.product_change,
         )
+
+    @staticmethod
+    def design_consumption_defect(
+        stored: StoredHandover, position: int | None = None
+    ) -> Blocked | None:
+        """Refuse opaque DESIGN inputs before admitting their consumer."""
+        authorities = (
+            (("shared", stored.shared_design.design),)
+            if stored.shared_design is not None
+            else ()
+        )
+        authorities += tuple(
+            (f"value {index}", value.authority)
+            for index, value in enumerate(stored.values, 1)
+            if position is None or index == position
+        )
+        for scope, authority in authorities:
+            if isinstance(authority, (str, PreNormalizedDesign)):
+                return Blocked(
+                    "DesignFactsPreNormalized",
+                    f"{scope} holds opaque pre-normalized DESIGN and cannot supply executable facts",
+                    "des design --repo-root ROOT "
+                    + (
+                        "--shared"
+                        if scope == "shared"
+                        else f"--value {scope.split()[-1]}"
+                    )
+                    + " --replace-current --input -",
+                    refusal=True,
+                )
+        return None
 
     @staticmethod
     def product_authority_defect(root: Path, stored: StoredHandover) -> Blocked | None:
@@ -5119,10 +5203,11 @@ class DeliveryContinuationRunner:
         """Construct a candidate, then observe it inside its owned checkout."""
         owned = self._owned_with_authority(root, stored, prepared)
         argvs = self._request_argvs(prepared)
+        changes = {value.observation: value.change for value in stored.values}
         facts = IntegrationFacts(
-            stored.request,
-            tuple(observation for observation, _ in prepared),
-            tuple(dict.fromkeys(design.locator for _, design in prepared)),
+            observations=tuple(observation for observation, _ in prepared),
+            changes=tuple(changes[observation] for observation, _ in prepared),
+            authorities=tuple(dict.fromkeys(design.locator for _, design in prepared)),
             handover_sha256=hashlib.sha256(stored.raw).hexdigest(),
         )
         # Observe before formatting so an external edit cannot be laundered
@@ -5302,7 +5387,13 @@ class DeliveryContinuationRunner:
         )
 
     def selected_authority(
-        self, root: Path, stored: StoredHandover, position: int
+        self,
+        root: Path,
+        stored: StoredHandover,
+        position: int,
+        *,
+        current_design_only: bool = False,
+        inspect_only: bool = False,
     ) -> AuthorityFacts | DeliveryOutcome:
         """The ONE source of one value's selected acceptance revision.
 
@@ -5313,52 +5404,60 @@ class DeliveryContinuationRunner:
         ``SelectedRevisionIncomplete``, and a complete one made over another
         DESIGN is ``SelectedRevisionRealignmentNeeded``.  Nothing is borrowed
         from DESIGN and no byte is written.
+
+        ``inspect_only`` retains selection identity, reference and executable
+        validation, but does not admit Git supports or targets for execution.
+        Prompt rendering can therefore inspect an installed contract outside Git;
+        declared supports are locators the receiving role may still author.
         """
         value = stored.values[position - 1]
         assert value.authority is not None
-        selected = bool(value.acceptance or value.acceptance_oracle is not None)
-        design = self._derive(root, value.authority, admit_verification=not selected)
+        selected = not current_design_only and bool(
+            value.acceptance or value.acceptance_oracle is not None
+        )
+        if not isinstance(value.authority, DesignFacts):
+            return self._derive(root, value.authority, admit_verification=False)
+        shared = None if stored.shared_design is None else stored.shared_design.design
+        if shared is not None and not isinstance(shared, DesignFacts):
+            return self._derive(root, shared, admit_verification=False)
+        resolved = resolve_inheritance(
+            shared,
+            (
+                item.authority
+                for index, item in enumerate(stored.values, 1)
+                if index != position and isinstance(item.authority, DesignFacts)
+            ),
+            value.authority,
+        )
+        if isinstance(resolved, tuple):
+            return self._fail(
+                Disposition.Indeterminate,
+                "DesignInheritanceRefused",
+                "\n".join(resolved),
+                "des design --repo-root ROOT --value N --replace-current --input -",
+            )
+        design = self._derive(
+            root,
+            resolved.design,
+            admit_verification=not selected,
+            resolution=resolved,
+            inspect_only=inspect_only,
+        )
         if isinstance(design, DeliveryOutcome):
             return design
-        if stored.shared_design is not None:
-            inherited = self._derive(
-                root, stored.shared_design.design, admit_verification=False
-            )
-            if isinstance(inherited, DeliveryOutcome):
-                return inherited
-            required_commands = tuple(
-                dict.fromkeys(
-                    (
-                        *design.required_verification_argvs,
-                        *inherited.required_verification_argvs,
-                    )
-                )
-            )
-            required_paths = tuple(
-                dict.fromkeys(
-                    (
-                        *design.required_check_paths,
-                        *inherited.required_check_paths,
-                    )
-                )
-            )
-            design = replace(
-                design,
-                required_verification_argvs=required_commands,
-                required_check_paths=required_paths,
-                native_verification_argvs=(
-                    *design.native_verification_argvs,
-                    *(
-                        argv
-                        for argv in required_commands
-                        if argv not in design.native_verification_argvs
-                    ),
-                ),
-                acceptance_paths=tuple(
-                    dict.fromkeys((*design.acceptance_paths, *required_paths))
-                ),
-            )
+        from des.application.architect_handoff import accumulated, selected_handoff
+
+        design = replace(
+            design,
+            normalized_design=value.authority,
+            resolved=resolved,
+            architect_handoff=selected_handoff(
+                accumulated(stored), position, value.authority.inherits
+            ),
+        )
         if not selected:
+            if inspect_only:
+                return design
             return self._admit_verification_executables(root, design) or design
         how = (
             "des distill --repo-root ROOT --replace-current --input - with a "
@@ -5410,6 +5509,8 @@ class DeliveryContinuationRunner:
             ),
             oracle_verification_index=value.acceptance_oracle_verification_index,
         )
+        if inspect_only:
+            return revision
         return (
             self._admit_verification_executables(root, revision)
             or self._admit_targets(revision)
@@ -5417,7 +5518,7 @@ class DeliveryContinuationRunner:
         )
 
     def derive_authority(
-        self, root: Path, locator: str | DesignFacts
+        self, root: Path, locator: str | DesignFacts | PreNormalizedDesign
     ) -> AuthorityFacts | DeliveryOutcome:
         """Re-derive one value's runner facts from its bound authority.
 
@@ -5574,47 +5675,86 @@ class DeliveryContinuationRunner:
     def _candidate_covers_current_owned_bytes(
         self, root: Path, stored: StoredHandover, candidate: str
     ) -> bool:
-        """Whether a recorded candidate still contains every declared owned byte.
+        """Compatibility projection of the sole owned-byte equality observation."""
+        return isinstance(
+            self._owned_bytes_relation(root, stored, candidate), OwnedBytesCovered
+        )
 
-        The upstream key establishes that the handover and bound authorities are
-        unchanged.  It cannot establish that a declared production target,
-        oracle or support stayed unchanged after verification.  Re-derive the
-        same selected facts every consumer reads, then ask Git one question over
-        their one existing owned-path union.  A derivation or Git failure is not
-        evidence of currentness, so it conservatively makes the record stale.
-        """
+    def _owned_bytes_relation(
+        self, root: Path, stored: StoredHandover, candidate: str
+    ) -> OwnedBytesCovered | OwnedBytesDrifted | OwnedBytesUnobservable:
+        """Observe all owned bytes; incomplete access dominates measurable drift."""
         prepared: list[tuple[str, AuthorityFacts]] = []
         for position, value in enumerate(stored.values, start=1):
             if value.authority is None:
-                return False
+                return OwnedBytesUnobservable(
+                    f"value {position} authority", "snapshot value has no authority"
+                )
             selected = self.selected_authority(root, stored, position)
             if isinstance(selected, DeliveryOutcome):
-                return False
+                return OwnedBytesUnobservable(
+                    selected.failure.what, selected.failure.why
+                )
             prepared.append((value.observation, selected))
         owned = self._owned_with_authority(root, stored, prepared)
         if not owned:
-            return False
+            return OwnedBytesUnobservable("owned paths", "owned union is empty")
         current = _workspace_bytes(root, owned)
+        drifted: list[tuple[str, str]] = []
+        unknown: OwnedBytesUnobservable | None = None
         for path in owned:
             observed = current[path]
-            if observed == ("absent", ""):
-                listed = self._git_bytes(
-                    root, "ls-tree", "-z", "--name-only", candidate, "--", path
+            if observed[0] == "unreadable":
+                unknown = unknown or OwnedBytesUnobservable(
+                    f"{path}: read workspace bytes", str(observed[1])
                 )
-                if listed is None or listed:
-                    return False
                 continue
-            candidate_bytes = self._git_bytes(root, "show", f"{candidate}:{path}")
-            if candidate_bytes is None or observed != ("file", candidate_bytes):
-                return False
-            entry = self._git_bytes(root, "ls-tree", "-z", candidate, "--", path)
+            argv = ("ls-tree", "-z", candidate, "--", path)
+            entry = observe_bytes(root, *argv)
+            if entry.returncode:
+                unknown = unknown or self._owned_git_unobservable(path, argv, entry)
+                continue
+            if observed[0] == "symlink":
+                drifted.append((path, "symlink"))
+                continue
+            if observed == ("absent", ""):
+                if entry.stdout:
+                    drifted.append((path, "deleted"))
+                continue
+            if not entry.stdout:
+                drifted.append((path, "added"))
+                continue
+            argv = ("show", f"{candidate}:{path}")
+            blob = observe_bytes(root, *argv)
+            if blob.returncode:
+                unknown = unknown or self._owned_git_unobservable(path, argv, blob)
+                continue
             try:
                 mode = b"100755" if (root / path).stat().st_mode & 0o111 else b"100644"
-            except OSError:
-                return False
-            if entry is None or not entry.startswith(mode + b" "):
-                return False
-        return True
+            except OSError as error:
+                unknown = unknown or OwnedBytesUnobservable(path, type(error).__name__)
+                continue
+            if observed != ("file", blob.stdout):
+                drifted.append((path, "content"))
+            if not entry.stdout.startswith(mode + b" "):
+                drifted.append((path, "mode"))
+        if unknown is not None:
+            return unknown
+        if drifted:
+            return OwnedBytesDrifted(tuple(sorted(drifted)))
+        return OwnedBytesCovered()
+
+    @staticmethod
+    def _owned_git_unobservable(
+        path: str, argv: tuple[str, ...], observed: GitByteObservation
+    ) -> OwnedBytesUnobservable:
+        why = (
+            observed.unanswered.why
+            if observed.unanswered is not None
+            else observed.stderr.decode(errors="replace").strip()
+            or f"Git exited {observed.returncode} with no stderr"
+        )
+        return OwnedBytesUnobservable(f"{path}: git {' '.join(argv)}", why)
 
     def verified_candidate(self, root: Path, stored: StoredHandover) -> str | None:
         """The candidate a CURRENT verify record covers, or `None`.
@@ -5736,6 +5876,82 @@ class DeliveryContinuationRunner:
         if retained is not None:
             return self._blocked(retained)
         return base, candidate, evidence
+
+    def integrated_head(self, root: Path, candidate: str) -> str | DeliveryOutcome:
+        """Observe ancestry before reading authority absent on unrelated histories."""
+        head = self._head(root)
+        if isinstance(head, DeliveryOutcome):
+            return head
+        ancestry = self._git(root, "merge-base", "--is-ancestor", candidate, head)
+        if ancestry.unanswered is not None or ancestry.returncode not in (0, 1):
+            return self._git_failure(
+                ancestry,
+                disposition=Disposition.Indeterminate,
+                what="GitUnavailable",
+                how="restore Git, then re-run integrated-candidate verification",
+            )
+        if ancestry.returncode == 1:
+            return self._fail(
+                Disposition.Refusal,
+                "IntegratedCandidateNotInHistory",
+                f"integrated candidate {candidate} is not an ancestor of HEAD {head}",
+                "choose a retained candidate in HEAD's history, or merge the history "
+                f"containing {candidate}, then re-run "
+                f"des verify --repo-root {root} --integrated-candidate {candidate}",
+            )
+        return head
+
+    def reverify_integrated(
+        self,
+        root: Path,
+        stored: StoredHandover,
+        prepared: list[tuple[str, AuthorityFacts]],
+        candidate: str,
+        *,
+        head: str,
+    ) -> tuple[str, tuple[NativeEvidence, ...]] | DeliveryOutcome:
+        """Measure current HEAD from historical authority, without candidate admission."""
+        relation = self._owned_bytes_relation(root, stored, head)
+        if isinstance(relation, OwnedBytesUnobservable):
+            return self._fail(
+                Disposition.Indeterminate,
+                "IntegratedCandidateUnobservable",
+                f"{relation.what}: {relation.why}",
+                f"restore access to {relation.what}, then re-run "
+                f"des verify --repo-root {root} --integrated-candidate {candidate}",
+            )
+        if isinstance(relation, OwnedBytesDrifted):
+            return self._fail(
+                Disposition.Refusal,
+                "IntegratedCandidateWorkspaceDrift",
+                "owned workspace bytes differ from HEAD: "
+                + ", ".join(f"{path}:{kind}" for path, kind in relation.paths),
+                "commit or restore the named paths in the lane, then re-run "
+                f"des verify --repo-root {root} --integrated-candidate {candidate}",
+            )
+        approved = _authority_bytes(root, self._prepared_acceptance_paths(prepared))
+        bound = _authority_bytes(root, self._bound_authority_documents(root, stored))
+        if approved is None or bound is None:
+            return self._fail(
+                Disposition.Indeterminate,
+                "AcceptanceEvidenceUnavailable",
+                "approved authority, oracle or declared support is unavailable",
+                "restore immutable acceptance evidence",
+            )
+        base = self.candidate_base(root, candidate)
+        if isinstance(base, DeliveryOutcome):
+            return base
+        touched = self._changed_paths(root, base, head)
+        if touched is None:
+            return self._fail(
+                Disposition.Indeterminate,
+                "CandidateUnavailable",
+                "the integrated HEAD diff cannot be observed",
+                "restore Git before integrated-candidate verification",
+            )
+        return self._with_candidate_worktree(
+            root, head, self._request_argvs(prepared), touched
+        )
 
     def integrate_candidate(
         self,
@@ -5993,7 +6209,105 @@ class DeliveryContinuationRunner:
             )
         return None
 
-    def measure_oracle(self, root: Path, selected: SelectedValue) -> MeasuredOracleSet:
+    def _resolved_oracle_baseline(
+        self,
+        root: Path,
+        selected: SelectedValue,
+        explicit: str | None,
+        request_base: BaselineCommit | None,
+    ) -> tuple[BaselineCommit, BaselineSource] | DeliveryOutcome:
+        history = self._oracle_witness_history(
+            root, selected.stored.request, selected.ready.observation
+        )
+        recorded = recorded_baseline(history) if history is not None else None
+        if history is None or isinstance(recorded, str):
+            return self._fail(
+                Disposition.Indeterminate,
+                "OracleBaselineUnobservable",
+                f"baseline witness for {selected.ready.observation!r} cannot be read: "
+                f"{recorded or 'unreadable history'}; explicit={explicit!r}, request={request_base!r}",
+                "restore readable Git witness storage, then repeat des oracle",
+            )
+        chosen = select_oracle_baseline(
+            explicit=explicit, request=request_base, recorded=recorded
+        )
+        how = (
+            f"des oracle --repo-root {root} --value "
+            f"{selected.stored.values.index(selected.ready) + 1} "
+            "--baseline <original source commit> --input -"
+        )
+        if chosen is None:
+            return self._fail(
+                Disposition.Refusal,
+                "OracleBaselineMissing",
+                f"value {selected.ready.observation!r} has no --baseline, Request base "
+                "or recorded witness baseline; HEAD and the workspace are never used",
+                how,
+            )
+        if chosen.source is BaselineSource.EXPLICIT:
+            revision = self._git(
+                root,
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                "--end-of-options",
+                f"{chosen.revision}^{{commit}}",
+            )
+            tree = (
+                self._git(
+                    root,
+                    "rev-parse",
+                    "--verify",
+                    "--quiet",
+                    f"{revision.stdout.strip()}^{{tree}}",
+                )
+                if revision.returncode == 0
+                else None
+            )
+            if tree is None or tree.returncode:
+                return self._fail(
+                    Disposition.Refusal,
+                    "OracleBaselineUnavailable",
+                    f"explicit baseline {chosen.revision!r} does not resolve to a commit and tree; "
+                    f"resolved commit={revision.stdout.strip()!r}",
+                    how,
+                )
+            parsed = BaselineCommit.parse(
+                {"sha": revision.stdout.strip(), "tree": tree.stdout.strip()}
+            )
+            if isinstance(parsed, str):
+                return self._fail(
+                    Disposition.Indeterminate,
+                    "OracleBaselineUnobservable",
+                    f"explicit baseline {chosen.revision!r}: {parsed}",
+                    how,
+                )
+            return parsed, chosen.source
+        assert chosen.commit is not None
+        baseline = chosen.commit
+        exists = self._git(root, "cat-file", "-e", f"{baseline.sha}^{{commit}}")
+        tree = self._git(
+            root, "rev-parse", "--verify", "--quiet", f"{baseline.sha}^{{tree}}"
+        )
+        if exists.returncode or tree.returncode or tree.stdout.strip() != baseline.tree:
+            return self._fail(
+                Disposition.Indeterminate,
+                "OracleBaselineUnavailable",
+                f"{chosen.source.value} baseline {baseline.sha} tree {baseline.tree} "
+                "is missing or does not match its recorded tree",
+                "restore/fetch the named Git object or pass an explicit --baseline; "
+                + how,
+            )
+        return baseline, chosen.source
+
+    def measure_oracle(
+        self,
+        root: Path,
+        selected: SelectedValue,
+        *,
+        explicit: str | None = None,
+        request_base: BaselineCommit | None = None,
+    ) -> MeasuredOracleSet:
         """Measure host-authored acceptance bytes and bind the observed witness."""
         stored, ready, design = selected.stored, selected.ready, selected.design
         preservation = self._prefactoring_ready(root, selected, before_behavior=True)
@@ -6002,7 +6316,45 @@ class DeliveryContinuationRunner:
         unavailable = self._acceptance_files_available(root, design)
         if unavailable is not None:
             return MeasuredOracleSet((), unavailable)
-        executed = self._executed_oracle_set(root, [(ready.observation, design)])
+        resolved = self._resolved_oracle_baseline(
+            root, selected, explicit, request_base
+        )
+        if isinstance(resolved, DeliveryOutcome):
+            return MeasuredOracleSet((), resolved)
+        baseline, source = resolved
+        probe_tree = self._owned_tree(root, baseline.sha, design.acceptance_paths)
+        probe = (
+            self._git(
+                root,
+                "commit-tree",
+                probe_tree,
+                "-p",
+                baseline.sha,
+                "-m",
+                "nwave oracle baseline probe",
+                env=declared_child_environment(),
+            )
+            if probe_tree is not None
+            else None
+        )
+        if probe is None or probe.returncode:
+            return MeasuredOracleSet(
+                (),
+                self._fail(
+                    Disposition.Indeterminate,
+                    "OracleProbeUnavailable",
+                    f"current acceptance bytes cannot be overlaid on {source.value} "
+                    f"baseline {baseline.sha} tree {baseline.tree}",
+                    "restore Git object storage and readable acceptance files, then repeat des oracle",
+                ),
+            )
+        executed = self._with_candidate_worktree(
+            root,
+            probe.stdout.strip(),
+            measure=lambda checkout: self._executed_oracle_set(
+                root, [(ready.observation, design)], tree=checkout
+            ),
+        )
         if isinstance(executed, DeliveryOutcome):
             return MeasuredOracleSet((), executed)
         identity = self._record_identity(root, stored, ready.observation, design)
@@ -6017,6 +6369,8 @@ class DeliveryContinuationRunner:
                 identity=identity,
                 tree=tree,
                 measured=executed.measured,
+                baseline=baseline,
+                source=source,
             )
         ):
             return MeasuredOracleSet(
@@ -6028,8 +6382,14 @@ class DeliveryContinuationRunner:
                     "restore Git record storage and repeat the measurement",
                 ),
             )
+        print(
+            f"ORACLE-BASELINE: {baseline.sha} source={source.value}",
+            file=sys.stderr,
+        )
         if executed.refusal is not None:
-            return MeasuredOracleSet(executed.measured, executed.refusal.terminal)
+            return MeasuredOracleSet(
+                executed.measured, executed.refusal.terminal, resolved
+            )
         if not self._record_oracle_turn(root, stored, ready.observation, design):
             return MeasuredOracleSet(
                 executed.measured,
@@ -6039,8 +6399,9 @@ class DeliveryContinuationRunner:
                     "the measured acceptance bytes could not be recorded",
                     "restore Git record storage and repeat the measurement",
                 ),
+                resolved,
             )
-        return MeasuredOracleSet(executed.measured, None)
+        return MeasuredOracleSet(executed.measured, None, resolved)
 
     def _record_oracle_turn(
         self,
@@ -6083,6 +6444,8 @@ class DeliveryContinuationRunner:
         identity: RecordIdentity,
         tree: str,
         measured: tuple[dict[str, object], ...],
+        baseline: BaselineCommit,
+        source: BaselineSource,
     ) -> bool:
         """Append this bound measurement's verdicts to the value's witness history.
 
@@ -6101,6 +6464,7 @@ class DeliveryContinuationRunner:
                 "revision": identity.revision,
                 "design_sections": identity.design_sections,
                 "acceptance_tree": tree,
+                "baseline": {**asdict(baseline), "source": source.value},
                 "oracles": [
                     {
                         "oracle": item.get("path"),

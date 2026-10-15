@@ -6,24 +6,24 @@ another agent staged but did not yet commit (cross-staging), and pre-commit
 hooks that auto-stage formatter fixes widen the window. The result is
 misattributed commits and a corrupted ``Step-Id:`` audit chain.
 
-``des-commit`` makes the commit critical section safe:
+``des commit`` makes the commit critical section safe:
 
 1. Holds an exclusive ``fcntl.flock(LOCK_EX)`` (same idiom as
    the retired execution-log writer; degrades to no-lock on Windows) so concurrent callers
    serialize and never collide on ``.git/index.lock``.
 2. Builds the commit from a **temporary index** seeded with HEAD plus ONLY the
-   owned paths (``git read-tree HEAD`` then ``git add -A -- <owned>`` against a
-   private ``GIT_INDEX_FILE``). The commit is therefore scoped to the owned
-   paths *by construction* — a foreign file, a concurrently-staged file, or a
-   pre-commit hook's auto-staged file cannot enter this index. ``--no-verify``
+   owned changes outside ``.nwave/des`` (``git read-tree HEAD`` then ordinary
+   ``git add -A`` with a runtime exclusion against a private ``GIT_INDEX_FILE``).
+   Foreign or hook-staged changes cannot enter this index. ``--no-verify``
    keeps hooks from mutating the commit (the crafter already validated during
-   GREEN); ``-A`` records deletions and renames, not just additions.
-3. The real index and working tree are left alone except that owned paths are
-   resynced to the new HEAD, so any other agent's staged work is preserved.
+   GREEN); ``-A`` records deletions and renames without force-staging ignored files.
+3. Resyncs only owned non-runtime paths in the real index to the new HEAD.
+   Runtime is excluded from both staging and resync, preserving historical
+   runtime in HEAD and foreign staged work in the shared index.
 
 Usage:
-    des-commit \\
-      --repo-dir . \\
+    des commit \\
+      --repo-root . \\
       --owned-paths src/foo.py tests/test_foo.py \\
       --step-id 02-03 \\
       --message "feat: add foo"
@@ -32,7 +32,7 @@ Output is the shared DES terminal block (``des.cli.step_terminal``): a success
 names the commit and step; a refusal carries WHAT / WHY / HOW.
 
 Exit codes:
-    0 = Success, commit created containing only the owned paths
+    0 = Success, commit created containing only owned non-runtime changes
     1 = Refusal (nothing to commit, bad repo, git failure)
     2 = Usage error (argparse default for missing/invalid arguments)
 """
@@ -47,6 +47,7 @@ import tempfile
 from pathlib import Path
 
 from des.application.commit_message_attribution import attribute_commit_message
+from des.application.handover import ensure_runtime_ignored
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.step_terminal import NOTHING_OWED, StepRefusal, refuse, succeed
 from des.domain.commit_trailer_append import append_mechanical_trailer_block
@@ -57,6 +58,10 @@ _AGAIN = (
     "des commit --repo-dir <repo> --owned-paths <path>... --step-id <id> "
     "--message <text> -- after the HOW above"
 )
+
+# A bracketed first dot avoids naming an ignored literal directory as an operand.
+# Share this subtree exclusion so staging and resync preserve the same runtime.
+_RUNTIME_EXCLUSION_PATHSPEC = ":(exclude,top,glob)[.]nwave/des/**"
 
 
 try:
@@ -124,15 +129,18 @@ def _with_step_id_trailer(message: str, step_id: str) -> str:
 def _commit_owned_locked(
     repo: Path, owned_paths: list[str], message: str
 ) -> StepRefusal | str:
-    """Commit only *owned_paths* via a temporary scoped index, under a lock.
+    """Commit owned non-runtime changes via a temporary index, under a lock.
 
     Returns the refusal, or the new commit read under the lock. The lock
     (``.nwave/des/commit.lock``) serializes concurrent callers. The commit is
-    built from a private index (``GIT_INDEX_FILE``) seeded with HEAD plus the
-    owned paths only, so foreign or hook-staged files cannot land. The shared
-    index/working tree are untouched apart from resyncing the owned paths to
-    the new HEAD.
+    built from a private index (``GIT_INDEX_FILE``) seeded with HEAD plus owned
+    non-runtime changes only, without force-staging ignored files. Runtime under
+    ``.nwave/des`` is excluded from staging and shared-index resync; foreign and
+    hook-staged changes stay outside the commit, and foreign staged work survives.
     """
+    ignored = ensure_runtime_ignored(repo)
+    if ignored is not None:
+        return StepRefusal(ignored.what, ignored.why, ignored.how)
     lock_path = repo / ".nwave" / "des" / "commit.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -159,7 +167,7 @@ def _git_refusal(command: str, result: subprocess.CompletedProcess[str]) -> Step
 def _commit_via_scoped_index(
     repo: Path, owned_paths: list[str], message: str
 ) -> StepRefusal | str:
-    """Commit owned paths through a private temporary index (lock already held)."""
+    """Stage without force and resync owned paths, excluding runtime from both."""
     # A private index file, seeded from HEAD, that only the owned paths are
     # staged into — keeps foreign/hook-staged files out of the commit by
     # construction. mkstemp creates it; unlink so git read-tree writes it fresh.
@@ -173,7 +181,9 @@ def _commit_via_scoped_index(
             return _git_refusal("read-tree", seed)
 
         # -A stages additions, modifications AND deletions for the owned paths.
-        add = _git(repo, "add", "-A", "--", *owned_paths, env=env)
+        add = _git(
+            repo, "add", "-A", "--", *owned_paths, _RUNTIME_EXCLUSION_PATHSPEC, env=env
+        )
         if add.returncode != 0:
             return _git_refusal("add", add)
 
@@ -192,9 +202,9 @@ def _commit_via_scoped_index(
     finally:
         Path(tmp_index).unlink(missing_ok=True)
 
-    # Resync the shared index for owned paths to the new HEAD so they show clean;
-    # any foreign staged work in the shared index is left untouched.
-    _git(repo, "reset", "-q", "--", *owned_paths)
+    # Resync only owned non-runtime paths; preserve foreign staged work, including
+    # runtime entries even when the owned set is a broad directory.
+    _git(repo, "reset", "-q", "--", *owned_paths, _RUNTIME_EXCLUSION_PATHSPEC)
     return _git(repo, "rev-parse", "HEAD").stdout.strip()
 
 

@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shlex
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -66,6 +67,7 @@ from des.adapters.driven.config.workspace_paths import (
     resolve_workspace_paths,
 )
 from des.adapters.driven.git.git_observation import GitObservation, observe_text
+from des.application.handover import Blocked, handover_path, retained_candidates
 from des.application.head_advance import AdvanceRefusal, GitObserver, HeadAdvance
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.step_terminal import (
@@ -131,6 +133,31 @@ def _reserved_segment(path: Path, lanes_directory: Path) -> bool:
     except ValueError:
         return False
     return any(part.startswith(".") for part in relative.parts)
+
+
+@dataclass(frozen=True, slots=True)
+class Principal:
+    """The checkout owns Git's common directory."""
+
+
+@dataclass(frozen=True, slots=True)
+class LinkedLane:
+    worktree: Path
+    branch: str
+    principal_worktree: Path
+    principal_head: str
+
+
+@dataclass(frozen=True, slots=True)
+class Unobservable:
+    why: str
+
+
+def lane_integrate_invocation(principal: Path, lane: Path) -> str:
+    return (
+        f"des lane integrate --repo-root {shlex.quote(str(principal))} "
+        f"--worktree {shlex.quote(str(lane))} --keep-worktree"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -375,6 +402,97 @@ class LaneSteps:
 
     # ----------------------------------------------------------- integrate
 
+    def lane_identity(self, root: Path) -> Principal | LinkedLane | Unobservable:
+        """Observe checkout identity from Git, never its directory name."""
+        directories = self.observe(
+            root, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"
+        )
+        if directories.returncode:
+            return Unobservable(directories.stderr)
+        paths = directories.stdout.splitlines()
+        if len(paths) != 2:
+            return Unobservable("git rev-parse did not report both Git directories")
+        if Path(paths[0]).resolve() == Path(paths[1]).resolve():
+            return Principal()
+        entries = self._worktree_entries(root)
+        if isinstance(entries, StepRefusal):
+            return Unobservable(entries.why)
+        if not entries or not entries[0].get("HEAD"):
+            return Unobservable("git worktree list did not report the principal HEAD")
+        branch = self.observe(root, "symbolic-ref", "--quiet", "--short", "HEAD")
+        if branch.returncode:
+            return Unobservable(
+                branch.stderr or "git symbolic-ref did not report the lane branch"
+            )
+        return LinkedLane(
+            root,
+            branch.stdout.strip(),
+            Path(entries[0]["worktree"]),
+            entries[0]["HEAD"],
+        )
+
+    def _stale_recovery(
+        self, root: Path, lane: RegisteredLane, refused: AdvanceRefusal
+    ) -> StepRefusal:
+        candidates = retained_candidates(lane.worktree)
+        if isinstance(candidates, Blocked):
+            return StepRefusal(
+                candidates.what,
+                candidates.why,
+                candidates.how,
+                Disposition.Indeterminate,
+            )
+        anchors = []
+        for candidate in candidates:
+            ancestry = self.observe(
+                lane.worktree, "merge-base", "--is-ancestor", candidate, lane.tip
+            )
+            if ancestry.unanswered is not None or ancestry.returncode not in (0, 1):
+                return self._git_refusal(
+                    ancestry,
+                    "GitUnavailable",
+                    ancestry.stderr,
+                    "restore Git",
+                    indeterminate=True,
+                )
+            if ancestry.returncode == 0:
+                anchors.append(candidate)
+        if anchors:
+            maximal = self.observe(
+                lane.worktree, "merge-base", "--independent", *anchors
+            )
+            if maximal.returncode:
+                return self._git_refusal(
+                    maximal,
+                    "GitUnavailable",
+                    maximal.stderr,
+                    "restore Git",
+                    indeterminate=True,
+                )
+            anchors = maximal.stdout.splitlines()
+        if not anchors and not handover_path(lane.worktree).is_file():
+            return self._from_advance(refused)
+        destination = self._advance.destination(root)
+        if isinstance(destination, AdvanceRefusal):
+            return self._from_advance(destination)
+        merge = (
+            f"git -C {shlex.quote(str(lane.worktree))} merge --no-edit {destination}"
+        )
+        verify = f"des verify --repo-root {shlex.quote(str(lane.worktree))}"
+        alternatives = (
+            " or ".join(
+                f"`{verify} --integrated-candidate {anchor}`" for anchor in anchors
+            )
+            if anchors
+            else f"`{verify}`"
+        )
+        return StepRefusal(
+            refused.what,
+            refused.why,
+            f"run `{merge}`, then {alternatives}, then "
+            f"`{lane_integrate_invocation(root, lane.worktree)}`",
+        )
+
     def integrate(
         self, root: Path, worktree: Path, *, keep_worktree: bool = False
     ) -> IntegratedLane | StepRefusal:
@@ -390,6 +508,8 @@ class LaneSteps:
             return dirty
         advanced = self._advance.fast_forward(root, registered.tip)
         if isinstance(advanced, AdvanceRefusal):
+            if advanced.what == "IntegrationStale" and advanced.unanswered is None:
+                return self._stale_recovery(root, registered, advanced)
             return self._from_advance(advanced)
         shipped = self._shipped(root, advanced, registered.tip)
         if isinstance(shipped, StepRefusal):

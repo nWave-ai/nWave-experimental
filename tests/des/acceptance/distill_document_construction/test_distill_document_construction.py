@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -15,8 +16,10 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from tests.common.in_process_cli import run_cli_in_process
+from tests.des._helpers.host_facts import design_manifest
 from tests.des.acceptance.design_document_construction.test_design_document_construction import (
     MANIFEST,
+    WIDGET_INPUT,
 )
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     PACKAGE_PARENT,
@@ -29,18 +32,11 @@ from des.application import handover
 from des.application.delivery_steps import DeliverySteps
 from des.application.handover import (
     AcceptanceObligation,
-    BoundDesign,
-    bind_design_facts,
     read_handover,
 )
 from des.domain.delivery_disposition import Disposition
 from des.domain.distill_document import DistillDocument, DistillDocumentInvalid
-from des.ports.driven_ports.task_invocation_port import (
-    DesignFacts,
-    DesignTarget,
-    NotApplicable,
-    ReuseAnalysis,
-)
+from des.ports.driven_ports.task_invocation_port import DesignFacts
 
 
 HANDOVER = Path(".nwave/des/handover.json")
@@ -318,6 +314,114 @@ def test_public_distill_empty_input_leaves_a_fresh_repository_without_artifacts(
     assert not (root / "docs/product/acceptance/brief.md").exists()
 
 
+def test_public_distill_over_a_pre_normalized_design_refuses_before_any_write(
+    tmp_path: Path,
+) -> None:
+    """A value DESIGN persisted by an older generation (schema 1) is opaque.
+
+    Observed 2026-10-14 on an upgraded project: `des distill` raised TypeError
+    while hashing the opaque authority, after it had already written the
+    acceptance brief and before the handover recorded the selection.
+    """
+    root = base_repository(tmp_path / "repository")
+    supplied = _prepare(root)
+    legacy = json.loads((root / HANDOVER).read_bytes())
+    legacy["values"][0]["authority"] = {
+        "authority_locator": "docs/product/architecture/brief.md#Value 1",
+        "paradigm": "object_oriented",
+    }
+    legacy_raw = json.dumps(legacy, ensure_ascii=False, separators=(",", ":")).encode()
+    (root / HANDOVER).write_bytes(legacy_raw)
+    code, out, err = _call(root, "distill", json.dumps(supplied))
+    assert code != 0 and "DesignFactsPreNormalized" in out + err, (
+        "WHAT: DISTILL over an opaque pre-normalized DESIGN did not refuse as "
+        f"DesignFactsPreNormalized: exit={code} {out + err}. WHY: a schema-1 DESIGN "
+        "cannot supply the facts a selection is made over. HOW: refuse naming the "
+        "same-scope des design --replace-current recovery."
+    )
+    assert "--replace-current" in out + err and "--value 1" in out + err
+    assert (root / HANDOVER).read_bytes() == legacy_raw
+    assert not (root / "docs/product/acceptance/brief.md").exists(), (
+        "WHAT: a refused DISTILL left an acceptance brief. WHY: the brief would "
+        "claim a selection the handover never recorded. HOW: decide every value "
+        "before publishing the document."
+    )
+
+
+def test_public_distill_over_a_pre_normalized_shared_design_names_the_shared_recovery(
+    tmp_path: Path,
+) -> None:
+    """The reporting project held an opaque SHARED DESIGN besides opaque values.
+
+    Re-binding only the values would leave the shared binding opaque, so the
+    refusal must name the shared recovery and write neither handover nor brief.
+    """
+    root = base_repository(tmp_path / "repository")
+    supplied = _prepare(root)
+    stored = json.loads((root / HANDOVER).read_bytes())
+    locator = "docs/product/architecture/brief.md#Shared"
+    legacy = {key: stored[key] for key in stored if key != "product_authority"} | {
+        "shared_design": {
+            "authority_locator": locator,
+            "section_sha256": "0" * 64,
+            "semantic_sha256": "1" * 64,
+            "design": {"authority_locator": locator, "paradigm": "object_oriented"},
+        }
+    }
+    if "product_authority" in stored:
+        legacy["product_authority"] = stored["product_authority"]
+    legacy_raw = json.dumps(legacy, ensure_ascii=False, separators=(",", ":")).encode()
+    (root / HANDOVER).write_bytes(legacy_raw)
+    assert _stored(root).shared_design is not None
+    brief = root / "docs/product/acceptance/brief.md"
+    code, out, err = _call(root, "distill", json.dumps(supplied))
+    assert code != 0 and "DesignFactsPreNormalized" in out + err, (
+        "WHAT: DISTILL over an opaque shared DESIGN did not refuse as "
+        f"DesignFactsPreNormalized: exit={code} {out + err}. WHY: the selection "
+        "basis includes the shared DESIGN, which supplies no facts. HOW: refuse "
+        "naming des design --shared --replace-current."
+    )
+    assert "--shared --replace-current" in out + err
+    assert (root / HANDOVER).read_bytes() == legacy_raw
+    assert not brief.exists()
+
+
+def test_public_distill_over_an_already_selected_pre_normalized_design_keeps_every_byte(
+    tmp_path: Path,
+) -> None:
+    """A value selected earlier, whose DESIGN later reads back opaque.
+
+    The stored-selection comparison hashed the opaque authority and raised
+    TypeError; the consumption refusal must come first and leave the published
+    brief and the handover byte-identical.
+    """
+    root = base_repository(tmp_path / "repository")
+    supplied = _prepare(root)
+    code, out, err = _call(root, "distill", json.dumps(supplied))
+    assert code == 0, out + err
+    brief = root / "docs/product/acceptance/brief.md"
+    published = brief.read_bytes()
+    selected = json.loads((root / HANDOVER).read_bytes())
+    selected["values"][0]["authority"] = {
+        "authority_locator": "docs/product/architecture/brief.md#Value 1",
+        "paradigm": "object_oriented",
+    }
+    legacy_raw = json.dumps(
+        selected, ensure_ascii=False, separators=(",", ":")
+    ).encode()
+    (root / HANDOVER).write_bytes(legacy_raw)
+    code, out, err = _call(root, "distill", json.dumps(supplied))
+    assert code != 0 and "DesignFactsPreNormalized" in out + err, (
+        "WHAT: re-DISTILL over an already selected opaque DESIGN did not refuse "
+        f"as DesignFactsPreNormalized: exit={code} {out + err}. WHY: the stored "
+        "selection cannot be compared over opaque facts. HOW: run the DESIGN "
+        "consumption check before the stored-selection comparison."
+    )
+    assert "--value 1 --replace-current" in out + err
+    assert (root / HANDOVER).read_bytes() == legacy_raw
+    assert brief.read_bytes() == published
+
+
 def test_public_distill_refuses_every_independent_value_defect_at_once(
     tmp_path: Path,
 ) -> None:
@@ -434,29 +538,42 @@ def test_distill_accepts_selected_graph_values_and_preserves_unselected_graph_an
     expected_graph = tuple(
         (value.observation, value.dependencies) for value in before.values
     )
-    unselected_authority = DesignFacts(
-        (DesignTarget("README.md", "EXTEND"),),
-        "object_oriented",
-        ("Keep the public behavior.",),
-        "tests/des/acceptance/test_widget.py::test_design_default",
-        (),
-        (("true",),),
-        0,
-        architectural_tests=NotApplicable(
-            "The fixture has no structural boundary change."
-        ),
-        contract_tests=NotApplicable("The fixture changes no shared contract."),
-        prefactoring=NotApplicable("The fixture requires no preservation move."),
-        agreement_analysis=NotApplicable("The fixture has no affected agreement."),
-        reuse_analysis=ReuseAnalysis(()),
-        impact_closure=NotApplicable(
-            "The fixture reaches no public surface, consumer or build metadata."
-        ),
+    unselected_input = copy.deepcopy(WIDGET_INPUT)
+    unselected_input.update(
+        targets=[
+            {
+                "path": "README.md",
+                "decision": "EXTEND",
+                "reason": "Own the unselected value's public documentation.",
+            }
+        ],
+        decisions=["Keep the public behavior."],
+        oracle="tests/des/acceptance/test_widget.py::test_design_default",
+        verification=[["true"]],
+        prefactoring={
+            "applicability": "not_applicable",
+            "reason": "The fixture requires no preservation move.",
+        },
+        agreement_analysis={
+            "applicability": "not_applicable",
+            "reason": "The fixture has no affected agreement.",
+        },
+        reuse_analysis={
+            "candidates": [
+                {
+                    "symbol": "README.md",
+                    "locator": "README.md:1",
+                    "decision": "EXTEND",
+                    "reason": "Reuse the unselected value's public documentation.",
+                }
+            ]
+        },
     )
-    assert not isinstance(
-        bind_design_facts(root, before, 2, BoundDesign(unselected_authority)),
-        handover.Blocked,
-    )
+    manifest = design_manifest(unselected_input, before.values[1].observation, 2)
+    code, out, err = _call(root, "design", json.dumps(manifest), value=2)
+    assert code == 0, out + err
+    unselected_authority = _stored(root).values[1].authority
+    assert isinstance(unselected_authority, DesignFacts)
     values = supplied["values"]
     assert isinstance(values, list)
     supplied["values"] = values[:1]
@@ -620,7 +737,12 @@ def test_public_distill_replace_current_replaces_one_value_only_and_craft_receiv
     initial = json.dumps(supplied)
     assert _call(root, "distill", initial, env={"PATH": ""})[0] == 0
     for position in (1, 2):
-        code, out, err = _call(root, "design", json.dumps(MANIFEST), value=position)
+        code, out, err = _call(
+            root,
+            "design",
+            json.dumps(_value_manifest(position=position)),
+            value=position,
+        )
         assert code == 0, out + err
 
     document = root / "docs/product/acceptance/brief.md"
@@ -825,6 +947,7 @@ WITNESS = "tests/acceptance/witness_b.mjs"
 WITNESS_SOURCE = 'console.log("SELECTED-B-NODE");\n'
 FIRST_VALUE = "A user selects a widget color."
 SHARED_DECISION = "Every consumer reads one complete selected acceptance revision."
+SHARED_DECISION_ID = "S-selected-revision"
 SECOND_ORACLE = "tests/acceptance/test_visible_color.py::test_visible_color"
 DESIGN_ORACLE = "tests/acceptance/test_design_default.py::test_design_default"
 
@@ -856,30 +979,117 @@ def _v2_input(value: dict[str, object]) -> str:
 
 
 def _value_manifest(
-    *, expected: str = "stdout is red and exit is zero.", reordered: bool = False
+    *,
+    expected: str | None = None,
+    position: int = 1,
+    shared: bool = False,
+    decision: str | None = None,
+    purpose: str | None = None,
 ) -> dict:
-    manifest = json.loads(json.dumps(MANIFEST))
-    manifest["authority"] = {"heading": "Selected widget color"}
-    manifest["decisions"] = ["Value one keeps color validation at construction."]
-    manifest["public_oracle"]["expected"] = expected
-    manifest["oracle"] = DESIGN_ORACLE
-    manifest["verification"] = [
-        ["pytest", "-q", DESIGN_ORACLE.split("::", maxsplit=1)[0]]
+    supplied = copy.deepcopy(WIDGET_INPUT)
+    supplied["decisions"] = [
+        decision
+        if decision is not None
+        else (
+            "Value one keeps color validation at construction."
+            if position == 1
+            else "Value two reads the selection back."
+        )
     ]
-    if reordered:
-        manifest = dict(reversed(list(manifest.items())))
+    supplied["purpose"] = (
+        purpose
+        if purpose is not None
+        else (
+            WIDGET_INPUT["purpose"]
+            if position == 1
+            else "Expose the visible widget color."
+        )
+    )
+    supplied["oracle"] = DESIGN_ORACLE if position == 1 else SECOND_ORACLE
+    supplied["verification"] = [
+        ["pytest", "-q", supplied["oracle"].split("::", maxsplit=1)[0]]
+    ]
+    if position == 2 and not shared:
+        supplied["constraints"] = ["Preserve existing visible-color callers."]
+        supplied["targets"][0]["reason"] = "Widget already owns the visible color."
+        supplied["reuse_analysis"]["candidates"][0]["reason"] = (
+            "Reuse the existing public visible-color owner."
+        )
+        for section, reason in (
+            (
+                "architectural_tests",
+                "Reading the visible color changes no structural boundary.",
+            ),
+            ("contract_tests", "Reading the visible color changes no shared contract."),
+            (
+                "impact_closure",
+                "Reading the visible color reaches no new public surface, "
+                "consumer or build metadata.",
+            ),
+            ("prefactoring", "Reading the visible color needs no preservation move."),
+            (
+                "agreement_analysis",
+                "Reading the visible color touches no shared release or interchange schema.",
+            ),
+            (
+                "boundaries",
+                "Reading the visible color changes no port or dependency boundary.",
+            ),
+        ):
+            supplied[section]["reason"] = reason
+        supplied["public_oracle"] = {
+            "observation": "CLI prints the visible selected color.",
+            "stimulus": "Run widget show after choosing red.",
+            "expected": "stdout shows red and exit is zero.",
+            "falsifier": "Any other visible stdout or non-zero exit.",
+        }
+    if expected is not None:
+        supplied["public_oracle"]["expected"] = expected
+    shared_ids = set()
+    if shared:
+        supplied["facts"] = _shared_manifest()["facts"]
+        shared_ids = {record["id"] for record in supplied["facts"]}
+        supplied["decisions"].append({"ref": SHARED_DECISION_ID})
+        supplied["constraints"].append({"ref": "S-constraint"})
+    manifest = design_manifest(supplied, supplied["purpose"], position)
+    manifest["facts"] = [
+        record for record in manifest["facts"] if record["id"] not in shared_ids
+    ]
     return manifest
 
 
 def _shared_manifest(*, constraint: str = "Value sections carry only deltas.") -> dict:
-    manifest = json.loads(json.dumps(MANIFEST))
-    manifest["authority"] = {"heading": "Selected acceptance feature design"}
-    manifest["purpose"] = "Hold the decisions every value of the feature shares."
-    manifest["constraints"] = [constraint]
-    manifest["decisions"] = [SHARED_DECISION]
-    manifest["oracle"] = "tests/test_shared.py::test_shared"
-    manifest["verification"] = [["pytest", "-q", "tests/test_shared.py"]]
-    return manifest
+    supplied = copy.deepcopy(WIDGET_INPUT)
+    supplied["purpose"] = "Hold the decisions every value of the feature shares."
+    supplied["constraints"] = [constraint, *WIDGET_INPUT["constraints"]]
+    supplied["decisions"] = [SHARED_DECISION]
+    supplied["oracle"] = "tests/test_shared.py::test_shared"
+    supplied["verification"] = [["pytest", "-q", "tests/test_shared.py"]]
+    supplied["facts"] = [
+        {"id": identifier, "text": text}
+        for identifier, text in (
+            ("S-purpose", supplied["purpose"]),
+            ("S-constraint", constraint),
+            (SHARED_DECISION_ID, SHARED_DECISION),
+            ("S-existing-callers", WIDGET_INPUT["constraints"][0]),
+            ("S-target-owner", WIDGET_INPUT["targets"][0]["reason"]),
+            (
+                "S-reuse-owner",
+                WIDGET_INPUT["reuse_analysis"]["candidates"][0]["reason"],
+            ),
+            ("S-no-structure", WIDGET_INPUT["architectural_tests"]["reason"]),
+            ("S-no-contract", WIDGET_INPUT["contract_tests"]["reason"]),
+            ("S-no-impact", WIDGET_INPUT["impact_closure"]["reason"]),
+            ("S-no-prefactor", WIDGET_INPUT["prefactoring"]["reason"]),
+            ("S-no-agreement", WIDGET_INPUT["agreement_analysis"]["reason"]),
+            ("S-no-boundary", WIDGET_INPUT["boundaries"]["reason"]),
+            ("S-color-observation", WIDGET_INPUT["public_oracle"]["observation"]),
+            ("S-color-stimulus", WIDGET_INPUT["public_oracle"]["stimulus"]),
+            ("S-color-expected", WIDGET_INPUT["public_oracle"]["expected"]),
+            ("S-color-falsifier", WIDGET_INPUT["public_oracle"]["falsifier"]),
+        )
+    ]
+    return design_manifest(supplied, supplied["purpose"], 0)
 
 
 @pytest.fixture(scope="session")
@@ -1021,7 +1231,10 @@ class _Subject:
             )
             assert code == 0, out + err
         code, out, err = _call(
-            self.root, "design", json.dumps(_value_manifest()), value=1
+            self.root,
+            "design",
+            json.dumps(_value_manifest(shared=self.shared)),
+            value=1,
         )
         assert code == 0, out + err
         self.second_done = False
@@ -1057,13 +1270,7 @@ class _Subject:
         if getattr(self, "second_done", True):
             return
         self.second_done = True
-        manifest = _value_manifest()
-        manifest["authority"] = {"heading": "Visible widget color"}
-        manifest["decisions"] = ["Value two reads the selection back."]
-        manifest["oracle"] = SECOND_ORACLE
-        manifest["verification"] = [
-            ["pytest", "-q", SECOND_ORACLE.split("::", maxsplit=1)[0]]
-        ]
+        manifest = _value_manifest(position=2, shared=self.shared)
         code, out, err = _call(self.root, "design", json.dumps(manifest), value=2)
         assert code == 0, out + err
         payload = self._second_payload()
@@ -1257,29 +1464,20 @@ class _Subject:
         return (self.root / HANDOVER).read_bytes()
 
 
-def _members_of(node: object, observation: str) -> list[dict]:
-    """Every object of a structured input that is the per-value member of one value."""
-    found: list[dict] = []
-    if isinstance(node, dict):
-        if node.get("observation") == observation and "oracle" in node:
-            found.append(node)
-        for item in node.values():
-            found += _members_of(item, observation)
-    elif isinstance(node, list):
-        for item in node:
-            found += _members_of(item, observation)
-    return found
-
-
 def _assert_reviewer_member_is_b(reviewer: dict, node: str) -> None:
     b = _declared_revision("green", node)
-    members = _members_of(reviewer, FIRST_VALUE)
+    members = [
+        (str(position), value)
+        for position, value in enumerate(reviewer["values"], 1)
+        if value["observation"] == FIRST_VALUE
+    ]
     assert len(members) == 1, (
         f"WHAT: reviewer input has {len(members)} per-value members for the "
         "selected value, expected one. WHY: one value, one selected tuple. HOW: "
         "project the value once with its complete selected revision."
     )
-    member = members[0]
+    position, _ = members[0]
+    member = reviewer["selected_authority"][position]
     for key in (
         "oracle",
         "acceptance_supports",
@@ -1366,9 +1564,12 @@ def test_one_complete_selected_revision_reaches_oracle_craft_and_verify(
     reviewer, reviewer_raw = subject.prepared("reviewer", candidate)
     binding = _stored(subject.root).shared_design
     assert binding is not None
-    assert reviewer["shared_design"]["authority"] == binding.authority_locator
+    assert reviewer["shared_design"]["authority_locator"] == binding.authority_locator
     assert reviewer["shared_design"]["semantic_sha256"] == binding.semantic_sha256
-    assert reviewer["shared_design"]["decisions"] == [SHARED_DECISION]
+    assert {"ref": SHARED_DECISION_ID} in reviewer["selected_authority"]["1"][
+        "decisions"
+    ]
+    assert reviewer["facts"][SHARED_DECISION_ID] == SHARED_DECISION
     _assert_reviewer_member_is_b(reviewer, node_executable)
     assert reviewer_raw.count(SHARED_DECISION) == 1, "shared authority not once"
     examiner, examiner_raw = subject.prepared("examiner", candidate)
@@ -1430,7 +1631,11 @@ def test_design_change_keeps_selected_revision_and_needs_explicit_complete_reali
         code, out, err = _call(
             subject.root,
             "design",
-            json.dumps(_value_manifest(expected="stdout is green and exit is zero.")),
+            json.dumps(
+                _value_manifest(
+                    expected="stdout is green and exit is zero.", shared=subject.shared
+                )
+            ),
             value=1,
             replace_current=True,
         )
@@ -1506,10 +1711,11 @@ def test_reordered_design_manifest_is_a_no_op_that_keeps_b_current(
     b_path, _ = subject.evidence(b_lines)
     b_bytes = b_path.read_bytes()
     before = subject.bytes()
+    reordered = dict(reversed(list(_value_manifest(shared=subject.shared).items())))
     code, out, err = _call(
         subject.root,
         "design",
-        json.dumps(_value_manifest(reordered=True), indent=2),
+        json.dumps(reordered, indent=2),
         value=1,
     )
     assert code == 0, out + err
@@ -1548,7 +1754,10 @@ def test_unknown_legacy_design_identity_bootstrap_misaligns_b_until_replacement(
     kept, selected = _acceptance_keys(subject.root), subject.bytes()
 
     code, out, err = _call(
-        subject.root, "design", json.dumps(_value_manifest()), value=1
+        subject.root,
+        "design",
+        json.dumps(_value_manifest(shared=subject.shared)),
+        value=1,
     )
     assert code == 0, out + err
     assert subject.bytes() != selected, "identity bootstrap must change the handover"
@@ -1567,7 +1776,10 @@ def test_unknown_legacy_design_identity_bootstrap_misaligns_b_until_replacement(
     _assert_persisted_b(subject, node_executable)
     identified = subject.bytes()
     code, out, err = _call(
-        subject.root, "design", json.dumps(_value_manifest()), value=1
+        subject.root,
+        "design",
+        json.dumps(_value_manifest(shared=subject.shared)),
+        value=1,
     )
     assert code == 0 and subject.bytes() == identified, (
         "a later identical normalized rebind must be an exact no-op"
@@ -1658,7 +1870,11 @@ def test_revision_keeps_evidence_and_projects_current_historical_uncertain(
     code, out, err = _call(
         subject.root,
         "design",
-        json.dumps(_value_manifest(expected="stdout is green and exit is zero.")),
+        json.dumps(
+            _value_manifest(
+                expected="stdout is green and exit is zero.", shared=subject.shared
+            )
+        ),
         value=1,
         replace_current=True,
     )
@@ -1809,21 +2025,30 @@ def test_any_complete_ordered_v2_verification_is_kept_in_declared_order(
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 @given(
-    argvs=st.lists(_ARGV, min_size=1, max_size=3, unique_by=tuple),
-    misindex=st.one_of(st.integers(-5, -1), st.integers(0, 5)),
-    duplicated=st.booleans(),
+    case=st.sampled_from(("duplicate-argv", "out-of-range-index")),
+    data=st.data(),
 )
 def test_any_duplicate_or_out_of_range_v2_verification_is_refused_without_mutation(
-    property_root: Path, argvs: list[list[str]], misindex: int, duplicated: bool
+    property_root: Path, case: str, data: st.DataObject
 ) -> None:
-    """Law: a duplicate argv, or an index outside the argv list, is refused
-    naming the member, and no byte of the handover changes."""
+    """Law: duplicate argv and out-of-range index cases both refuse atomically.
+
+    Choose the defect first; draw an index only when it reaches the submitted
+    out-of-range case, so every generated component affects the public input.
+    """
     _seed_once(property_root)
-    if duplicated:
+    argvs = data.draw(
+        st.lists(_ARGV, min_size=1, max_size=3, unique_by=tuple),
+        label="distinct ordered verification commands",
+    )
+    if case == "duplicate-argv":
         argvs = [*argvs, argvs[0]]
         index = 0
     else:
-        index = misindex if not 0 <= misindex < len(argvs) else len(argvs)
+        index = data.draw(
+            st.one_of(st.integers(-5, -1), st.integers(len(argvs), 5)),
+            label="index outside the submitted verification population",
+        )
     value = json.loads(json.dumps(_distill_payload()["values"][0]))  # type: ignore[index]
     value["verification"], value["oracle_verification_index"] = argvs, index
     before = (property_root / HANDOVER).read_bytes()
@@ -1833,8 +2058,19 @@ def test_any_duplicate_or_out_of_range_v2_verification_is_refused_without_mutati
         json.dumps({"schema_version": 2, "values": [value]}),
         replace_current=True,
     )
-    assert code != 0 and "InvalidDistillDocument" in out + err
-    assert (property_root / HANDOVER).read_bytes() == before
+    assert code != 0 and "InvalidDistillDocument" in out + err, (
+        f"WHAT: {case} with verification={argvs!r} and index={index} returned "
+        f"exit={code}, output={out + err!r}, expected InvalidDistillDocument. "
+        "WHY: duplicate commands or an index outside the declared command list "
+        "cannot define one complete selected verification. "
+        "HOW: refuse the invalid member before publishing or binding acceptance."
+    )
+    assert (property_root / HANDOVER).read_bytes() == before, (
+        f"WHAT: refusing {case} changed the previously bound handover bytes. "
+        "WHY: invalid verification must preserve the complete prior selection "
+        "and its evidence identities. "
+        "HOW: validate the submitted verification before any handover mutation."
+    )
 
 
 # -- revision identity: selected criteria, provider DESIGN, argv grammar -----
@@ -1854,7 +2090,7 @@ def _labels_of(state: str, position: int = 1) -> dict[str, str]:
 def _blue_design(subject: _Subject) -> None:
     """DESIGN declares the very oracle and argv that DISTILL will select."""
     path = "tests/acceptance/test_selected_blue.py"
-    manifest = _value_manifest()
+    manifest = _value_manifest(shared=subject.shared)
     manifest["oracle"] = f"{path}::test_selects_blue"
     manifest["acceptance_supports"] = ["tests/support/blue_driver.py"]
     manifest["verification"] = [[sys.executable, "-m", "pytest", path]]
@@ -1967,13 +2203,11 @@ def test_an_unrelated_value_revision_keeps_this_value_evidence_current(
     assert _labels_of(subject.state()) == {"oracle": "recorded", "craft": "recorded"}
     turns_before = len(subject.rows())
 
-    visible = _value_manifest()
-    visible["authority"] = {"heading": "Visible widget color"}
-    visible["decisions"] = ["Value two reads the selection back after revision."]
-    visible["oracle"] = SECOND_ORACLE
-    visible["verification"] = [
-        ["pytest", "-q", SECOND_ORACLE.split("::", maxsplit=1)[0]]
-    ]
+    visible = _value_manifest(
+        position=2,
+        shared=subject.shared,
+        decision="Value two reads the selection back after revision.",
+    )
     code, out, err = _call(
         subject.root,
         "design",

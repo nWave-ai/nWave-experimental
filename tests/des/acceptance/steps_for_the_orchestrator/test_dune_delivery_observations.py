@@ -102,6 +102,7 @@ class DuneDeliveryJourney:
             self.root = base_repository(workspace / "subject")
             (self.root / ".gitignore").write_text("_build/\n.nwave/\n")
             _native_project(self.root)
+            self.baseline = git(self.root, "rev-parse", "HEAD")
 
     def native(self, argv: list[str]) -> subprocess.CompletedProcess[str]:
         result = subprocess.run(
@@ -178,6 +179,8 @@ class DuneDeliveryJourney:
         arguments = [action, "--repo-root", str(self.root)]
         if action in {"design", "oracle", "craft"}:
             arguments += ["--value", "1"]
+        if action == "oracle":
+            arguments += ["--baseline", self.baseline]
         if action == "po":
             arguments += ["--feature", "native"]
         if payload is not None:

@@ -14,6 +14,10 @@ import re
 import typing as t
 from typing import Literal
 
+from des.ports.driven_ports.task_invocation_port import (
+    FactRef,  # noqa: TC001 - runtime schema uses get_type_hints
+)
+
 
 # --------------------------------------------------------------------------- vocabularies
 # nWave/skills/nw-pbt-fundamentals/SKILL.md:23-32 (the repository's own property taxonomy)
@@ -63,7 +67,7 @@ ArtifactRole = Literal["output", "trace"]
 ScenarioKind = Literal["counterexample", "mutant", "example"]
 # nw-po-scenario-exploration/SKILL.md:66-67
 Judgment = Literal["correct", "incorrect", "depends", "unclear", "correction"]
-Kind = Literal["laws", "construction", "model", "closure", "receipts", "scenarios"]
+Kind = Literal["laws", "construction", "model", "closure", "scenarios"]
 KINDS: tuple[str, ...] = t.get_args(Kind)
 VERIFIERS = frozenset(
     {"quint_verify", "tlc", "apalache", "agda"}
@@ -92,6 +96,7 @@ SCOPE_RE = r"shared|value:[1-9][0-9]*"
 VARIANT_RE = r"base|fairness|no_fairness|fixed|unfixed|witness|mutant:[A-Za-z][A-Za-z0-9_-]{0,63}"
 PATTERNS: dict[str, str] = {
     "ID": ID_RE,
+    "FactId": ID_RE,
     "Locator": LOCATOR_RE,
     "RelPath": RELPATH_RE,
     "Sha": SHA_RE,
@@ -153,9 +158,9 @@ def pos(**kw):  # strictly positive integer
 @rec
 class Observation:
     id: ID
-    description: str
+    description: FactRef
     result_type: str  # E-G05-56
-    cannot_distinguish: str  # E-G05-56
+    cannot_distinguish: FactRef
 
 
 @rec
@@ -163,7 +168,7 @@ class Equality:
     under: tuple[ID, ...] = (
         ne()
     )  # observation ids: x ~ y iff they agree under all of these
-    definition: str
+    definition: FactRef
 
 
 @rec
@@ -175,40 +180,40 @@ class Constructor:
 @rec
 class Generator:  # declared once in Laws.generators, cited by id from every broad law that uses it
     id: ID
-    domain: str
+    domain: FactRef
     size_bound: int = pos()
-    seed_policy: str
-    must_include: tuple[str, ...] = (
-        ne()
-    )  # refuting cases the generator must be able to produce
+    seed_policy: FactRef
+    must_include: tuple[FactRef, ...] = dc.field(
+        metadata={"nonempty": True, "unique_refs": True}
+    )
     depth_bound: int | None = None
 
 
 @rec
 class Falsifier:
-    description: str  # the mutant or defect the independent observation must catch
+    description: FactRef
 
 
 @rec
 class Broad:
     generator: ID
-    independent_observation: (
-        str  # a reference that does not reuse the implementation's arithmetic
-    )
+    independent_observation: FactRef
     falsifier: Falsifier
     tag: Literal["broad"] = "broad"
 
 
 @rec
 class Finite:
-    cases: tuple[str, ...] = ne()
-    reason: str
+    cases: tuple[FactRef, ...] = dc.field(
+        metadata={"nonempty": True, "unique_refs": True}
+    )
+    reason: FactRef
     tag: Literal["finite"] = "finite"
 
 
 @rec
 class NoTreatment:
-    reason: str
+    reason: FactRef
     tag: Literal["none"] = "none"
 
 
@@ -232,7 +237,7 @@ Evidence = ToRun | Executed
 @rec
 class Law:
     id: ID
-    statement: str
+    statement: FactRef
     kind: LawKind
     layer: Layer
     owner: Locator
@@ -244,9 +249,9 @@ class Law:
 @rec
 class RefutedLaw:
     id: ID
-    statement: str
+    statement: FactRef
     cause: Cause
-    counterexample: str
+    counterexample: FactRef
     run: ID | None = None  # E-G08-79: the receipt kept beside the counterexample
 
 
@@ -263,29 +268,33 @@ class Laws:
 # --------------------------------------------------------------------------- construction
 @rec
 class Unknown:  # E-V2-E-32: an unknown state always names who carries its risk
-    state: str
-    risk_owner: str
+    state: FactRef
+    risk_owner: FactRef
 
 
 @rec
 class ExclusionClaim:
     id: ID
-    proposition: str  # the call or state excluded (E-G04-88)
-    harm: str
+    proposition: FactRef
+    harm: FactRef
     owner: Locator
-    admitted_input: str
+    admitted_input: FactRef
     constructor: Locator
     consumer: Locator
-    public_observation: str
-    bypass: tuple[str, ...]  # who can construct it anyway; non-empty below `proof`
+    public_observation: FactRef
+    bypass: tuple[FactRef, ...] = dc.field(metadata={"unique_refs": True})
     strength: Strength
 
 
 @rec
 class Construction:
     claims: tuple[ExclusionClaim, ...] = ne()
-    admitted: tuple[str, ...] = ne()  # E-V2-E-32: the design-wide stable states
-    excluded: tuple[str, ...] = ne()
+    admitted: tuple[FactRef, ...] = dc.field(
+        metadata={"nonempty": True, "unique_refs": True}
+    )
+    excluded: tuple[FactRef, ...] = dc.field(
+        metadata={"nonempty": True, "unique_refs": True}
+    )
     unknown: tuple[Unknown, ...]  # may be empty: stated, not omitted
 
 
@@ -298,7 +307,7 @@ class Located:
 
 @rec
 class ModelOnly:
-    reason: str
+    reason: FactRef
     tag: Literal["model_only"] = "model_only"
 
 
@@ -308,7 +317,7 @@ Site = Located | ModelOnly
 @rec
 class Atomicity:  # E-V2-D-17: the real code mechanism, as a code reference and never prose
     at: Locator
-    note: str
+    note: FactRef
 
 
 @rec
@@ -324,7 +333,7 @@ class ActionAtom:  # every model step names its domain sentence and its atomicit
     name: str
     symbol: str
     site: Site
-    template: str  # domain sentence; {state_atom} = value after the step, {state_atom@pre} = before it
+    template: FactRef
     atomicity: Atomicity
     tag: Literal["action"] = "action"
 
@@ -334,7 +343,7 @@ class PropertyAtom:
     name: str
     symbol: str
     site: Site
-    statement: str  # the property in domain language (shown to the human when a run violates it)
+    statement: FactRef
     tag: Literal["property"] = "property"
 
 
@@ -358,8 +367,14 @@ class Kill:
 @rec
 class Mutant:
     id: ID
-    description: str
+    description: FactRef
     kills: tuple[Kill, ...] = ne()
+
+
+@rec
+class ModelSource:
+    path: RelPath
+    sha256: Sha
 
 
 @rec
@@ -367,19 +382,15 @@ class Model:
     id: ID
     language: Language
     path: Locator
-    text: str
+    source: ModelSource
     atoms: tuple[Atom, ...] = ne()
-    exclusions: tuple[
-        str, ...
-    ]  # what the model leaves out (nw-design:414); empty = none, stated
-    assumptions: tuple[str, ...]  # bounds and environment assumptions
+    exclusions: tuple[FactRef, ...] = dc.field(metadata={"unique_refs": True})
+    assumptions: tuple[FactRef, ...] = dc.field(metadata={"unique_refs": True})
     mutants: tuple[Mutant, ...]
 
     @property
-    def sha256(
-        self,
-    ) -> str:  # derived, never declared by the producer (E-V2-A-70: model identity)
-        return sha256_text(self.text)
+    def sha256(self) -> str:
+        return self.source.sha256
 
 
 @rec
@@ -393,10 +404,8 @@ class Checked:  # a formal run backs it (rules CL3 and CL4)
     model_id: ID
     properties: tuple[str, ...] = ne()  # names the runs check (Run.checks)
     proof: Proof
-    proof_note: str | None = (
-        None  # required unless passed: what was not run and why, or the counterexample
-    )
-    fairness: str | None = None  # required for liveness
+    proof_note: FactRef | None = None
+    fairness: FactRef | None = None
     tag: Literal["checked"] = "checked"
 
 
@@ -408,19 +417,17 @@ class Constructed:  # excluded by construction: ids of ExclusionClaim in the `co
 
 @rec
 class Argued:  # prose argument; a PASS on it must state its assumptions (ADR wording: "PASS under ...")
-    argument: str
+    argument: tuple[FactRef, ...] = ne()
     tag: Literal["argued"] = "argued"
 
 
 @rec
 class Route:  # admitted input -> producer -> consumer -> public observation (nw-certainty-by-construction:49-52)
-    admitted_input: str
+    admitted_input: FactRef
     producer: Locator
     consumer: Locator
-    public_observation: str
-    bootstrap: str | None = (
-        None  # a cycle needs an explicit bootstrap outside the cycle
-    )
+    public_observation: FactRef
+    bootstrap: FactRef | None = None
     tag: Literal["path"] = "path"
 
 
@@ -429,12 +436,12 @@ Basis = Checked | Constructed | Argued | Route
 
 @rec
 class Claim:
-    statement: str
+    statement: FactRef
     design: Design
-    design_note: str | None = None  # required when BLOCKED: what is missing or refuted
+    design_note: FactRef | None = None
     runtime: Runtime
-    runtime_note: str | None = None  # required when runtime is INDETERMINATE
-    assumptions: tuple[str, ...]  # what a PASS rests on (fairness, bounds, environment)
+    runtime_note: FactRef | None = None
+    assumptions: tuple[FactRef, ...] = dc.field(metadata={"unique_refs": True})
     runs: tuple[ID, ...]  # evidence receipts
     laws: tuple[ID, ...]  # laws that refine this claim at runtime
     basis: Basis
@@ -443,7 +450,7 @@ class Claim:
 
 @rec
 class NotApplicableClaim:  # only `liveness` may take it (nw-design:405-406)
-    reason: str
+    reason: FactRef
     tag: Literal["not_applicable"] = "not_applicable"
 
 
@@ -457,7 +464,7 @@ LivenessEntry = Claim | NotApplicableClaim | Inherited
 
 @rec
 class Closure:  # nw-design:399-406: for every public value, exactly these four, each on both axes
-    subject: str
+    subject: FactRef
     safety: Claim
     inhabitation: Claim
     public_reachability: Claim
@@ -536,7 +543,7 @@ class Judged:
     trace_identity: (
         Sha  # sha256 of the trace the human read: the exact scenario (E-G09-06)
     )
-    note: str | None = None
+    note: FactRef | None = None
     tag: Literal["judged"] = "judged"
 
 
@@ -546,7 +553,7 @@ Review = Pending | Judged
 @rec
 class Scenario:  # never authored: the steps are read from the raw trace of `source_run`
     id: ID
-    title: str
+    title: FactRef
     source_run: ID
     kind: ScenarioKind
     review: Review
@@ -566,7 +573,7 @@ class Applicable:
 
 @rec
 class NotApplicable:
-    reason: str
+    reason: FactRef
     tag: Literal["not_applicable"] = "not_applicable"
 
 
@@ -582,7 +589,6 @@ PAYLOAD: dict[str, type] = {
     "construction": Construction,
     "model": Models,
     "closure": ClosureSet,
-    "receipts": Receipts,
     "scenarios": Scenarios,
 }
 Handoff = dict  # {(kind, scope): Entry}
@@ -590,6 +596,5 @@ REQUIRED_SHARED = (
     "laws",
     "model",
     "closure",
-    "receipts",
     "scenarios",
 )  # construction: projected only

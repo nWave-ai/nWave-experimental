@@ -21,6 +21,7 @@ from tests.des.architect_handoff.tests.test_g10 import (
     atom_,
     base_doc,
     decode,
+    fixture_catalog,
     fresh_copy,
     itf,
     model_,
@@ -116,18 +117,22 @@ class TracesAndTemplates(unittest.TestCase):
         self,
     ):
         with fresh_copy() as d:
-            model = model_of(base_doc(d))
+            doc = base_doc(d)
+            model, catalog = model_of(doc), fixture_catalog(doc)
         full = {"n": 1, "lim": 1, "offset": 0, "count": 0}
         self.assertEqual(
             [],
             R.trace_problems(
                 model,
                 trace_of(("init", full), ("step", {"offset": 1, "lim": 1, "count": 0})),
+                catalog,
             ),
         )
         # `{lim}` is read in the state itself, not in the one before it
         only_before = R.trace_problems(
-            model, trace_of(("init", full), ("step", {"offset": 1, "count": 0}))
+            model,
+            trace_of(("init", full), ("step", {"offset": 1, "count": 0})),
+            catalog,
         )
         self.assertEqual(["state 1: variable 'lim' is not in the trace"], only_before)
         # `{offset@pre}` is read in the state before, not in the state itself
@@ -137,6 +142,7 @@ class TracesAndTemplates(unittest.TestCase):
                 ("init", {"n": 1, "lim": 1, "count": 0}),
                 ("step", {"offset": 1, "lim": 1, "count": 0}),
             ),
+            catalog,
         )
         self.assertEqual(
             [
@@ -153,6 +159,7 @@ class TracesAndTemplates(unittest.TestCase):
                 "The caller moves from count {count@pre} to offset {offset}"
             )
             model = model_of(doc)
+            catalog = fixture_catalog(doc)
         trace = trace_of(
             ("init", {"n": 1, "lim": 1, "offset": 0, "count": 0}),
             ("probeEnd", {"n": 1, "offset": 0}),
@@ -160,28 +167,31 @@ class TracesAndTemplates(unittest.TestCase):
         )
         self.assertEqual(
             ["state 2: variable 'count' is not in the trace"],
-            R.trace_problems(model, trace),
+            R.trace_problems(model, trace, catalog),
         )
 
     def test_a_first_state_cannot_ask_for_a_before_and_a_trace_without_states_or_actions_is_a_problem(
         self,
     ):
         with fresh_copy() as d:
-            model = model_of(base_doc(d))
-        asks = R.trace_problems(model, trace_of(("move", {"offset": 0})))
+            doc = base_doc(d)
+            model, catalog = model_of(doc), fixture_catalog(doc)
+        asks = R.trace_problems(model, trace_of(("move", {"offset": 0})), catalog)
         self.assertEqual(1, len(asks))
         self.assertIn("state 0: template of 'move' asks for offset@pre", asks[0])
         self.assertEqual(
             ["the trace has no state"],
-            R.trace_problems(model, I.parse({"#meta": {"status": "ok"}, "states": []})),
+            R.trace_problems(
+                model, I.parse({"#meta": {"status": "ok"}, "states": []}), catalog
+            ),
         )
         self.assertEqual(
             ["state 0: the trace names no action (it was written without --mbt)"],
-            R.trace_problems(model, trace_of((None, {"offset": 0}))),
+            R.trace_problems(model, trace_of((None, {"offset": 0})), catalog),
         )
         self.assertEqual(
             ["state 0: action 'nope' is not an action atom of model walk"],
-            R.trace_problems(model, trace_of(("nope", {"offset": 0}))),
+            R.trace_problems(model, trace_of(("nope", {"offset": 0})), catalog),
         )
 
     def test_a_template_that_names_something_that_is_not_a_state_is_reported_with_the_action_the_name_and_the_model(
@@ -192,7 +202,7 @@ class TracesAndTemplates(unittest.TestCase):
             atom_(model_(doc, "walk"), "move")["template"] = (
                 "The caller is at {nope} and then at {offset}"
             )
-            problems = R.template_problems(model_of(doc))
+            problems = R.template_problems(model_of(doc), fixture_catalog(doc))
         self.assertEqual(
             [
                 "action 'move': template names 'nope', which is not a state atom of model walk"
@@ -204,14 +214,15 @@ class TracesAndTemplates(unittest.TestCase):
         self,
     ):
         with fresh_copy() as d:
-            model = model_of(base_doc(d))
+            doc = base_doc(d)
+            model, catalog = model_of(doc), fixture_catalog(doc)
         states = [
             ("init", {"n": 1, "lim": 1, "offset": 0, "count": 0}),
             ("step", {"offset": 1, "lim": 1, "count": 0}),
             ("move", {"offset": 2}),
         ]
         bad = I.parse(itf("violation", states))
-        events = R.render_trace(model, bad, ["bounded"])
+        events = R.render_trace(model, bad, ["bounded"], catalog)
         self.assertEqual(4, len(events))
         self.assertEqual(
             (2, "The check fails in this state: a page has at most limit items"),
@@ -219,20 +230,24 @@ class TracesAndTemplates(unittest.TestCase):
         )
         self.assertEqual(
             "The check fails in this state: nope",
-            R.render_trace(model, bad, ["nope"])[-1][1],
+            R.render_trace(model, bad, ["nope"], catalog)[-1][1],
         )
         self.assertEqual(
-            3, len(R.render_trace(model, bad, ["bounded", "completeAtEnd"]))
+            3, len(R.render_trace(model, bad, ["bounded", "completeAtEnd"], catalog))
         )
-        self.assertEqual(3, len(R.render_trace(model, bad, [])))
+        self.assertEqual(3, len(R.render_trace(model, bad, [], catalog)))
         self.assertEqual(
-            3, len(R.render_trace(model, I.parse(itf("ok", states)), ["bounded"]))
+            3,
+            len(
+                R.render_trace(model, I.parse(itf("ok", states)), ["bounded"], catalog)
+            ),
         )
         with self.assertRaises(ValueError):
             R.render_trace(
                 model,
                 I.parse({"#meta": {"status": "violation"}, "states": []}),
                 ["bounded"],
+                catalog,
             )
 
 
@@ -245,7 +260,7 @@ class Scenarios(unittest.TestCase):
             for s in h[("scenarios", "shared")].status.payload.scenarios
             if s.id == sid
         )
-        return v, sc, R.render_scenario(v, sc, d)
+        return v, sc, R.render_scenario(v, sc, d, fixture_catalog(doc))
 
     @staticmethod
     def append_to(path: str) -> None:
@@ -344,9 +359,9 @@ class Scenarios(unittest.TestCase):
         with fresh_copy() as d:
             doc = base_doc(d)
             _, _, mutant = self.view(doc, d, "SC1")
-            description = next(
-                m for m in model_of(doc).mutants if m.id == "M1"
-            ).description
+            description = fixture_catalog(doc).resolve(
+                next(m for m in model_of(doc).mutants if m.id == "M1").description
+            )
             text = R.scenario_text(mutant)
         self.assertEqual(f"What this bug does: {description}", text.splitlines()[1])
         self.assertEqual(f"What this bug does: {description}", R._mutant_line(mutant))

@@ -5,7 +5,7 @@ Use for review and critique tasks - Data architecture and pipeline review specia
 **Wave:** Other
 **Model:** haiku
 **Max turns:** 40
-**Tools:** Read, Glob, Grep, Task
+**Tools:** Read, Glob, Grep, Task, Bash
 
 ## Preloaded skills
 

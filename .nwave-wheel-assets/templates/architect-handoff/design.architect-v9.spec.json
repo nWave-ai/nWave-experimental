@@ -13,17 +13,21 @@
   "## FROM DES",
   "## TASK (template)",
   "## MANIFEST LANGUAGE",
-  "## SUBMIT (template; DES filled the commands)",
+  "## SUBMIT (native host-owned contract",
   "## FROM THE ROOT (verbatim, not verified by DES)",
-  "On Refusal, read its WHAT, WHY and HOW",
+  "schema_version 2",
   "## ALWAYS REQUIRED",
   "des code-fact",
   "## BUDGET",
   "timeout 180",
-  "complete text of the model",
+  "Model.source: {path, sha256}",
   "--backend tlc",
   "weakFair",
   "second set of stressors",
-  "exactly PASS or BLOCKED"
+  "exactly PASS or BLOCKED",
+  "never use historical narration",
+  "inherits",
+  "Shared design",
+  "semantic classifier or substring gate"
  ]
 }

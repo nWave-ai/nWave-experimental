@@ -2,8 +2,8 @@
 
 A consumer repository lints every Markdown file it tracks, so the section DESIGN
 appends to its architecture authority must satisfy the default rule set with no
-configuration: blank lines around every block, unique sub-headings, prose
-wrapped at 80 columns without creating markup, and escaped inline HTML.
+configuration: blank lines around every block, unique compiled-scope sub-headings,
+catalog prose wrapped at 80 columns without creating markup, and escaped inline HTML.
 """
 
 from __future__ import annotations
@@ -14,13 +14,12 @@ import re
 from itertools import pairwise
 
 from des.domain.design_document import DesignDocument
+from tests.des._helpers.host_facts import design_manifest
 
 
 WIDTH = 80
 
 MANIFEST: dict[str, object] = {
-    "schema_version": 1,
-    "authority": {"heading": "Widget color"},
     "architectural_tests": {
         "applicability": "not_applicable",
         "reason": "The fixture has no structural boundary change.",
@@ -103,10 +102,15 @@ MANIFEST: dict[str, object] = {
 }
 
 
-def _render(**changes: object) -> str:
-    manifest = copy.deepcopy(MANIFEST)
-    manifest.update(changes)
-    return DesignDocument.from_json(json.dumps(manifest)).markdown()
+def _document(*, value: int = 1, **changes: object) -> DesignDocument:
+    source = copy.deepcopy(MANIFEST)
+    source.update(changes)
+    manifest = design_manifest(source, source["purpose"], value)
+    return DesignDocument.from_json(json.dumps(manifest), value=value)
+
+
+def _render(*, value: int = 1, **changes: object) -> str:
+    return _document(value=value, **changes).markdown()
 
 
 def _filler(length: int) -> str:
@@ -171,14 +175,14 @@ def test_every_heading_list_table_and_fence_is_surrounded_by_one_blank_line() ->
     assert {"list", "table", "fence", "paragraph"} <= set(kinds)
 
 
-def test_sub_headings_carry_the_section_heading_so_two_sections_never_collide() -> None:
-    first = _render()
-    second = _render(authority={"heading": "Widget size"})
+def test_sub_headings_carry_compiled_scope_so_two_sections_never_collide() -> None:
+    first = _render(value=1)
+    second = _render(value=2)
     first_subs = [line for line in first.splitlines() if line.startswith("### ")]
     second_subs = [line for line in second.splitlines() if line.startswith("### ")]
 
-    assert first.startswith("## Widget color\n\n### Purpose (Widget color)\n")
-    assert all(line.endswith(" (Widget color)") for line in first_subs), first_subs
+    assert first.startswith("## Value 1\n\n### Facts (Value 1)\n")
+    assert all(line.endswith(" (Value 1)") for line in first_subs), first_subs
     assert len(set(first_subs)) == len(first_subs)
     assert not set(first_subs) & set(second_subs)
 
@@ -202,64 +206,81 @@ def test_prose_wraps_at_80_columns_and_keeps_an_unbreakable_token_whole() -> Non
     markdown = _render(purpose=f"See {token} now. {long_purpose}")
     lines = _prose_lines(markdown)
 
-    assert token in lines, "an unbreakable token must stay whole on its own line"
-    assert all(len(line) <= WIDTH for line in lines if line != token), [
-        line for line in lines if len(line) > WIDTH
+    assert token in [line.strip() for line in lines], (
+        "an unbreakable token must stay whole"
+    )
+    assert all(len(line) <= WIDTH for line in lines if line.strip() != token), [
+        line for line in lines if len(line) > WIDTH and line.strip() != token
     ]
     assert " ".join(" ".join(lines).split()).count(long_purpose) == 1
 
 
 def test_list_item_continuation_lines_are_indented_two_spaces() -> None:
     constraint = " ".join(["Preserve existing callers of the widget."] * 4)
-    lines = _render(constraints=[constraint]).splitlines()
-    start = lines.index("### Constraints (Widget color)") + 2
-    item = lines[start : lines.index("", start)]
+    document = _document(constraints=[constraint])
+    lines = document.markdown().splitlines()
+    identifier = document.facts.constraints[0].ref
+    start = next(
+        index
+        for index, line in enumerate(lines)
+        if line.startswith(f"- {identifier}: ")
+    )
+    end = start + 1
+    while end < len(lines) and lines[end].startswith("  "):
+        end += 1
+    item = lines[start:end]
 
     assert len(item) > 1 and item[0].startswith("- ")
     assert all(re.match(r"^  \S", line) for line in item[1:]), item
-    assert " ".join(part.strip() for part in item) == "- " + constraint
+    assert " ".join(part.strip() for part in item) == f"- {identifier}: " + constraint
 
 
 def test_a_continuation_line_never_starts_block_markup() -> None:
-    # Each filler leaves the marker one column short of fitting its line.
-    filler = _filler(WIDTH - 1)
+    # A catalog definition prefix leaves its marker just short of fitting.
+    document = _document()
+    purpose_prefix = f"- {document.facts.purpose.ref}: "
+    decision_prefix = f"- {document.facts.decisions[0].ref}: "
+    observation_prefix = f"- {document.facts.public_oracle.observation.ref}: "
+    filler = _filler(WIDTH - len(purpose_prefix) - 1)
     markdown = _render(
         purpose=f"{filler} - dash tail",
-        decisions=[f"{_filler(WIDTH - 3)} # hash tail"],
+        decisions=[f"{_filler(WIDTH - len(decision_prefix) - 1)} # hash tail"],
         public_oracle={
             **MANIFEST["public_oracle"],  # type: ignore[dict-item]
-            "observation": f"{_filler(WIDTH - 15)} 1. ordered tail",
+            "observation": f"{_filler(WIDTH - len(observation_prefix) - 2)} 1. ordered tail",
         },
     )
 
-    assert f"\n{filler}\n\\- dash tail\n" in markdown
+    assert f"{purpose_prefix}{filler}\n  \\- dash tail\n" in markdown
     assert "\n  \\# hash tail\n" in markdown
-    assert "\n1\\. ordered tail\n" in markdown
+    assert "\n  1\\. ordered tail\n" in markdown
 
 
 def test_angle_brackets_are_escaped_in_prose_but_verbatim_inside_code_spans() -> None:
     markdown = _render(purpose="Refuse <field> but keep `a<b` verbatim.")
 
-    assert "\nRefuse \\<field> but keep `a<b` verbatim.\n" in markdown
+    assert "Refuse \\<field> but keep `a<b` verbatim.\n" in markdown
 
 
-def test_a_pipe_in_a_table_cell_is_escaped() -> None:
+def test_a_pipe_in_a_legitimate_scalar_table_cell_is_escaped() -> None:
+    contract = "Owns <color> left | right and `a|b<c` in code."
     markdown = _render(
-        targets=[
-            {
-                "path": "src/widget.py",
-                "decision": "EXTEND",
-                "reason": "Owns <color> left | right and `a|b<c` in code.",
-            }
-        ]
+        agreement_analysis={
+            "applicability": "applicable",
+            "parties": [
+                {
+                    "contract": contract,
+                    "role": "producer",
+                    "locator": "src/widget.py:40",
+                    "decision": "MIGRATED",
+                    "reason": "Emits the selected color.",
+                }
+            ],
+        },
     )
 
-    # GFM splits cells on every unescaped pipe, even inside a code span, and
-    # removes the backslash from an escaped one, so both render verbatim.
-    assert (
-        "| `src/widget.py` | EXTEND | Owns \\<color> left \\| right and `a\\|b<c` in code. |\n"
-        in markdown
-    )
+    # The scalar join key is allowed prose; reasons remain FactRefs.
+    assert "Owns \\<color> left \\| right and `a\\|b<c` in code." in markdown
 
 
 def test_each_verification_argv_renders_whole_inside_one_sh_fence() -> None:

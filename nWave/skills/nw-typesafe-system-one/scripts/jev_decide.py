@@ -66,7 +66,7 @@ def _content(value: object, *, nullable: bool = True) -> bool:
 
 def _request_bytes(path: Path) -> bytes:
     try:
-        body = path.read_bytes()
+        body = sys.stdin.buffer.read() if str(path) == "-" else path.read_bytes()
         payload = _decode(body)
     except (OSError, UnicodeDecodeError, ValueError) as error:
         raise ValueError(
@@ -196,6 +196,10 @@ def _validate_response(payload: object, questions: dict) -> None:
 
 
 def _write(path: Path, body: bytes) -> None:
+    if str(path) == "-":
+        sys.stdout.buffer.write(body)
+        sys.stdout.buffer.flush()
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(body)
 
@@ -213,8 +217,12 @@ def _exit_code_for_http_error(status_code: int) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--request", required=True, type=Path)
-    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument(
+        "--request", required=True, type=Path, help="request JSON file, or - for stdin"
+    )
+    parser.add_argument(
+        "--output", required=True, type=Path, help="result JSON file, or - for stdout"
+    )
     parser.add_argument(
         "--endpoint", default=os.environ.get("TYPESAFE_BASE_URL", _ENDPOINT)
     )
@@ -262,7 +270,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"typesafe: invalid response ({error})", file=sys.stderr)
         return 4
     _write(args.output, response_body)
-    print(f"typesafe: recorded {args.output}")
+    print(
+        f"typesafe: recorded {args.output}",
+        file=sys.stderr if str(args.output) == "-" else sys.stdout,
+    )
     return 0
 
 

@@ -18,13 +18,15 @@ from des.domain.design_document import (
 from des.ports.driven_ports.task_invocation_port import (
     ApplicableImpactClosure,
     ApplicablePrefactoring,
+    FactId,
+    FactRef,
     ImpactItem,
-    LegacyDesignFacts,
     NotApplicable,
+    PreNormalizedDesign,
     ReuseAnalysis,
     ReuseCandidate,
-    UnassessedDesignDecision,
 )
+from tests.des._helpers.host_facts import design_manifest
 
 
 def manifest() -> dict:
@@ -32,9 +34,7 @@ def manifest() -> dict:
         "applicability": "not_applicable",
         "reason": "No dependency boundary changes.",
     }
-    return {
-        "schema_version": 1,
-        "authority": {"heading": "Native reservation contract"},
+    supplied = {
         "purpose": "Preserve reservation observations across native consumers.",
         "constraints": ["Cancelled reservations cannot be consumed."],
         "targets": [
@@ -138,6 +138,40 @@ def manifest() -> dict:
         ],
         "oracle_verification_index": 0,
     }
+    return design_manifest(supplied, supplied["purpose"], 1)
+
+
+def _ref(supplied: dict, text: str) -> dict:
+    """Name fixture text explicitly; production still owns reference admission."""
+    for record in supplied["facts"]:
+        if record["text"] == text:
+            return {"ref": record["id"]}
+    identifier = f"Fixture-{len(supplied['facts']) + 1}"
+    supplied["facts"].append({"id": identifier, "text": text})
+    return {"ref": identifier}
+
+
+def _typed_ref(supplied: dict, text: str) -> FactRef:
+    return FactRef(FactId(_ref(supplied, text)["ref"]))
+
+
+@pytest.mark.parametrize(
+    "retired,token",
+    [
+        ({"schema_version": 1}, "DesignManifestSchemaRetired"),
+        (
+            {"authority": {"heading": "Native reservation contract"}},
+            "DesignKeyNotInGrammar",
+        ),
+    ],
+)
+def test_retired_schema_and_author_heading_are_refused(retired, token) -> None:
+    supplied = {**manifest(), **retired}
+    with pytest.raises(DesignDocumentInvalid, match=token) as refused:
+        DesignDocument.from_json(json.dumps(supplied))
+    assert refused.value.defects[-1] == (
+        "UNRUN: bound-state reference checks (manifest did not decode)"
+    )
 
 
 @pytest.mark.parametrize(
@@ -165,8 +199,8 @@ def test_deliberate_non_applicability_requires_a_real_reason(field: str) -> None
     supplied[field] = {"applicability": "not_applicable", "reason": "  "}
     with pytest.raises(DesignDocumentInvalid):
         DesignDocument.from_json(json.dumps(supplied))
-    supplied[field]["reason"] = (
-        "This local change touches no applicable boundary or agreement."
+    supplied[field]["reason"] = _ref(
+        supplied, "This local change touches no applicable boundary or agreement."
     )
     facts = DesignDocument.from_json(json.dumps(supplied)).facts
     assert isinstance(getattr(facts, field), NotApplicable)
@@ -210,7 +244,7 @@ def test_a_craft_target_is_never_also_an_acceptance_support(decision: str) -> No
 
 def test_native_assurance_and_preservation_selection_survive_handover_restart() -> None:
     document = DesignDocument.from_json(json.dumps(manifest()))
-    bound = document.facts_at("docs/decisions.md#Native reservation contract")
+    bound = document.facts_at("docs/decisions.md#Value 1")
     payload = _canonical_bytes(
         "Preserve reservations", (HandoverValue("Reservation cancellation", (), bound),)
     )
@@ -230,15 +264,19 @@ def test_native_assurance_and_preservation_selection_survive_handover_restart() 
     )
 
 
-def test_legacy_absence_is_readable_history_not_approved_non_applicability() -> None:
+def test_pre_normalized_absence_is_opaque_and_refused_not_approved_non_applicability() -> (
+    None
+):
     bound = DesignDocument.from_json(json.dumps(manifest())).facts_at(
-        "docs/decisions.md#Native reservation contract"
+        "docs/decisions.md#Value 1"
     )
     payload = json.loads(
         _canonical_bytes(
             "Preserve reservations", (HandoverValue("Cancellation", (), bound),)
         )
     )
+    del payload["values"][0]["authority"]["facts"]
+    payload["values"][0]["authority"]["schema_version"] = 1
     for name in (
         "architectural_tests",
         "contract_tests",
@@ -252,9 +290,9 @@ def test_legacy_absence_is_readable_history_not_approved_non_applicability() -> 
     restored = read_handover(raw)
     assert not isinstance(restored, Blocked)
     facts = restored.values[0].authority
-    assert isinstance(facts, LegacyDesignFacts)
-    assert isinstance(facts.architectural_tests, UnassessedDesignDecision)
-    assert "unassessed" in design_facts_defect(facts)
+    assert isinstance(facts, PreNormalizedDesign)
+    assert facts.raw == payload["values"][0]["authority"]
+    assert "DesignFactsPreNormalized" in design_facts_defect(facts)
     reencoded = json.loads(_canonical_bytes(restored.request, restored.values))
     assert reencoded == payload
 
@@ -264,7 +302,12 @@ def _closed(items: list[dict]) -> dict:
 
 
 def _item(kind: str, locator: str, decision: str = "CHANGED") -> dict:
-    return {"kind": kind, "locator": locator, "decision": decision, "reason": "Why."}
+    return {
+        "kind": kind,
+        "locator": locator,
+        "decision": decision,
+        "reason": _ref(manifest(), "Why."),
+    }
 
 
 def test_input_description_documents_impact_closure() -> None:
@@ -274,7 +317,11 @@ def test_input_description_documents_impact_closure() -> None:
 def test_unclosed_impact_closure_names_every_missing_locator_in_one_refusal() -> None:
     supplied = manifest()
     supplied["targets"].append(
-        {"path": "lib/extra.ml", "decision": "CREATE_NEW", "reason": "New."}
+        {
+            "path": "lib/extra.ml",
+            "decision": "CREATE_NEW",
+            "reason": _ref(supplied, "New."),
+        }
     )
     supplied["impact_closure"] = _closed([_item("runtime", "lib/reservations.ml")])
     with pytest.raises(DesignDocumentInvalid) as refused:
@@ -288,7 +335,7 @@ def test_not_applicable_closure_is_refused_when_a_consumer_is_declared() -> None
     supplied = manifest()
     supplied["impact_closure"] = {
         "applicability": "not_applicable",
-        "reason": "Nothing else is reached.",
+        "reason": _ref(supplied, "Nothing else is reached."),
     }
     with pytest.raises(DesignDocumentInvalid, match=r"bin/main\.ml:1"):
         DesignDocument.from_json(json.dumps(supplied))
@@ -302,7 +349,7 @@ def test_closed_manifest_constructs_and_carries_reuse_and_impact_everywhere() ->
                 "symbol": "Reservations",
                 "locator": "lib/reservations.ml:3",
                 "decision": "EXTEND",
-                "reason": "Existing owner.",
+                "reason": _ref(supplied, "Existing owner."),
             }
         ]
     }
@@ -310,14 +357,27 @@ def test_closed_manifest_constructs_and_carries_reuse_and_impact_everywhere() ->
     assert document.facts.reuse_analysis == ReuseAnalysis(
         (
             ReuseCandidate(
-                "Reservations", "lib/reservations.ml:3", "EXTEND", "Existing owner."
+                "Reservations",
+                "lib/reservations.ml:3",
+                "EXTEND",
+                _typed_ref(supplied, "Existing owner."),
             ),
         )
     )
     assert document.facts.impact_closure == ApplicableImpactClosure(
         (
-            ImpactItem("runtime", "lib/reservations.ml", "CHANGED", "Why."),
-            ImpactItem("consumer", "bin/main.ml:1", "UNCHANGED_COMPATIBLE", "Why."),
+            ImpactItem(
+                "runtime",
+                "lib/reservations.ml",
+                "CHANGED",
+                _typed_ref(supplied, "Why."),
+            ),
+            ImpactItem(
+                "consumer",
+                "bin/main.ml:1",
+                "UNCHANGED_COMPATIBLE",
+                _typed_ref(supplied, "Why."),
+            ),
         )
     )
     projected = json.loads(document.facts_json())
@@ -346,7 +406,7 @@ def test_non_source_targets_are_closed_by_role_kinds_not_language_names() -> Non
     items = list(supplied["impact_closure"]["items"])
     for path, kind in extras:
         supplied["targets"].append(
-            {"path": path, "decision": "EXTEND", "reason": "Metadata."}
+            {"path": path, "decision": "EXTEND", "reason": _ref(supplied, "Metadata.")}
         )
         items.append(_item(kind, path))
     supplied["impact_closure"] = _closed(items)
@@ -365,11 +425,16 @@ def test_non_source_targets_are_closed_by_role_kinds_not_language_names() -> Non
 def _defects(supplied: dict) -> tuple[str, ...]:
     with pytest.raises(DesignDocumentInvalid) as refused:
         DesignDocument.from_json(json.dumps(supplied))
-    return refused.value.defects
+    assert refused.value.defects[-1] == (
+        "UNRUN: bound-state reference checks (manifest did not decode)"
+    )
+    return tuple(
+        defect for defect in refused.value.defects if not defect.startswith("UNRUN:")
+    )
 
 
 def _naming(defects: tuple[str, ...], pointer: str) -> list[str]:
-    return [defect for defect in defects if defect.startswith(pointer)]
+    return [defect for defect in defects if pointer in defect]
 
 
 def test_two_independent_field_defects_are_refused_together() -> None:
@@ -400,7 +465,7 @@ def test_a_field_defect_and_a_cross_field_defect_are_refused_together() -> None:
     supplied["verification"] = "dune runtest"
     supplied["oracle_verification_index"] = 5
     (only,) = _defects(supplied)
-    assert only.startswith("manifest.verification "), only
+    assert "manifest.verification " in only, only
 
 
 def test_every_violated_design_decision_rule_is_refused_together() -> None:
@@ -437,7 +502,7 @@ def test_an_unlinked_contract_party_names_the_parties_the_agreement_declares() -
 
     (producer,) = _defects(supplied)
 
-    assert producer.startswith("contract_tests.producer"), producer
+    assert "contract_tests.producer" in producer, producer
     assert "lib/reservations.ml:1" in producer, producer
     # The contract named with a different spelling than the agreement's.
     supplied = manifest()
@@ -452,17 +517,20 @@ def test_an_unlinked_contract_party_names_the_parties_the_agreement_declares() -
     assert "bin/main.ml:1" in consumer, consumer
 
 
-def test_typed_architect_input_retains_formal_bytes_and_every_existing_decision():
+def test_typed_architect_input_retains_model_sources_and_every_existing_decision():
     from pathlib import Path
 
-    from des.application.architect_handoff import wire
-    from des.application.architect_handoff.g10 import load_files
+    from des.application.architect_handoff import decode
 
-    fixture = Path(__file__).parents[2] / "architect_handoff/fixtures/oo.g10.json"
-    handoff, defects = load_files([str(fixture)])
-    assert handoff is not None and not defects
+    fixture = (
+        Path(__file__).parents[2]
+        / "acceptance/normalized_architect_handoff/fixture/doctor_version_sync/shared.json"
+    )
+    normalized = json.loads(fixture.read_text())
     supplied = manifest()
-    supplied["architect_handoff"] = wire(handoff)
+    supplied["facts"].extend(normalized["facts"])
+    supplied["architect_handoff"] = normalized["architect_handoff"]
+    handoff = decode(supplied["architect_handoff"])
     document = DesignDocument.from_json(json.dumps(supplied))
     restored = read_handover(
         _canonical_bytes(
@@ -473,12 +541,23 @@ def test_typed_architect_input_retains_formal_bytes_and_every_existing_decision(
     assert not isinstance(restored, Blocked)
     facts = restored.values[0].authority
     assert facts.architect_handoff == handoff
-    assert facts.decisions == tuple(supplied["decisions"])
-    assert facts.obligations == tuple(supplied["constraints"])
+    assert facts.decisions == tuple(
+        FactRef(FactId(item["ref"])) for item in supplied["decisions"]
+    )
+    assert facts.constraints == tuple(
+        FactRef(FactId(item["ref"])) for item in supplied["constraints"]
+    )
     assert facts.reuse_analysis == document.facts.reuse_analysis
     assert facts.agreement_analysis == document.facts.agreement_analysis
     assert facts.impact_closure == document.facts.impact_closure
     assert facts.adr == document.facts.adr
+    assert facts.facts == document.facts.facts
+    models = handoff[("model", "shared")].status.payload.models
+    restored_models = facts.architect_handoff[("model", "shared")].status.payload.models
+    assert [(model.source.path, model.source.sha256) for model in restored_models] == [
+        (model.source.path, model.source.sha256) for model in models
+    ]
+    assert models
     assert "architect_handoff" in json.loads(document.facts_json())
     assert (
         document.semantic_sha256
@@ -491,30 +570,40 @@ def test_typed_architect_input_retains_formal_bytes_and_every_existing_decision(
     }
     with pytest.raises(DesignDocumentInvalid, match="WHAT"):
         DesignDocument.from_json(json.dumps(broken))
+    retired = manifest()
+    retired["architect_handoff"] = json.loads(
+        (
+            Path(__file__).parents[2] / "architect_handoff/fixtures/oo.g10.json"
+        ).read_text()
+    )
+    with pytest.raises(
+        DesignDocumentInvalid,
+        match="DesignFactRefExpected|ArchitectHandoffModelTextRetired",
+    ):
+        DesignDocument.from_json(json.dumps(retired))
 
 
-def test_absent_architect_handoff_preserves_pre_port_manifest_identity():
+def test_absent_architect_handoff_has_the_complete_normalized_manifest_identity():
     import hashlib
 
     for include_adr in (True, False):
         supplied = manifest()
         if not include_adr:
             supplied.pop("adr")
-        legacy_normalized = {**supplied, "adr": supplied.get("adr")}
+        document = DesignDocument.from_json(json.dumps(supplied))
+        normalized = json.loads(document.facts_json())
+        assert "architect_handoff" not in normalized
+        assert normalized["adr"] == supplied.get("adr")
+        identity = {**supplied, "adr": supplied.get("adr")}
         expected = hashlib.sha256(
             json.dumps(
-                legacy_normalized,
-                sort_keys=True,
-                ensure_ascii=False,
-                separators=(",", ":"),
+                identity, sort_keys=True, ensure_ascii=False, separators=(",", ":")
             ).encode("utf-8")
         ).hexdigest()
-        assert (
-            DesignDocument.from_json(json.dumps(supplied)).semantic_sha256 == expected
-        )
+        assert document.semantic_sha256 == expected
 
 
-def test_strict_architect_receipt_schema_requires_array_artifacts_and_admits_authored_claims():
+def test_authored_receipts_are_retired_while_driven_receipt_artifacts_and_argv_stay_strict():
     import jsonschema
 
     from des.adapters.driven.task_invocation.model_envelope import codex_schema_for
@@ -567,7 +656,31 @@ def test_strict_architect_receipt_schema_requires_array_artifacts_and_admits_aut
         del missing_artifacts["artifacts"]
         with pytest.raises(jsonschema.ValidationError):
             validator.validate(supplied_input(missing_artifacts))
-        validator.validate(supplied_input(raw))
+        with pytest.raises(jsonschema.ValidationError):
+            validator.validate(supplied_input(raw))
+    for artifacts in (None,):
+        defects = []
+        assert (
+            g10_codec.dec(
+                g10_types.Run, {**raw, "artifacts": artifacts}, "$.run", defects
+            )
+            is g10_codec.BAD
+        )
+        assert defects
+    missing_artifacts = dict(raw)
+    del missing_artifacts["artifacts"]
+    defects = []
+    decoded_default = g10_codec.dec(g10_types.Run, missing_artifacts, "$.run", defects)
+    assert not defects and decoded_default.artifacts == ()
+    with pytest.raises(DesignDocumentInvalid, match="ArchitectHandoffSectionRetired"):
+        DesignDocument.from_json(
+            json.dumps(
+                {
+                    **manifest(),
+                    "architect_handoff": receipt_input(raw),
+                }
+            )
+        )
     defects = []
     decoded = g10_codec.dec(g10_types.Run, raw, "$.run", defects)
     assert not defects and decoded.artifacts == ()
@@ -597,7 +710,7 @@ def test_strict_architect_receipt_schema_requires_array_artifacts_and_admits_aut
                 )
             )
         assert all(
-            expected == schema_admits == decoder_admits
+            not schema_admits and expected == decoder_admits
             for _, expected, schema_admits, decoder_admits in observations
         ), observations
 
@@ -615,7 +728,7 @@ def test_explicit_no_change_preserves_consultation_without_mutation(consulted):
                 "symbol": path,
                 "locator": path + ":1",
                 "decision": "REUSE",
-                "reason": "Consult existing owner.",
+                "reason": _ref(supplied, "Consult existing owner."),
             }
             for path in consulted
         ]
@@ -632,7 +745,9 @@ def test_explicit_no_change_preserves_consultation_without_mutation(consulted):
 
 
 @pytest.mark.parametrize("decision", ["EXTEND", "CREATE_NEW"])
-def test_required_and_omitted_product_change_have_identical_legacy_identity(decision):
+def test_required_and_omitted_product_change_have_identical_normalized_identity(
+    decision,
+):
     supplied = manifest()
     supplied["targets"][0]["decision"] = decision
     omitted = DesignDocument.from_json(json.dumps(supplied))
@@ -640,7 +755,7 @@ def test_required_and_omitted_product_change_have_identical_legacy_identity(deci
     explicit = DesignDocument.from_json(json.dumps(supplied))
     assert explicit.semantic_sha256 == omitted.semantic_sha256
     assert explicit.facts_json() == omitted.facts_json()
-    assert "product_change" not in json.loads(explicit.facts_json())
+    assert json.loads(explicit.facts_json())["product_change"] == "required"
     assert explicit.markdown() == omitted.markdown()
 
 
@@ -659,7 +774,11 @@ def test_product_change_refusal_explains_declared_relation(change, paths):
     if change is not None:
         supplied["product_change"] = change
     supplied["targets"] = [
-        {"path": path, "decision": "EXTEND", "reason": "Existing owner."}
+        {
+            "path": path,
+            "decision": "EXTEND",
+            "reason": _ref(supplied, "Existing owner."),
+        }
         for path in paths
     ]
     with pytest.raises(DesignDocumentInvalid) as refused:

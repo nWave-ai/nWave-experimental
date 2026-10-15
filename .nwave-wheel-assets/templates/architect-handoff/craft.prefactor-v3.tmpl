@@ -25,6 +25,7 @@ Make only the declared move on the owned paths. Change no behaviour, no schema a
 - Use the skills named in your definition on their triggers.
 - Do not edit the preservation oracle or the design authority. Do not review your own work.
 - Run the preservation oracle yourself if diagnosis needs execution; your local result does not replace the recorded measurement.
+- After every edit, also run the existing tests that reference the files you changed: the project's touched-file test selection if it has one (for example its pre-commit test hook), otherwise the test files that import or name those files. A failure there means the move changed behaviour: repair it inside the owned paths, or return `rejected` with `blocked_by: design` and the failing test ids.
 - Use Jev (nw-typesafe-system-one) for semantic judgments, such as whether the move preserves the named observation. State the capability limit if you ask fewer questions than the skill allows.
 
 ## RETURN

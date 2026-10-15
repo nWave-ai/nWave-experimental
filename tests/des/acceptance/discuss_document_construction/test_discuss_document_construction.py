@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from pathlib import Path
 
 import pytest
 from tests.common.in_process_cli import run_cli_in_process
+from tests.des._helpers.host_facts import design_manifest
 from tests.des.acceptance.design_document_construction.test_design_document_construction import (
-    MANIFEST,
+    WIDGET_INPUT,
 )
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import base_repository
 
@@ -172,13 +174,7 @@ def test_public_design_binds_discuss_graph_and_replay_retains_facts(
     root = base_repository(tmp_path / "repository")
     raw = json.dumps(payload())
     assert call(root, raw)[0] == 0
-    code, out, err = run_cli_in_process(
-        ["design", "--repo-root", str(root), "--value", "1", "--input", "-"],
-        cwd=root,
-        stdin_text=json.dumps(MANIFEST),
-        catch_all=True,
-    )
-    assert code == 0, out + err
+    bind_design(root, 1)
     handover = root / ".nwave/des/handover.json"
     bound = handover.read_bytes()
     assert call(root, raw)[0] == 0 and handover.read_bytes() == bound
@@ -200,13 +196,7 @@ def test_public_discuss_preserves_ordered_multi_dependencies_through_design_and_
     )
     raw = json.dumps(supplied)
     assert call(root, raw)[0] == 0
-    code, out, err = run_cli_in_process(
-        ["design", "--repo-root", str(root), "--value", "3", "--input", "-"],
-        cwd=root,
-        stdin_text=json.dumps(MANIFEST),
-        catch_all=True,
-    )
-    assert code == 0, out + err
+    bind_design(root, 3)
     document = root / "docs/product/brief.md"
     handover = root / ".nwave/des/handover.json"
     before = (document.read_bytes(), handover.read_bytes())
@@ -281,6 +271,8 @@ def test_discuss_race_reports_indeterminate_with_authority_and_untouched_winner(
     original_create = handover._create_if_absent
 
     def external_creator(path: Path, raw: bytes) -> bool | handover.Blocked:
+        if path != handover.handover_path(root):
+            return original_create(path, raw)
         assert path == handover.handover_path(root)
         assert original_create(path, winner_raw) is True
         return False
@@ -320,10 +312,28 @@ def call_replacing(root: Path, raw: str) -> tuple[int, str, str]:
 
 
 def bind_design(root: Path, position: int) -> None:
+    """Bind the actual value's delta against the fixture's one common catalog."""
+    state = root / ".nwave/des/handover.json"
+    graph = json.loads(state.read_bytes())
+    shared = design_manifest(WIDGET_INPUT, WIDGET_INPUT["purpose"], 0)
+    if "shared_design" not in graph:
+        code, out, err = run_cli_in_process(
+            ["design", "--repo-root", str(root), "--shared", "--input", "-"],
+            cwd=root,
+            stdin_text=json.dumps(shared),
+            catch_all=True,
+        )
+        assert code == 0, out + err
+    manifest = copy.deepcopy(shared)
+    identifier = f"V{position}-purpose"
+    manifest["purpose"] = {"ref": identifier}
+    manifest["facts"] = [
+        {"id": identifier, "text": graph["values"][position - 1]["observation"]}
+    ]
     code, out, err = run_cli_in_process(
         ["design", "--repo-root", str(root), "--value", str(position), "--input", "-"],
         cwd=root,
-        stdin_text=json.dumps(MANIFEST),
+        stdin_text=json.dumps(manifest),
         catch_all=True,
     )
     assert code == 0, out + err

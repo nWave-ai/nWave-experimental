@@ -22,6 +22,7 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from tests.common.in_process_cli import run_cli_in_process
+from tests.des._helpers.step_stimulus import immutable_source
 from tests.des.acceptance import fake_provider
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     PACKAGE_PARENT,
@@ -29,9 +30,13 @@ from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     asked,
     base_repository,
     block,
+    git,
     hermetic_environment,
     observation,
     stepper,
+)
+from tests.des.acceptance.steps_for_the_orchestrator.test_native_assertion_failure_is_measured_red import (
+    MARKER,
 )
 from tests.des.acceptance.steps_for_the_orchestrator.test_verify_retains_native_evidence_without_provider import (
     ORACLE,
@@ -81,13 +86,23 @@ def _host_result(role: str, outcome: str, diagnostic: str) -> str:
 
 COUNT_AND_RUN = "tests/acceptance/count_and_run.py"
 COUNT_AND_RUN_SOURCE = (
-    "import subprocess\nimport sys\n\n"
+    "import json\nimport sys\nimport pytest\n\n"
     "counter, oracle = sys.argv[1], sys.argv[2]\n"
     "with open(counter, 'a', encoding='utf-8') as handle:\n"
     "    handle.write('1')\n"
-    "raise SystemExit(\n"
-    "    subprocess.run([sys.executable, '-m', 'pytest', oracle]).returncode\n"
-    ")\n"
+    "counts = dict(version=1, observed=0, assertions_failed=0, setup_failed=0)\n"
+    "class Observation:\n"
+    "    def pytest_runtest_logreport(self, report):\n"
+    "        if report.when == 'call':\n"
+    "            counts['observed'] += 1\n"
+    "            counts['assertions_failed'] += int(report.failed)\n"
+    "        else:\n"
+    "            counts['setup_failed'] += int(report.failed)\n"
+    "    def pytest_collectreport(self, report):\n"
+    "        counts['setup_failed'] += int(report.failed)\n"
+    "status = pytest.main([oracle], plugins=[Observation()])\n"
+    f"print({MARKER!r} + json.dumps(counts))\n"
+    "raise SystemExit(status)\n"
 )
 
 
@@ -111,9 +126,14 @@ def _counting_declared_argv(root: Path, counter: Path) -> list[str]:
 
 def _crafted_counting(root: Path, step, counter: Path, *, criteria=None) -> list[str]:
     argv = _counting_declared_argv(root, counter)
+    baseline = git(root, "rev-parse", "HEAD")
 
     def selected_step(*args, **kwargs):
+        if args[0] == "oracle":
+            args = (*args, "--baseline", baseline)
         result = step(*args, **kwargs)
+        if args[0] == "oracle":
+            assert result[0] == 0, result[1] + result[2]
         if args[0] == "design" and result[0] == 0 and criteria is not None:
             manifest = {
                 "schema_version": 2,
@@ -321,6 +341,8 @@ def _prepare(
     assert lines["ROLE"] == role
     assert lines["CANDIDATE"] == candidate
     assert len(lines["INPUT-SHA256"]) == 64
+    # The recorder wraps the RESULT-SCHEMA object; the host learns it here.
+    assert '{"structured_output":' in lines["RESULT-ENVELOPE"], lines
     path = root / lines["INPUT"]
     assert path.is_file(), lines
     return lines, path
@@ -584,6 +606,22 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
                 path: path.read_bytes()
                 for path in result_directory.glob("*-result.json")
             } == before_invalid
+        # A bare RESULT-SCHEMA object, without the recorder wrapper, is refused
+        # with a remedy that names the wrapper rather than an opaque key error.
+        code, _, out, err = _record(
+            root,
+            step,
+            turn=_RecordedTurn(role=role, candidate=candidate, session_id=session_id),
+            payload=json.dumps(
+                json.loads(_host_result(role, outcome, diagnostic))["structured_output"]
+            ),
+            prepared_input=examiner_input if role == "examiner" else reviewer_input,
+        )
+        assert code != 0, out + err
+        refusal = block(out, err)
+        assert refusal["WHAT"] == "RoleResultMalformed", refusal
+        assert "structured_output envelope" in refusal["WHY"], refusal
+        assert '{"structured_output":' in refusal["HOW"], refusal
 
         payload = _host_result(role, outcome, diagnostic)
         code, recorded, out, err = _record(
@@ -607,6 +645,10 @@ def test_preparing_review_and_examine_adds_no_native_execution_and_a_duplicate_i
             else f"des integrate --repo-root {root} --candidate {candidate}"
         )
         assert recorded["NEXT"] == expected_next
+        # The outcome is a host observation: it neither admits nor refuses
+        # integration, and the recorder says so where the host decides.
+        assert "des integrate" in recorded["OUTCOME-EFFECT"], recorded
+        assert "host observation" in recorded["OUTCOME-EFFECT"], recorded
         result = root / recorded["RESULT"]
         original = result.read_bytes()
         result_document = json.loads(original)
@@ -2523,15 +2565,20 @@ def _verdicts(witness: list[dict[str, object]]) -> list[list[object]]:
 def test_both_roles_see_every_bound_oracle_verdict_and_the_examiner_no_locator(
     root: Path, step, tmp_path: Path
 ) -> None:
+    original_source = git(root, "rev-parse", "HEAD")
+    original_tree = git(root, "rev-parse", f"{original_source}^{{tree}}")
     _crafted(root, step)
-    # A remeasure after craft binds a GREEN oracle without refusing: the
-    # earlier RED must stay visible next to it.
+    # A GREEN remeasure names its own immutable source; the earlier original
+    # RED remains visible without measuring the mutable workspace as a fallback.
+    green_source, green_tree = immutable_source(root, (TARGET,))
     code, out, err = step(
         "oracle",
         "--repo-root",
         str(root),
         "--value",
         "1",
+        "--baseline",
+        green_source,
         answers=[
             {
                 "structured_output": {
@@ -2558,12 +2605,29 @@ def test_both_roles_see_every_bound_oracle_verdict_and_the_examiner_no_locator(
     assert {
         oracle["oracle"] for entry in reviewer_witness for oracle in entry["oracles"]
     } == {ORACLE}
+    assert [entry["baseline"] for entry in reviewer_witness] == [
+        {"sha": original_source, "tree": original_tree, "source": "explicit"},
+        {"sha": green_source, "tree": green_tree, "source": "explicit"},
+    ], (
+        "WHAT: reviewer history lost the independently selected RED/GREEN source identities. "
+        "WHY: verdicts must describe the immutable commits actually measured. "
+        "HOW: retain each witness's resolved baseline SHA, tree and explicit provenance."
+    )
     examiner_value = json.loads(examiner_input.read_bytes())["selected_acceptance"][0]
     assert _verdicts(examiner_value["oracle_witness"]) == [["red"], ["green"]]
     assert all(entry["current"] is True for entry in examiner_value["oracle_witness"])
     examiner_witness = json.dumps(examiner_value["oracle_witness"])
     assert ORACLE not in examiner_witness
     assert TARGET not in examiner_witness
+    assert (
+        all("baseline" not in entry for entry in examiner_value["oracle_witness"])
+        and original_source not in examiner_witness
+        and green_source not in examiner_witness
+    ), (
+        "WHAT: source-blind examination exposes immutable source provenance. "
+        "WHY: examiner evidence must not widen to reviewer-only baseline identities. "
+        "HOW: preserve the existing examiner witness whitelist when projecting baseline records."
+    )
 
     # Integration releases all per-value refs. Candidate packets must retain
     # the same bound history, rather than silently becoming "unmeasured".

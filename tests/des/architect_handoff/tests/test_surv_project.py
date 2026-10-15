@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import collections
 import copy
+import dataclasses
 import json
 import re
 import unittest
@@ -20,6 +21,8 @@ from tests.des.architect_handoff.tests.test_g10 import (
     base_doc,
     closure,
     decode,
+    fixture_catalog,
+    fixture_context,
     fresh_copy,
     judged,
     law,
@@ -32,6 +35,7 @@ from tests.des.architect_handoff.tests.test_g10 import (
 from des.application.architect_handoff import g10_codec as C
 from des.application.architect_handoff import g10_project as P
 from des.application.architect_handoff import g10_types as T
+from des.ports.driven_ports.task_invocation_port import FactId, FactRef
 
 
 def payload_of(doc: dict, kind: str, scope: str = "shared"):
@@ -61,14 +65,9 @@ class TheGrammarTheArchitectReads(unittest.TestCase):
             text,
         )
         # The old assertion pinned an overclaim: literal argv data may be blank.
-        self.assertIn(
-            "Strings must be nonblank, except later elements of `Run.argv`", text
-        )
-        self.assertIn(
-            "(command argv data arguments), which may be blank or whitespace "
-            "and are kept literally; the executable (first element) must be nonblank",
-            text,
-        )
+        self.assertIn("Strings must be nonblank", text)
+        self.assertIn("Semantic slots are exact FactRef objects {ref: FactId}", text)
+        self.assertNotIn("Receipts {", text)
         self.assertIn(
             "[X]+ is a list with at least one item; a field with `?` may be left out.",
             text,
@@ -81,35 +80,31 @@ class TheGrammarTheArchitectReads(unittest.TestCase):
     def test_each_field_is_shown_with_the_type_the_decoder_enforces(self):
         lines = self.lines()
         self.assertEqual(
-            "Measure { kind: states|cases|samples; value: int>=1 }", lines["Measure"]
+            {"kind": "samples", "value": 1},
+            C.enc(C.dec(T.Measure, {"kind": "samples", "value": 1}, "$", [])),
         )
         self.assertEqual("Pending { tag='pending' }", lines["Pending"])
         self.assertEqual(
-            "Artifact { role: output|trace; path: RelPath; sha256: Sha }",
-            lines["Artifact"],
+            {"role": "trace", "path": "trace.json", "sha256": "a" * 64},
+            C.enc(
+                C.dec(
+                    T.Artifact,
+                    {"role": "trace", "path": "trace.json", "sha256": "a" * 64},
+                    "$",
+                    [],
+                )
+            ),
         )
         self.assertEqual(
-            "Scenario { id: ID; title: str; source_run: ID; kind: counterexample|mutant|example; review: Pending | Judged }",
+            "Scenario { id: ID; title: FactRef; source_run: ID; kind: counterexample|mutant|example; review: Pending | Judged }",
             lines["Scenario"],
         )
         self.assertEqual(
-            "Judged { by: str; judgment: correct|incorrect|depends|unclear|correction; model_identity: Sha; trace_identity: Sha; note: str?; tag='judged' }",
+            "Judged { by: str; judgment: correct|incorrect|depends|unclear|correction; model_identity: Sha; trace_identity: Sha; note: FactRef?; tag='judged' }",
             lines["Judged"],
         )
-        self.assertEqual("Receipts { runs: [Run]+ }", lines["Receipts"])
-        run = lines["Run"]
-        for fact in (
-            "exit_status: int;",
-            "checks: [str];",
-            "argv: [str]+;",
-            "measure: Measure?;",
-            "seed: str?;",
-            "model_id: ID?;",
-            "duration_s: number>=0?;",
-            "artifacts: [Artifact]",
-            "variant: base|fairness|no_fairness|fixed|unfixed|witness|mutant:<id>;",
-        ):
-            self.assertIn(fact, run)
+        self.assertNotIn("Receipts", lines)
+        self.assertNotIn("Run", lines)
         self.assertIn("tag='checked'", lines["Checked"])
         self.assertIn("properties: [str]+;", lines["Checked"])
 
@@ -123,9 +118,7 @@ class TheGrammarTheArchitectReads(unittest.TestCase):
             "Construction",
             "Models",
             "ClosureSet",
-            "Receipts",
             "Scenarios",
-            "Run",
             "Law",
             "Model",
             "Claim",
@@ -138,7 +131,13 @@ class TheGrammarTheArchitectReads(unittest.TestCase):
         self.assertNotIn("Handoff", names)
 
     def test_the_description_agrees_with_the_decoder_on_what_may_be_left_out(self):
-        text = self.lines()["Run"]
+        # Driven receipts retain their own decoder contract, outside author grammar.
+        fields = {field.name: field for field in dataclasses.fields(T.Run)}
+        optional = {name for name, field in fields.items() if field.default is None}
+        self.assertEqual(
+            {"model_id", "model_sha256", "measure", "seed", "duration_s"},
+            optional,
+        )
         base = {
             "id": "R1",
             "tool": "script",
@@ -156,12 +155,44 @@ class TheGrammarTheArchitectReads(unittest.TestCase):
         for field in base:  # leaving out a field the description does not mark with `?` is refused; a marked one is not asked for
             ds = []
             C.dec(T.Run, {k: v for k, v in base.items() if k != field}, "$", ds)
-            self.assertEqual(
-                re.search(rf"\b{field}: [^;]*\?", text) is not None, not ds, field
-            )
+            self.assertEqual(field in optional, not ds, field)
         for field in ("model_id", "model_sha256", "measure", "seed", "duration_s"):
-            self.assertRegex(text, rf"\b{field}: [^;]*\?")
+            self.assertIn(field, optional)
             self.assertIsNone(getattr(value, field), field)
+        complete = {
+            **base,
+            "argv": ["x", "", " \t "],
+            "measure": {"kind": "cases", "value": 2},
+            "seed": "replay",
+            "model_id": "Model1",
+            "duration_s": 0.25,
+            "artifacts": [{"role": "output", "path": "out.txt", "sha256": "a" * 64}],
+            "checks": ["Property1"],
+        }
+        ds = []
+        decoded = C.dec(T.Run, complete, "$.driven", ds)
+        self.assertEqual([], ds)
+        self.assertEqual(complete["argv"], list(decoded.argv))
+        self.assertEqual(complete["checks"], list(decoded.checks))
+        self.assertEqual(complete["exit_status"], decoded.exit_status)
+        self.assertEqual(complete["model_id"], decoded.model_id)
+        self.assertEqual(complete["seed"], decoded.seed)
+        self.assertEqual(complete["duration_s"], decoded.duration_s)
+        self.assertEqual(complete["measure"], C.enc(decoded.measure))
+        self.assertEqual(complete["artifacts"], C.enc(decoded.artifacts))
+        for variant in (
+            "base",
+            "fairness",
+            "no_fairness",
+            "fixed",
+            "unfixed",
+            "witness",
+            "mutant:M1",
+        ):
+            ds = []
+            run = C.dec(T.Run, {**complete, "variant": variant}, "$.driven", ds)
+            self.assertEqual([], ds, variant)
+            self.assertEqual(variant, run.variant)
 
 
 class TheConsumerTable(unittest.TestCase):
@@ -411,14 +442,24 @@ class ModelViews(unittest.TestCase):
             payload = payload_of(doc, "model")
             view = P.view_payload("model", payload, "falsifiers")
             walk = next(m for m in view["models"] if m["id"] == "walk")
-            raw = model_(doc, "walk")
+            raw = next(
+                m
+                for m in section(fixture_context(doc)[0], "model")["models"]
+                if m["id"] == "walk"
+            )
         self.assertEqual(
             set(P.view_payload("model", payload, "interface")["models"][0])
             | {"assumptions", "exclusions", "mutants"},
             set(walk),
         )
-        self.assertEqual(sorted(set(raw["assumptions"])), sorted(walk["assumptions"]))
-        self.assertEqual(sorted(set(raw["exclusions"])), sorted(walk["exclusions"]))
+        self.assertEqual(
+            sorted(raw["assumptions"], key=C.canon),
+            sorted(walk["assumptions"], key=C.canon),
+        )
+        self.assertEqual(
+            sorted(raw["exclusions"], key=C.canon),
+            sorted(walk["exclusions"], key=C.canon),
+        )
         self.assertEqual(
             sorted(m["id"] for m in raw["mutants"]), [m["id"] for m in walk["mutants"]]
         )
@@ -469,7 +510,15 @@ class ClosureViews(unittest.TestCase):
         )
         self.assertEqual(
             ("BLOCKED", "the argument is incomplete", "not built yet"),
-            (safety["design"], safety["design_note"], safety["runtime_note"]),
+            (
+                safety["design"],
+                fixture_catalog(doc).resolve(
+                    FactRef(FactId(safety["design_note"]["ref"]))
+                ),
+                fixture_catalog(doc).resolve(
+                    FactRef(FactId(safety["runtime_note"]["ref"]))
+                ),
+            ),
         )
         plain = axes["inhabitation"]
         self.assertEqual(
@@ -498,8 +547,11 @@ class ClosureViews(unittest.TestCase):
         self.assertTrue(
             safety["rests_on"].startswith("checked, proof "), safety["rests_on"]
         )
-        self.assertEqual("the checker was not run", safety["proof_note"])
-        self.assertEqual(["input fits in memory"], safety["assumptions"])
+        normalized = closure(fixture_context(doc)[0])
+        self.assertEqual(
+            normalized["safety"]["basis"]["proof_note"], safety["proof_note"]
+        )
+        self.assertEqual(normalized["safety"]["assumptions"], safety["assumptions"])
         for plain_view in (axes,):
             for cname in ("safety", "inhabitation", "public_reachability", "liveness"):
                 self.assertTrue(
@@ -535,14 +587,19 @@ class ClosureViews(unittest.TestCase):
             second["safety"]["statement"] = "another statement"
             section(doc, "closure")["closures"].append(second)
             view = P.view_payload("closure", payload_of(doc, "closure"), "axes")
+        normalized = section(fixture_context(doc)[0], "closure")["closures"]
         self.assertEqual(
-            sorted(c["subject"] for c in view["closures"]),
+            sorted((c["subject"] for c in view["closures"]), key=C.canon),
             [c["subject"] for c in view["closures"]],
         )
-        self.assertEqual({"tag": "inherited"}, view["closures"][0]["liveness"])
+        by_subject = {C.canon(c["subject"]): c for c in view["closures"]}
         self.assertEqual(
-            {"tag": "not_applicable", "reason": "a one-shot function"},
-            view["closures"][1]["liveness"],
+            {"tag": "inherited"},
+            by_subject[C.canon(normalized[1]["subject"])]["liveness"],
+        )
+        self.assertEqual(
+            normalized[0]["liveness"],
+            by_subject[C.canon(normalized[0]["subject"])]["liveness"],
         )
 
     def test_only_the_closure_section_has_closure_views_and_a_view_with_another_name_is_the_whole_section(
@@ -638,14 +695,16 @@ class WhatARoleReceives(unittest.TestCase):
         self,
     ):
         with fresh_copy() as d:
-            h = decode(base_doc(d))
+            doc = base_doc(d)
+            h = decode(doc)
+            catalog = fixture_catalog(doc)
         rows = P.project(h, "atd")
         self.assertEqual(
             {"laws", "construction", "model", "closure"}, {r[0] for r in rows}
         )
         self.assertFalse(any("UNASSESSED" in r[4] for r in rows))
         self.assertEqual([], P.project(h, "examiner"))
-        human = P.project(h, "human", base_dir=None)
+        human = P.project(h, "human", base_dir=None, catalog=catalog)
         self.assertEqual({"scenarios", "closure"}, {r[0] for r in human})
 
     def test_a_value_keeps_the_shared_sections_and_its_own_and_no_value_keeps_every_scope(
@@ -667,7 +726,20 @@ class WhatARoleReceives(unittest.TestCase):
             h = decode(doc)
 
         def scopes(value):
-            return [s for k, s, *_ in P.project(h, "atd", value=value) if k == "laws"]
+            inherited = tuple(
+                FactRef(FactId(item["id"])) for item in section(doc, "laws")["laws"]
+            )
+            return [
+                s
+                for k, s, *_ in P.project(
+                    h,
+                    "atd",
+                    value=value,
+                    inherits=inherited,
+                    catalog=fixture_catalog(doc),
+                )
+                if k == "laws"
+            ]
 
         self.assertEqual(["shared", "value:1"], scopes(1))
         self.assertEqual(["shared", "value:2"], scopes(2))
@@ -688,7 +760,14 @@ class WhatARoleReceives(unittest.TestCase):
             h = decode(doc)
         rows = {r[0]: r for r in P.project(h, "atd")}
         self.assertEqual(
-            {"not_applicable": "nothing is constructed here"}, rows["construction"][4]
+            {
+                "not_applicable": next(
+                    s["status"]["reason"]
+                    for s in fixture_context(doc)[0]["sections"]
+                    if s["kind"] == "construction"
+                )
+            },
+            rows["construction"][4],
         )
         for r in rows.values():
             self.assertEqual(C.sha(r[4]), r[2])
@@ -715,8 +794,8 @@ class WhatARoleReceives(unittest.TestCase):
         with fresh_copy() as d:
             doc = base_doc(d)
             h = decode(doc)
-            rows = P.project(h, "human", base_dir=d)
-            blind = P.project(h, "human", base_dir=None)
+            rows = P.project(h, "human", base_dir=d, catalog=fixture_catalog(doc))
+            blind = P.project(h, "human", base_dir=None, catalog=fixture_catalog(doc))
             description = next(
                 m for m in model_(doc, "walk")["mutants"] if m["id"] == "M1"
             )["description"]
@@ -727,7 +806,22 @@ class WhatARoleReceives(unittest.TestCase):
         }
         self.assertEqual(["SC1", "SC2"], sorted(by))
         mutant, example = by["SC1"], by["SC2"]
-        self.assertEqual(description, mutant["what_the_bug_does"])
+        normalized = fixture_context(doc)[0]
+        source = next(
+            mu["description"]
+            for model in section(normalized, "model")["models"]
+            if model["id"] == "walk"
+            for mu in model["mutants"]
+            if mu["id"] == "M1"
+        )
+        self.assertEqual(source, mutant["what_the_bug_does"])
+        catalog = fixture_catalog(doc)
+        reachable = catalog.reachable(mutant)
+        self.assertEqual(description, reachable[source["ref"]])
+        self.assertEqual(
+            description,
+            catalog.resolve(FactRef(FactId(mutant["what_the_bug_does"]["ref"]))),
+        )
         self.assertNotIn("what_the_bug_does", example)
         self.assertEqual(run["id"], mutant["run"])
         self.assertEqual(" ".join(run["argv"]), mutant["tool"]["command"])
@@ -752,7 +846,7 @@ class WhatARoleReceives(unittest.TestCase):
                 "mutant:M99"  # rule R4 reports it; the projection must still print something sane
             )
             h = decode(doc)
-            rows = P.project(h, "human", base_dir=d)
+            rows = P.project(h, "human", base_dir=d, catalog=fixture_catalog(doc))
         by = {
             s["id"]: s
             for s in next(r for r in rows if r[0] == "scenarios")[4]["scenarios"]
@@ -797,6 +891,7 @@ class ThePrompt(unittest.TestCase):
                 {"b": "2", "a": "1"},
                 "  Keep it short.  ",
                 targets=V9_TARGETS,
+                catalog=fixture_catalog(doc),
             )
         self.assertTrue(
             text.startswith(
@@ -824,17 +919,32 @@ class ThePrompt(unittest.TestCase):
                 content,
                 kind,
             )
-        self.assertIn("\u00e9", found["laws@shared"])
+        statement = json.loads(found["laws@shared"])["laws"][0]["statement"]
+        catalog = fixture_catalog(doc)
+        resolved = catalog.resolve(FactRef(FactId(statement["ref"])))
+        self.assertIn("\u00e9", resolved)
+        self.assertEqual(1, text.count("=== [F] facts ===\n"))
+        catalog_json = text.split("=== [F] facts ===\n", 1)[1].split("\n=== [C]", 1)[0]
+        facts = json.loads(catalog_json)
+        self.assertEqual(
+            catalog.reachable(*(json.loads(content) for content in found.values())),
+            facts,
+        )
+        self.assertEqual(resolved, facts[statement["ref"]])
+        self.assertIn("\u00e9", catalog_json)
         self.assertNotIn("\\u00e9", text)
+        self.assertNotIn(resolved, found["laws@shared"])
         shas = re.findall(r"sha=([0-9a-f]+) ", text)
         self.assertTrue(all(len(x) == 12 for x in shas))
 
     def test_the_orchestrator_part_has_exactly_the_parts_that_were_given(self):
         with fresh_copy() as d:
-            h = decode(base_doc(d))
+            doc = base_doc(d)
+            h = decode(doc)
+            catalog = fixture_catalog(doc)
 
         def tail(**kw):
-            return P.compose("examiner", h, "T", **kw).split(
+            return P.compose("examiner", h, "T", catalog=catalog, **kw).split(
                 "=== [C] orchestrator ===\n"
             )[1]
 
@@ -863,7 +973,7 @@ class TheSummaryAndTheHumanViews(unittest.TestCase):
             c["liveness"] = {"tag": "not_applicable", "reason": "a one-shot function"}
             section(doc, "closure")["closures"].append(other)
             judged(doc, "SC1", judgment="correct")
-            summary = P.summary(decode(doc))
+            summary = P.summary(decode(doc), fixture_catalog(doc))
             runs = section(doc, "receipts")["runs"]
             claims = [
                 x[k]
@@ -942,7 +1052,7 @@ class TheSummaryAndTheHumanViews(unittest.TestCase):
                 s for s in doc["sections"] if s["kind"] not in ("scenarios", "closure")
             ]
             h = decode(doc)
-            summary = P.summary(h)
+            summary = P.summary(h, fixture_catalog(doc))
         self.assertEqual(
             "not_applicable: nothing constructed",
             summary["sections"]["construction@shared"],
@@ -952,7 +1062,9 @@ class TheSummaryAndTheHumanViews(unittest.TestCase):
         self.assertEqual(sorted(summary["sections"]), list(summary["sections"]))
         self.assertEqual(
             json.dumps(summary),
-            json.dumps(P.summary(dict(reversed(list(h.items()))))),
+            json.dumps(
+                P.summary(dict(reversed(list(h.items()))), fixture_catalog(doc))
+            ),
             "the same bytes, in the same order, whatever the order of the handoff",
         )
 
@@ -968,12 +1080,27 @@ class TheSummaryAndTheHumanViews(unittest.TestCase):
                         "reason": "nothing constructed",
                     }
             h = decode(doc)
-            text = P.render_markdown(h, d)
-            flipped = P.render_markdown(dict(reversed(list(h.items()))), d)
+            text = P.render_markdown(h, d, fixture_catalog(doc))
+            flipped = P.render_markdown(
+                dict(reversed(list(h.items()))), d, fixture_catalog(doc)
+            )
             raw = {
                 "model": model_(doc, "walk"),
                 "runs": section(doc, "receipts")["runs"],
             }
+            current_model = next(
+                model
+                for model in h[("model", "shared")].status.payload.models
+                if model.id == "walk"
+            )
+            self.assertEqual(
+                {
+                    "path": raw["model"]["path"],
+                    "sha256": T.sha256_text(raw["model"]["text"]),
+                },
+                C.enc(current_model.source),
+            )
+            self.assertNotIn("text", C.enc(current_model))
         self.assertEqual(text, flipped)
         headings = re.findall(r"^## (\w+) \((\S+)\)$", text, re.M)
         self.assertEqual(sorted(headings), headings)
@@ -1026,7 +1153,7 @@ class TheSummaryAndTheHumanViews(unittest.TestCase):
     ):
         with fresh_copy() as d:
             doc = base_doc(d)
-            text = P.render_markdown(decode(doc), d)
+            text = P.render_markdown(decode(doc), d, fixture_catalog(doc))
             construction = section(doc, "construction")
         self.assertEqual(6, len(text.split("\n\n## ")))
         self.assertTrue(text.endswith("\n") and not text.endswith("\n\n"))
@@ -1056,7 +1183,7 @@ class TheSummaryAndTheHumanViews(unittest.TestCase):
             second["subject"] = "another subject"
             second["liveness"] = {"tag": "inherited"}
             section(doc, "closure")["closures"].append(second)
-            text = P.render_markdown(decode(doc), d)
+            text = P.render_markdown(decode(doc), d, fixture_catalog(doc))
         self.assertIn("; leaves out: nothing", text)
         self.assertIn("  - liveness: not_applicable: a one-shot function", text)
         self.assertIn("  - liveness: inherited\n", text)
@@ -1067,8 +1194,8 @@ class TheSummaryAndTheHumanViews(unittest.TestCase):
         with fresh_copy() as d:
             doc = base_doc(d)
             h = decode(doc)
-            md = P.render_markdown(h, None)
-            page = P.render_html(h, None)
+            md = P.render_markdown(h, None, fixture_catalog(doc))
+            page = P.render_html(h, None, fixture_catalog(doc))
         titles = [s["title"] for s in section(doc, "scenarios")["scenarios"]]
         for sc in section(doc, "scenarios")["scenarios"]:
             self.assertIn(f"{sc['title']} [{sc['kind']}]: not rendered: trace ", md)
@@ -1080,11 +1207,13 @@ class TheSummaryAndTheHumanViews(unittest.TestCase):
         self,
     ):
         with fresh_copy() as d:
-            h = decode(base_doc(d))
-            page = P.render_html(h, d)
-            flipped = P.render_html(dict(reversed(list(h.items()))), d)
+            doc = base_doc(d)
+            h = decode(doc)
+            catalog = fixture_catalog(doc)
+            page = P.render_html(h, d, catalog)
+            flipped = P.render_html(dict(reversed(list(h.items()))), d, catalog)
             titles = [
-                s.title
+                catalog.resolve(s.title)
                 for s in sorted(
                     h[("scenarios", "shared")].status.payload.scenarios,
                     key=lambda s: s.id,
@@ -1113,10 +1242,11 @@ class TheSummaryAndTheHumanViews(unittest.TestCase):
                 }
             )
             h = decode(doc)
-            page = P.render_html(h, d)
-            flipped = P.render_html(dict(reversed(list(h.items()))), d)
+            catalog = fixture_catalog(doc)
+            page = P.render_html(h, d, catalog)
+            flipped = P.render_html(dict(reversed(list(h.items()))), d, catalog)
             shared = [
-                s.title
+                catalog.resolve(s.title)
                 for s in sorted(
                     h[("scenarios", "shared")].status.payload.scenarios,
                     key=lambda s: s.id,
@@ -1129,9 +1259,12 @@ class TheSummaryAndTheHumanViews(unittest.TestCase):
     def test_the_crafters_read_the_object_oriented_fixture_through_their_own_targets_alone(
         self,
     ):
-        h = decode(read(OO))
+        doc = read(OO)
+        h = decode(doc)
         for role in ("software_crafter", "functional_crafter"):
-            rows = P.project(h, role, targets=["inventory.py"])
+            rows = P.project(
+                h, role, targets=["inventory.py"], catalog=fixture_catalog(doc)
+            )
             self.assertEqual(
                 {"laws", "construction", "model"},
                 {r[0] for r in rows if "UNASSESSED" not in r[4]} | {r[0] for r in rows},
@@ -1145,7 +1278,8 @@ class OwnedVocabulary(unittest.TestCase):
     def test_value_owned_law_keeps_used_shared_vocabulary_without_unrelated_laws(self):
         from dataclasses import replace
 
-        h = decode(read(OO))
+        doc = read(OO)
+        h = decode(doc)
         entry = h[("laws", "shared")]
         shared = entry.status.payload
         shared_obs, shared_ctor = shared.observations[0], shared.constructors[0]
@@ -1180,10 +1314,68 @@ class OwnedVocabulary(unittest.TestCase):
         h[("laws", "value:2")] = T.Entry(
             kind="laws", scope="value:2", status=T.Applicable(payload=owned)
         )
-        rows = P.project(h, "software_crafter", value=1, targets=["mine.py"])
+        rows = P.project(
+            h,
+            "software_crafter",
+            value=1,
+            targets=["mine.py"],
+            catalog=fixture_catalog(doc),
+            inherits=(FactRef(FactId(shared_obs.id)), FactRef(FactId(shared_ctor.id))),
+        )
         shown = next(row[4] for row in rows if row[:2] == ("laws", "value:1"))
-        self.assertEqual([shared_obs.id], [o["id"] for o in shown["observations"]])
-        self.assertEqual([shared_ctor.id], [c["id"] for c in shown["constructors"]])
+        shared_view = next(row[4] for row in rows if row[:2] == ("laws", "shared"))
+        expected_observations = {shared_obs.id, *shared.equality.under}
+        self.assertEqual(
+            expected_observations,
+            {observation["id"] for observation in shared_view["observations"]},
+        )
+        self.assertEqual(
+            [shared_ctor.id],
+            [constructor["id"] for constructor in shared_view["constructors"]],
+        )
+        self.assertEqual([], shown["observations"])
+        self.assertEqual([], shown["constructors"])
+        self.assertEqual({shared_obs.id, shared_ctor.id}, set(shown["laws"][0]["uses"]))
+        law_views = [row[4] for row in rows if row[0] == "laws"]
+        self.assertEqual(
+            collections.Counter(dict.fromkeys(expected_observations, 1)),
+            collections.Counter(
+                observation["id"]
+                for view in law_views
+                for observation in view["observations"]
+            ),
+        )
+        self.assertEqual(
+            collections.Counter({shared_ctor.id: 1}),
+            collections.Counter(
+                constructor["id"]
+                for view in law_views
+                for constructor in view["constructors"]
+            ),
+        )
+        self.assertEqual(C.enc(shared.equality), shared_view["equality"])
+        self.assertEqual(
+            collections.Counter(shared.equality.under),
+            collections.Counter(
+                identifier
+                for view in law_views
+                for identifier in view.get("equality", {}).get("under", [])
+            ),
+        )
+        catalog = fixture_catalog(doc)
+        reachable = catalog.reachable(*(row[4] for row in rows))
+        for observation in shared.observations:
+            if observation.id in expected_observations:
+                self.assertIn(C.enc(observation), shared_view["observations"])
+                self.assertEqual(
+                    catalog.resolve(observation.description),
+                    reachable[observation.description.ref],
+                )
+        self.assertIn(C.enc(shared_ctor), shared_view["constructors"])
+        self.assertEqual(
+            catalog.resolve(owned.laws[0].statement),
+            reachable[owned.laws[0].statement.ref],
+        )
         self.assertEqual(["ValueLaw"], [law["id"] for law in shown["laws"]])
         self.assertFalse(any(row[1] == "value:2" for row in rows))
         self.assertFalse(

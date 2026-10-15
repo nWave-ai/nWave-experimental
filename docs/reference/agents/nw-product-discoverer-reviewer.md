@@ -5,7 +5,7 @@ Use as peer reviewer for product-discoverer outputs -- validates evidence qualit
 **Wave:** Other
 **Model:** haiku
 **Max turns:** 40
-**Tools:** Read, Glob, Grep, Task
+**Tools:** Read, Glob, Grep, Task, Bash
 
 ## Preloaded skills
 

@@ -349,7 +349,9 @@ def construct_or_reuse(
             "refusal",
             "CharterResultMalformed",
             str(error),
-            "supply the source-blind host PO's structured_output alongside the value facts",
+            error.how
+            if isinstance(error, MalformedModelEnvelope) and error.how is not None
+            else "supply the source-blind host PO's structured_output alongside the value facts",
         )
     if run.outcome is ModelOutcome.Rejected:
         return CharterOutcome(

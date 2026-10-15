@@ -16,8 +16,8 @@ verification bounds, not product restrictions. Hypothesis supplies shrinking,
 replay and failure blobs; execution and a demonstrated shrink remain the
 verification owner's responsibility.
 
-The supplied run5 observation is a separate real-boundary observation. It reads
-the original fixture, never substitutes the compact fixture for its size bound.
+The frozen run5 observation is a separate real-boundary refusal observation.
+It retains the original bytes and never substitutes a normalized fixture.
 """
 
 from __future__ import annotations
@@ -41,8 +41,11 @@ from pathlib import Path
 import pytest
 from hypothesis import HealthCheck, event, given, settings
 from hypothesis import strategies as st
+from tests.des._helpers.host_facts import design_manifest
+from tests.des.architect_handoff.tests.test_g10 import fixture_context
 
 from des.cli.__main__ import main
+from des.domain.design_document import DesignDocument
 
 
 CHECKOUT = Path(__file__).resolve().parents[4]
@@ -76,7 +79,6 @@ class MissingInput(StrEnum):
     BLANK_ROOT = "blank caller input"
     TEMPLATE = "missing explicit template"
     TEMPLATE_SHAPE = "inconsistent strict template shape"
-    SUPPORT = "missing declared support"
     DESIGN = "unbound selected design"
 
 
@@ -196,15 +198,31 @@ def _leaves(value: object):
         yield value
 
 
+def _reference_ids(value: object):
+    if isinstance(value, dict):
+        if set(value) == {"ref"}:
+            yield value["ref"]
+        else:
+            for child in value.values():
+                yield from _reference_ids(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _reference_ids(child)
+
+
 def _raw_population(snapshot: dict, position: int | None) -> dict:
-    # This is the declared raw population, not a call to the production scope
-    # or projection implementation. All retained input members participate.
+    """Product identity remains distinct from the one selected fact carrier."""
     population = copy.deepcopy(snapshot)
     population.pop("architect_receipts", None)
-    for value in population["values"]:
-        value["authority"].pop("architect_handoff", None)
+    population["values"] = [
+        {
+            name: value.get(name)
+            for name in ("observation", "dependencies", "design_semantic_sha256")
+        }
+        for value in population["values"]
+    ]
     if "shared_design" in population:
-        population["shared_design"]["design"].pop("architect_handoff", None)
+        population["shared_design"].pop("design")
     if position is not None:
         population["values"] = [population["values"][position - 1]]
     return population
@@ -219,7 +237,7 @@ def _projection_population(
     # copied, and no production projection function is imported.
     views = {
         Role.ARCHITECT: dict.fromkeys(
-            ("laws", "construction", "model", "closure", "receipts", "scenarios"),
+            ("laws", "construction", "model", "closure", "scenarios"),
             "full",
         ),
         Role.DESIGNER: {
@@ -237,7 +255,7 @@ def _projection_population(
         },
     }[role]
     sections = []
-    if "shared_design" in snapshot:
+    if "shared_design" in snapshot and position is None:
         sections += (
             snapshot["shared_design"]["design"]
             .get("architect_handoff", {})
@@ -280,38 +298,23 @@ def _projection_population(
 
 
 def _effective_population(snapshot: dict, position: int) -> dict:
-    # The concrete acceptance cases specify this effective result independently:
-    # the selected declaration plus the one shared required command/root support.
-    # They do not ask a runner to calculate their own expected answer.
+    """Own references and the explicitly selected shared command stay separate."""
     declaration = snapshot["values"][position - 1]["authority"]
-    inherited = "shared_design" in snapshot
-    expected = {
-        "authority": declaration["authority_locator"]
-        or f"typed:{declaration['oracle']}",
-        "targets": [
-            [item["path"], item["decision"]] for item in declaration["targets"]
-        ],
-        "paradigm": declaration["paradigm"],
-        "decisions": declaration["decisions"],
-        "oracle": declaration["oracle"],
-        "acceptance_supports": ["root.txt"] if inherited else [],
-        "verification": [
+    expected = copy.deepcopy(declaration)
+    expected.pop("facts")
+    expected.pop("architect_handoff")
+    inherited = bool(declaration["inherits"])
+    expected.update(
+        authority=declaration["authority_locator"],
+        acceptance_supports=["root.txt"]
+        if inherited
+        else declaration["acceptance_supports"],
+        verification=[
             *declaration["verification"],
             *([SHARED_COMMAND] if inherited else []),
         ],
-        "oracle_verification_index": declaration["oracle_verification_index"],
-        "obligations": declaration["obligations"],
-        "architectural_tests": declaration["architectural_tests"],
-        "contract_tests": declaration["contract_tests"],
-        "prefactoring": declaration["prefactoring"],
-        "agreement_analysis": declaration["agreement_analysis"],
-        "reuse_analysis": declaration["reuse_analysis"],
-        "impact_closure": declaration["impact_closure"],
-        "required_verification": [SHARED_COMMAND] if inherited else [],
-        "public_oracle": declaration.get("public_oracle", ABSENT_PUBLIC_ORACLE),
-    }
-    if "adr" in declaration:
-        expected["adr"] = declaration["adr"]
+        required_verification=[SHARED_COMMAND] if inherited else [],
+    )
     return expected
 
 
@@ -423,6 +426,30 @@ def _assert_facts(
             "the receiving role needs the resolved selection as well as the distinct raw declarations",
             "retain effective supports/required commands, all typed selection fields, and explicit absence semantics",
         )
+        inherited = bool(
+            snapshot["values"][subject.position - 1]["authority"]["inherits"]
+        )
+        expected_records = (
+            {
+                record["id"]: record
+                for record in snapshot["shared_design"]["design"][
+                    "architectural_tests"
+                ]["obligations"]
+            }
+            if inherited
+            else {}
+        )
+        assert packet["inherited_records"] == expected_records, _message(
+            f"inherited records differ: expected={expected_records!r}, actual={packet['inherited_records']!r}",
+            "L-resolve-retains preserves every selected shared record without copying unrelated records",
+            "resolve the selected inherits ids and emit their complete records once",
+        )
+        expected_shared_verification = {"0": SHARED_COMMAND} if inherited else {}
+        assert packet["shared_verification"] == expected_shared_verification, _message(
+            f"shared verification differs: expected={expected_shared_verification!r}, actual={packet['shared_verification']!r}",
+            "inherited indexes select the shared argv, not the value's own verification list",
+            "retain the selected shared indexes and their original commands",
+        )
         invocation = packet.get("invocation")
         invocation_values = (
             list(_leaves(invocation)) if isinstance(invocation, dict) else []
@@ -435,6 +462,63 @@ def _assert_facts(
             "a scoped packet must not silently renumber a later selected value",
             "retain the original invocation parameters independently of the scoped values array",
         )
+    declarations = [
+        *(value["authority"] for value in snapshot["values"]),
+        *([snapshot["shared_design"]["design"]] if "shared_design" in snapshot else []),
+    ]
+    definitions = {
+        record["id"]: record["text"]
+        for declaration in declarations
+        for record in declaration["facts"]
+    }
+    record_ids = {
+        record["id"]
+        for declaration in declarations
+        for kind, member in (
+            ("architectural_tests", "obligations"),
+            ("contract_tests", "obligations"),
+            ("agreement_analysis", "parties"),
+        )
+        for record in declaration[kind].get(member, [])
+    }
+    for declaration in declarations:
+        for section in declaration["architect_handoff"]["sections"]:
+            payload = section["status"].get("payload", {})
+            for member in ("laws", "refuted", "claims", "models"):
+                record_ids.update(record["id"] for record in payload.get(member, []))
+            record_ids.update(
+                record["subject"]["ref"] for record in payload.get("closures", [])
+            )
+    roots = {
+        name: packet.get(name, {})
+        for name in (
+            "selected_authority",
+            "inherited_records",
+            "shared_verification",
+            "architect_projection",
+        )
+    }
+    expected_catalog = {}
+    for identifier in _reference_ids(roots):
+        assert identifier in definitions or identifier in record_ids, _message(
+            f"the receiving-role packet references undeclared id {identifier}",
+            "an unresolved fact is not an inherited record or assessed absence",
+            "retain a reference to an independently declared fact or record",
+        )
+        if identifier in definitions:
+            expected_catalog[identifier] = definitions[identifier]
+    assert packet["facts"] == expected_catalog, _message(
+        f"reachable catalog differs: expected={expected_catalog!r}, actual={packet['facts']!r}",
+        "L-catalog-once requires exactly the facts reachable through the four declared roots",
+        "retain every reachable definition and exclude unselected definitions",
+    )
+    assert all(
+        text not in list(_leaves(roots)) for text in expected_catalog.values()
+    ), _message(
+        f"catalog text escaped into reference roots: roots={roots!r}, catalog={expected_catalog!r}",
+        "selected authority and inherited/projected records carry references, not parallel prose definitions",
+        "replace duplicated root text with the corresponding FactRef",
+    )
     return packet
 
 
@@ -500,6 +584,69 @@ class ReceivingRoleJourney:
     def __init__(self, temporary_root: Path):
         self.temporary_root = temporary_root
 
+    def _current_fixture(self, root: Path) -> dict:
+        """Build this fixture's declared current scopes; frozen files stay untouched."""
+        snapshot = _snapshot(root)
+        declarations = [(None, snapshot["shared_design"]["design"])]
+        declarations += [
+            (index, value["authority"])
+            for index, value in enumerate(snapshot["values"], 1)
+        ]
+        for position, source in declarations:
+            declaration = copy.deepcopy(source)
+            label = "SHARED" if position is None else f"VALUE_{position}"
+            handoff, catalog, _retired = fixture_context(
+                declaration["architect_handoff"]
+            )
+            declaration["architect_handoff"] = handoff
+            declaration["facts"] = [
+                {"id": record.id, "text": record.text} for record in catalog.records
+            ]
+            declaration["constraints"] = declaration.pop("obligations")
+            declaration["purpose"] = f"{label}_PURPOSE_FACT"
+            declaration["boundaries"] = {
+                "applicability": "not_applicable",
+                "reason": f"{label}_BOUNDARY_FACT",
+            }
+            for target in declaration["targets"]:
+                target["reason"] = f"{label}_TARGET_FACT"
+            declaration["public_oracle"] = {
+                "observation": f"{label}_PUBLIC_FACT",
+                "stimulus": f"{label}_STIMULUS_FACT",
+                "expected": f"{label}_EXPECTED_FACT",
+                "falsifier": f"{label}_FALSIFIER_FACT",
+            }
+            if position is not None:
+                declaration["architectural_tests"] = {
+                    "applicability": "applicable",
+                    "obligations": [],
+                }
+                declaration["inherits"] = [{"ref": "V0-architectural_tests-1"}]
+            manifest = design_manifest(
+                declaration, declaration["purpose"], position or 0
+            )
+            document = DesignDocument.from_json(
+                json.dumps(manifest), value=position or 1, shared=position is None
+            )
+            locator = "docs/design.md#" + document.heading
+            current = json.loads(document.facts_json(document.facts_at(locator)))
+            if position is None:
+                snapshot["shared_design"].update(
+                    authority_locator=locator,
+                    semantic_sha256=document.semantic_sha256,
+                    section_sha256=hashlib.sha256(
+                        document.markdown().encode()
+                    ).hexdigest(),
+                    design=current,
+                )
+            else:
+                snapshot["values"][position - 1]["authority"] = current
+                snapshot["values"][position - 1]["design_semantic_sha256"] = (
+                    document.semantic_sha256
+                )
+        _write_snapshot(root, snapshot)
+        return snapshot
+
     def _copy_input(self, destination: Path) -> None:
         shutil.copytree(FIXTURE, destination)
         # Keep tracked text fixtures whitespace-clean; restore their deliberate
@@ -509,21 +656,24 @@ class ReceivingRoleJourney:
             content = path.read_bytes()
             boundary = len(content.rstrip(b"\n"))
             path.write_bytes(content[:boundary] + b"  " + content[boundary:])
+        self._current_fixture(destination)
 
     def defaults_receive_complete_facts_once(self) -> None:
-        snapshot = _snapshot(FIXTURE)
+        root = self.temporary_root / "current-input"
+        self._copy_input(root)
+        snapshot = _snapshot(root)
         for role, position, template in (
             (Role.DESIGNER, 1, "oracle.atd-v3"),
             (Role.ARCHITECT, None, "design.architect-v9"),
         ):
-            subject = PromptInput(FIXTURE.resolve(), role, position)
-            before = (FIXTURE / STATE).read_bytes()
+            subject = PromptInput(root.resolve(), role, position)
+            before = (root / STATE).read_bytes()
             first = _native(subject.argv(), process=True)
             text = first.successful_text()
             _assert_facts(text, subject, snapshot)
             _assert_instruction_contract(text, subject, template)
             _assert_repeat(first, _native(subject.argv(), process=True))
-            assert (FIXTURE / STATE).read_bytes() == before, _message(
+            assert (root / STATE).read_bytes() == before, _message(
                 "prompt rendering changed its supplied snapshot",
                 "rendering is an observation, not an authority or lifecycle mutation",
                 "keep prompt construction read-only",
@@ -547,31 +697,111 @@ class ReceivingRoleJourney:
                 predecessor = snapshot["values"][0]
                 predecessor["observation"] = "PREDECESSOR_FACT"
                 selected = copy.deepcopy(predecessor)
+                definitions = selected["authority"]["facts"]
+                identifiers = {
+                    record["id"]: "V2-" + record["id"] for record in definitions
+                }
+
+                def selected_references(value, *, identifiers=identifiers):
+                    if isinstance(value, dict):
+                        if set(value) == {"ref"} and value["ref"] in identifiers:
+                            value["ref"] = identifiers[value["ref"]]
+                        else:
+                            for child in value.values():
+                                selected_references(child)
+                    elif isinstance(value, list):
+                        for child in value:
+                            selected_references(child)
+
+                selected_references(selected["authority"])
+                for record in definitions:
+                    record["id"] = identifiers[record["id"]]
+                    record["text"] = "SELECTED_FACT:" + record["text"]
                 marker = "INDEPENDENT_EQUAL_FACT:" + content.text
                 snapshot["request"] = marker
                 selected["observation"] = marker
                 selected["dependencies"] = [predecessor["observation"]]
-                selected["authority"]["authority_locator"] = (
-                    "docs/design.md#Selected after predecessor"
+                selected["authority"]["authority_locator"] = "docs/design.md#Value 2"
+                selected["authority"]["decisions"] = [{"ref": "V2-generated"}]
+                selected["authority"]["facts"].append(
+                    {
+                        "id": "V2-generated",
+                        "text": "CATALOG_DECISION_FACT:" + content.text,
+                    }
                 )
-                selected["authority"]["decisions"] = [marker]
                 selected["authority"]["architect_handoff"]["sections"][0]["scope"] = (
                     "value:2"
                 )
                 selected["authority"]["architect_handoff"]["sections"][0]["status"][
                     "reason"
-                ] = "PROJECTED_FACT:" + content.text
+                ] = {"ref": "V2-projection"}
+                selected["authority"]["facts"].append(
+                    {"id": "V2-projection", "text": "PROJECTED_FACT:" + content.text}
+                )
                 if public_present:
                     selected["authority"]["public_oracle"] = {
-                        "observation": "PUBLIC_FACT:" + content.text,
-                        "stimulus": "Receive the selected facts",
-                        "expected": marker,
-                        "falsifier": "An independent fact is lost or repeated",
+                        "observation": {"ref": "V2-public"},
+                        "stimulus": selected["authority"]["public_oracle"]["stimulus"],
+                        "expected": {"ref": "V2-generated"},
+                        "falsifier": selected["authority"]["public_oracle"][
+                            "falsifier"
+                        ],
                     }
+                    selected["authority"]["facts"].append(
+                        {"id": "V2-public", "text": "PUBLIC_FACT:" + content.text}
+                    )
                 snapshot["values"].append(selected)
                 if not inherited:
                     snapshot["scope"] = {"kind": "project"}
                     snapshot.pop("shared_design")
+                    predecessor["authority"]["inherits"] = []
+                    predecessor["authority"]["architectural_tests"] = {
+                        "applicability": "not_applicable",
+                        "reason": {"ref": "V1-architecture"},
+                    }
+                    predecessor["authority"]["facts"].append(
+                        {
+                            "id": "V1-architecture",
+                            "text": "No predecessor architecture check.",
+                        }
+                    )
+                    selected["authority"]["inherits"] = []
+                    selected["authority"]["architectural_tests"] = {
+                        "applicability": "not_applicable",
+                        "reason": {"ref": "V2-architecture"},
+                    }
+                    selected["authority"]["facts"].append(
+                        {
+                            "id": "V2-architecture",
+                            "text": "No inherited architecture check.",
+                        }
+                    )
+                # Materialize valid typed authorities through the public producer,
+                # including its optional-field shape and canonical field order.
+                for position, value in enumerate(snapshot["values"], 1):
+                    authority = value["authority"]
+                    locator = authority["authority_locator"]
+                    manifest = {
+                        name: field
+                        for name, field in authority.items()
+                        if name != "authority_locator" and field is not None
+                    }
+                    document = DesignDocument.from_json(
+                        json.dumps(manifest, ensure_ascii=False),
+                        value=position,
+                    )
+                    materialized = json.loads(
+                        document.facts_json(document.facts_at(locator))
+                    )
+                    assert materialized == authority, _message(
+                        "canonical materialization changed a generated authority fact",
+                        "field ordering must not replace or coalesce independent input paths",
+                        "preserve the complete authored fact/reference population",
+                    )
+                    value["authority"] = materialized
+                    value["design_semantic_sha256"] = document.semantic_sha256
+                if not public_present:
+                    snapshot["values"][1]["authority"]["public_oracle"] = None
                 _write_snapshot(root, snapshot)
                 subject = PromptInput(
                     root,
@@ -584,7 +814,29 @@ class ReceivingRoleJourney:
                         str(root / "templates"),
                     ),
                 )
-                text = _native(subject.argv()).successful_text()
+                rendered = _native(subject.argv())
+                if not public_present:
+                    assert (
+                        rendered.exit != 0
+                        and PACKET_MARKER.encode() not in rendered.stdout
+                    ), _message(
+                        f"absent public oracle yielded exit={rendered.exit}, stdout={rendered.stdout!r}, stderr={rendered.stderr!r}",
+                        "missing public authority must refuse rather than emit a successful partial packet",
+                        "refuse the malformed handover before producing native_input",
+                    )
+                    diagnostic = rendered.stdout + rendered.stderr
+                    assert b"HandoverMalformed" in diagnostic, _message(
+                        f"absent public oracle lacks HandoverMalformed: {diagnostic!r}",
+                        "an incidental runner failure cannot establish the declared malformed-input refusal",
+                        "report the native handover refusal identifying its unavailable public oracle",
+                    )
+                    assert b"public_oracle" in diagnostic, _message(
+                        f"malformed-input refusal does not identify public_oracle: {diagnostic!r}",
+                        "the refusal must distinguish this missing contract from unrelated setup failure",
+                        "name the missing public_oracle in the native diagnostic",
+                    )
+                    continue
+                text = rendered.successful_text()
                 _assert_facts(text, subject, snapshot)
                 for label in ("CUSTOM_REQUEST_FIRST", "CUSTOM_REQUEST_SECOND"):
                     line = next(
@@ -665,10 +917,17 @@ class ReceivingRoleJourney:
             root = Path(directory) / "input"
             self._copy_input(root)
             snapshot = _snapshot(root)
-            snapshot["values"][0]["authority"]["prefactoring"] = {
+            declaration = snapshot["values"][0]["authority"]
+            declaration["facts"].extend(
+                [
+                    {"id": "V1-move", "text": "PRESERVATION_MOVE_FACT"},
+                    {"id": "V1-preserved", "text": "PRESERVED_OBSERVATION_FACT"},
+                ]
+            )
+            declaration["prefactoring"] = {
                 "existing_oracle": "root.txt",
-                "move": "PRESERVATION_MOVE_FACT",
-                "preserved_observation": "PRESERVED_OBSERVATION_FACT",
+                "move": {"ref": "V1-move"},
+                "preserved_observation": {"ref": "V1-preserved"},
                 "verification": [SHARED_COMMAND],
                 "acceptance_supports": [],
                 "applicability": "applicable",
@@ -737,12 +996,6 @@ class ReceivingRoleJourney:
                     "--template-dir",
                     str(root / "templates"),
                 )
-            elif missing is MissingInput.SUPPORT:
-                snapshot["values"][0]["authority"]["acceptance_supports"] = [
-                    "templates/custom.spec.json"
-                ]
-                _write_snapshot(root, snapshot)
-                (root / "templates/custom.spec.json").unlink()
             elif missing is MissingInput.DESIGN:
                 snapshot["values"][0]["authority"] = None
                 snapshot["values"][0].pop("design_semantic_sha256", None)
@@ -827,7 +1080,7 @@ class ReceivingRoleJourney:
         # Reuse the compact fixture's semantic declarations, not its synthetic
         # stored identity. The native DESIGN constructor publishes and binds the
         # actual preparation authority below. Its original heading stays named.
-        declaration = copy.deepcopy(_snapshot(root / "input")["values"][0]["authority"])
+        declaration = copy.deepcopy(_snapshot(FIXTURE)["values"][0]["authority"])
         declaration["targets"] = [
             {"path": "src/des/cli/handoff.py", "decision": "EXTEND"}
         ]
@@ -857,14 +1110,20 @@ class ReceivingRoleJourney:
             "'--skills-dir', '../nWave/skills']))",
         ]
         declaration["verification"] = [command]
-        manifest = design_manifest(declaration, observation, 1)
-        manifest["architect_handoff"] = declaration["architect_handoff"]
-        manifest["public_oracle"] = {
+        normalized_handoff, typed_catalog, _driven = fixture_context(
+            declaration["architect_handoff"]
+        )
+        declaration["architect_handoff"] = normalized_handoff
+        declaration["facts"] = [
+            {"id": record.id, "text": record.text} for record in typed_catalog.records
+        ]
+        declaration["public_oracle"] = {
             "observation": observation,
             "stimulus": "Prepare and render the native role's sealed permitted facts.",
             "expected": observation,
             "falsifier": "A permitted fact is lost or repeated, or another role's private fact is disclosed.",
         }
+        manifest = design_manifest(declaration, observation, 1)
         publication = construct(
             ["design", "--repo-root", str(root), "--value", "1", "--input", "-"],
             manifest,
@@ -924,16 +1183,57 @@ class ReceivingRoleJourney:
             prepared_bytes = prepared_path.read_bytes()
             prepared = json.loads(prepared_bytes)
             if role is Role.REVIEWER:
-                assert prepared["values"][0]["decisions"] == [
-                    "PRIVATE_DESIGN_FACT_FOR_REVIEWER"
-                ], _message(
-                    "the reviewer lost its permitted design facts during preparation",
-                    "a scope-preserving prompt must retain the reviewer's actual allowed population",
-                    "retain reviewer DESIGN and evidence while excluding their duplicate displays",
+                selected = prepared["selected_authority"]["1"]
+                assert selected == _effective_population(active, 1), _message(
+                    "the reviewer lost its permitted selected design population",
+                    "normalization changes carriers, not the reviewer's allowed meaning",
+                    "retain the complete selected references and actual verification context",
                 )
-                assert prepared["architect_projection"] == _projection_population(
-                    active, Role.REVIEWER, None
+                assert selected["decisions"] == manifest["decisions"], _message(
+                    f"prepared decisions differ: expected={manifest['decisions']!r}, actual={selected['decisions']!r}",
+                    "L-resolve-retains preserves the selected decision references and their order",
+                    "carry the bound manifest's decision references into the sealed reviewer input unchanged",
+                )
+                assert [
+                    prepared["facts"][reference["ref"]]
+                    for reference in selected["decisions"]
+                ] == ["PRIVATE_DESIGN_FACT_FOR_REVIEWER"], _message(
+                    "the reviewer lost its permitted design facts during preparation",
+                    "the selected references must resolve to the original allowed facts",
+                    "retain reviewer DESIGN and evidence without duplicate prose displays",
+                )
+                permitted_roots = {
+                    name: prepared[name]
+                    for name in (
+                        "selected_authority",
+                        "inherited_records",
+                        "shared_verification",
+                        "architect_projection",
+                    )
+                }
+                definitions = {
+                    record["id"]: record["text"] for record in manifest["facts"]
+                }
+                expected_prepared_catalog = {
+                    identifier: definitions[identifier]
+                    for identifier in _reference_ids(permitted_roots)
+                }
+                assert prepared["facts"] == expected_prepared_catalog, _message(
+                    f"prepared catalog differs: expected={expected_prepared_catalog!r}, actual={prepared['facts']!r}",
+                    "the reviewer receives exactly its reachable permitted catalog under L-catalog-once",
+                    "resolve the sealed role roots without dropping selected or adding unrelated definitions",
+                )
+                assert (
+                    list(_leaves(prepared)).count("PRIVATE_DESIGN_FACT_FOR_REVIEWER")
+                    == 1
                 ), _message(
+                    f"reviewer design fact occurs {list(_leaves(prepared)).count('PRIVATE_DESIGN_FACT_FOR_REVIEWER')} times, expected one",
+                    "the sealed reviewer retains its permitted decision once rather than repeating prose",
+                    "keep the decision text solely in the prepared facts catalog",
+                )
+                assert prepared["architect_projection"] == {
+                    "1": _projection_population(active, Role.REVIEWER, 1)
+                }, _message(
                     "the prepared reviewer projection differs from its independent declared population",
                     "prepared projection metadata is already owned by the sealed packet",
                     "reuse the complete sealed reviewer projection without another projection implementation",
@@ -1037,75 +1337,12 @@ class ReceivingRoleJourney:
         )
         return result.stdout.strip()
 
-    def _run5_execution_copy(self) -> Path:
-        """Adapt only the environment of a disposable copy, never frozen evidence.
-
-        Live verification uses PATH python3; historical receipts, semantic facts
-        and locators remain the original observations, not rewritten history.
-        """
-        root = self.temporary_root / "run5-execution"
-        shutil.copytree(RUN5, root)
-        # Native support admission needs real Git ignore queries in this copy,
-        # independently of the enclosing checkout that admits the frozen input.
-        self._git(root, "init", "-q")
-        original = _snapshot(root)
-        execution = copy.deepcopy(original)
-        legacy_python = "/home/parajao/Projects/nWave-dev/.venv/bin/python"
-        substitutions = set()
-        declarations = [
-            (("values", index, "authority", "verification"), value["authority"])
-            for index, value in enumerate(execution["values"])
-        ]
-        if "shared_design" in execution:
-            declarations.append(
-                (
-                    ("shared_design", "design", "verification"),
-                    execution["shared_design"]["design"],
-                )
-            )
-        for prefix, authority in declarations:
-            for index, argv in enumerate(authority.get("verification", [])):
-                if argv and argv[0] == legacy_python:
-                    argv[0] = "python3"
-                    substitutions.add((*prefix, index, 0))
-        expected = {
-            ("values", value, "authority", "verification", command, 0)
-            for value in range(3)
-            for command in range(2)
-        } | {
-            ("shared_design", "design", "verification", command, 0)
-            for command in range(2)
-        }
-        assert substitutions == expected, _message(
-            f"run5 live executable substitutions differ: {substitutions!r}",
-            "this frozen observation declares exactly six value and two shared live executable slots",
-            "restore the original frozen input and adapt only its declared live verification executables",
-        )
-        restored = copy.deepcopy(execution)
-        for path in substitutions:
-            argv = restored
-            for component in path[:-1]:
-                argv = argv[component]
-            argv[path[-1]] = legacy_python
-        assert restored == original, _message(
-            "the execution copy changed facts beyond live verification argv[0]",
-            "historical receipts, locators and all other facts must retain exact equality",
-            "limit the temporary-copy adaptation to the eight declared executable slots",
-        )
-        _write_snapshot(root, execution)
-        assert (root / "root.txt").read_bytes() == RUN5_ROOT.read_bytes(), _message(
-            "the execution copy changed literal caller bytes",
-            "environment-only adaptation must preserve the original root context",
-            "copy root.txt as binary without normalization",
-        )
-        return root
-
     def supplied_prompt_fits_attestation_and_repeats(self) -> None:
-        # This integration input is explicitly named by DESIGN. No compact-size
-        # proxy, reference-probe result, skip or fallback can satisfy its bound.
+        # Frozen pre-normalized authorities are refusal-only inputs. The exact
+        # original bytes and paired public process observations remain pinned.
         assert (RUN5 / STATE).is_file() and RUN5_ROOT.is_file(), _message(
             "the declared read-only run5 input or literal caller context is unavailable",
-            "the supplied attestation threshold applies to that actual fixture only",
+            "the refusal observation applies to that actual frozen fixture only",
             "provide the named unchanged measurement inputs; do not substitute the compact oracle fixture",
         )
         before = ((RUN5 / STATE).read_bytes(), RUN5_ROOT.read_bytes())
@@ -1123,34 +1360,53 @@ class ReceivingRoleJourney:
             "the attestation requires the exact original caller context",
             "restore the versioned frozen root.txt from the authorized original using a binary copy",
         )
-        execution_root = self._run5_execution_copy()
-        first_designer_size = None
+
         for role, position in (
             (Role.DESIGNER, 1),
             (Role.DESIGNER, 2),
             (Role.DESIGNER, 3),
             (Role.ARCHITECT, None),
         ):
-            subject = PromptInput(
-                execution_root, role, position, root_context=execution_root / "root.txt"
-            )
+            subject = PromptInput(RUN5, role, position, root_context=RUN5_ROOT)
             first = _native(subject.argv(), process=True)
-            first.successful_text()
-            _assert_repeat(first, _native(subject.argv(), process=True))
-            if role is Role.DESIGNER and position == 1:
-                first_designer_size = len(first.stdout)
+            assert first.exit != 0, _message(
+                "a frozen pre-normalized authority was executed",
+                "only schema-2 catalog authorities are executable",
+                "rebind the selected scope with des design --replace-current",
+            )
+            diagnostic = first.stdout + first.stderr
+            assert b"DesignFactsPreNormalized" in diagnostic, _message(
+                f"frozen {role.value} value={position} refusal lacks DesignFactsPreNormalized: {diagnostic!r}",
+                "L-retired-forms forbids executing historical authority; an unrelated failure is not its refusal",
+                "report the pre-normalized authority refusal at the native consumer boundary",
+            )
+            assert b"des design" in diagnostic and b"--replace-current" in diagnostic, (
+                _message(
+                    f"pre-normalized refusal lacks constructor remediation: {diagnostic!r}",
+                    "the refusal-only cutover must teach how to construct the current authority",
+                    "direct the caller to des design --replace-current for the selected scope",
+                )
+            )
+            assert PACKET_MARKER.encode() not in first.stdout, _message(
+                f"frozen {role.value} value={position} emitted native_input: {first.stdout!r}",
+                "retired authority cannot yield a successful-looking partial fact packet",
+                "complete schema-2 admission before emitting native_input",
+            )
+            second = _native(subject.argv(), process=True)
+            assert (second.exit, second.stdout, second.stderr) == (
+                first.exit,
+                first.stdout,
+                first.stderr,
+            ), _message(
+                f"paired frozen refusals differ: first={(first.exit, first.stdout, first.stderr)!r}, second={(second.exit, second.stdout, second.stderr)!r}",
+                "unchanged historical inputs must produce the same complete refusal on every fresh process",
+                "make retired-authority admission and remediation deterministic without mutating the inputs",
+            )
         assert ((RUN5 / STATE).read_bytes(), RUN5_ROOT.read_bytes()) == before, (
             _message(
                 "the run5 snapshot or caller context changed during measurement",
                 "unchanged-input comparisons and the read-only fixture boundary must remain authentic",
                 "restore the immutable measurement inputs and repeat the actual corrected-source renders",
-            )
-        )
-        assert first_designer_size is not None and first_designer_size < 490000, (
-            _message(
-                f"actual run5 acceptance-designer first prompt is {first_designer_size} UTF-8 bytes, expected strictly below 490000",
-                "the role turn must fit the supplied attestation limit without manual fact removal",
-                "remove duplicate software-owned carriers losslessly; do not truncate or substitute another fixture",
             )
         )
 
@@ -1246,6 +1502,6 @@ def test_prepared_reviewer_and_examiner_retain_their_sealed_fact_scope(tmp_path)
 @pytest.mark.acceptance
 @pytest.mark.integration
 def test_supplied_prompt_fits_attestation_and_repeats_without_manual_removal(tmp_path):
-    """Actual run5 ATD1 <490000 bytes; paired whole stdout for ATD1-3 and architect."""
+    """Exact run5 byte identities; paired explicit refusals for ATD1-3 and architect."""
     journey = ReceivingRoleJourney(tmp_path)
     journey.supplied_prompt_fits_attestation_and_repeats()

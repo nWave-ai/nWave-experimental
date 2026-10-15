@@ -469,7 +469,7 @@ def test_an_unenumerated_kernel_refusal_still_names_its_errno(
 def _integration_facts():
     from des.domain.integration_commit_message import IntegrationFacts
 
-    return IntegrationFacts("Deliver value\n", ("Deliver value\n",), ("brief.md",))
+    return IntegrationFacts(("Deliver value\n",), (None,), ("brief.md",))
 
 
 def test_the_candidate_builder_does_not_inherit_a_parent_repository(

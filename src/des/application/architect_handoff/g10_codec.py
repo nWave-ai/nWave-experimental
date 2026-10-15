@@ -9,11 +9,12 @@ import dataclasses as dc
 import hashlib
 import json
 import math
-import os
 import re
 import types
 import typing as t
 from functools import cache
+
+from des.ports.driven_ports.task_invocation_port import FactId
 
 from . import g10_types as T
 from .g10_defect import Defect
@@ -78,6 +79,53 @@ def dec(
     meta: t.Mapping[str, t.Any] | None = None,
 ) -> t.Any:
     meta = meta or {}
+    if tp is T.FactRef:
+        if not isinstance(v, dict) or set(v) != {"ref"}:
+            ds.append(
+                _d(
+                    "DesignFactRefExpected",
+                    path,
+                    "expected exactly {ref: FactId}",
+                    "semantic prose belongs in the fact catalog",
+                    "define the fact in facts and cite its id with {ref}",
+                )
+            )
+            if isinstance(v, dict):
+                for key in v.keys() - {"ref"}:
+                    ds.append(
+                        _d(
+                            "DesignKeyNotInGrammar",
+                            f"{path}.{key}",
+                            "unknown field",
+                            "FactRef has only ref",
+                            "remove the field",
+                        )
+                    )
+            return BAD
+        ref = v["ref"]
+        if not isinstance(ref, str):
+            ds.append(
+                _d(
+                    "DesignFactRefExpected",
+                    path + ".ref",
+                    "expected a FactId string",
+                    "FactRef must cite one catalog identifier",
+                    "write exactly {ref: FactId}",
+                )
+            )
+            return BAD
+        if not re.fullmatch(T.ID_RE, ref):
+            ds.append(
+                _d(
+                    "DesignFactIdShape",
+                    path + ".ref",
+                    "invalid fact identifier",
+                    "fact ids are stable join keys",
+                    _PATTERN_HOW["ID"],
+                )
+            )
+            return BAD
+        return T.FactRef(FactId(ref))
     o = t.get_origin(tp)
     if is_union(o):
         args = t.get_args(tp)
@@ -164,7 +212,24 @@ def dec(
             )
             for i, x in enumerate(v)
         ]
-        return BAD if any(i is BAD for i in items) else tuple(items)
+        list_defects: tuple[str, ...] = ()
+        if meta.get("unique_refs"):
+            from des.domain.design_document import fact_reference_list_defects
+
+            list_defects = fact_reference_list_defects(
+                (item for item in items if item is not BAD), path
+            )
+            ds.extend(
+                _d(
+                    problem.split()[0],
+                    path,
+                    problem,
+                    "this semantic reference list retains its unique-entry contract",
+                    "keep each FactRef once within this list; the same fact may still be cited in another slot",
+                )
+                for problem in list_defects
+            )
+        return BAD if list_defects or any(i is BAD for i in items) else tuple(items)
     if isinstance(tp, t.NewType):
         if not isinstance(v, str) or not T.valid(tp.__name__, v):
             ds.append(
@@ -330,7 +395,9 @@ def _dec_record(cls: type, v: t.Any, path: str, ds: list[Defect]) -> t.Any:
         if k not in known:
             ds.append(
                 _d(
-                    "G4",
+                    "ArchitectHandoffModelTextRetired"
+                    if cls is T.Model and k in {"text", "text_file"}
+                    else "DesignKeyNotInGrammar",
                     f"{path}.{k}",
                     "unknown field",
                     "the grammar is closed: a field no consumer reads is a fact nobody checks",
@@ -371,7 +438,7 @@ def decode_handoff(doc: t.Any) -> tuple[T.Handoff | None, list[Defect]]:
     ):
         return None, [
             _d(
-                "G4",
+                "DesignKeyNotInGrammar",
                 "$",
                 'the document must be exactly {"sections": [...]}',
                 "the grammar is closed",
@@ -384,11 +451,22 @@ def decode_handoff(doc: t.Any) -> tuple[T.Handoff | None, list[Defect]]:
         if not isinstance(e, dict) or set(e) != {"kind", "scope", "status"}:
             ds.append(
                 _d(
-                    "G4",
+                    "DesignKeyNotInGrammar",
                     p,
                     "a section is exactly {kind, scope, status}",
                     "the grammar is closed",
                     "fix the keys",
+                )
+            )
+            continue
+        if e["kind"] == "receipts":
+            ds.append(
+                _d(
+                    "ArchitectHandoffSectionRetired",
+                    p,
+                    "submitted receipts section",
+                    "runs belong only in the driven receipt store",
+                    "use des handoff run or des handoff record",
                 )
             )
             continue
@@ -429,7 +507,7 @@ def decode_handoff(doc: t.Any) -> tuple[T.Handoff | None, list[Defect]]:
         elif set(st) != {"tag", "payload"}:
             ds.append(
                 _d(
-                    "G4",
+                    "DesignKeyNotInGrammar",
                     p + ".status",
                     "applicable is exactly {tag, payload}",
                     "the grammar is closed",
@@ -453,7 +531,7 @@ def decode_handoff(doc: t.Any) -> tuple[T.Handoff | None, list[Defect]]:
             )
             continue
         h[(kind, scope)] = T.Entry(kind=kind, scope=scope, status=status)
-    return (None if ds else {k: canonical(e) for k, e in sorted(h.items())}), ds
+    return (None if ds else h), ds
 
 
 # --------------------------------------------------------------------------- reading files
@@ -502,68 +580,18 @@ def load_json(path: str) -> tuple[t.Any, list[Defect]]:
         )
 
 
-def _inside(root: str, rel: str) -> str | None:
-    """The real path of `rel` when it names something inside `root`; None for anything else (a NUL byte included)."""
-    try:
-        full = os.path.realpath(os.path.join(root, rel))
-        return full if os.path.commonpath([root, full]) == root else None
-    except (ValueError, OSError):
-        return None
-
-
-def resolve_authoring(doc: t.Any, base_dir: str) -> list[Defect]:
-    """Authoring sugar: a model may give `text_file` (inside the directory of the sidecar) instead of `text`.
-    The handoff itself always carries the text; this only saves the author from escaping a model."""
-    ds: list[Defect] = []
-    if not isinstance(doc, dict) or not isinstance(doc.get("sections"), list):
-        return ds
-    root = os.path.realpath(base_dir)
-    for i, e in enumerate(doc["sections"]):
-        st = e.get("status") if isinstance(e, dict) else None
-        pay = st.get("payload") if isinstance(st, dict) else None
-        if not isinstance(pay, dict) or not isinstance(pay.get("models"), list):
-            continue
-        for j, m in enumerate(pay["models"]):
-            if not (isinstance(m, dict) and "text_file" in m and "text" not in m):
-                continue
-            where = f"$.sections[{i}].status.payload.models[{j}].text_file"
-            rel = m["text_file"]
-            full = _inside(root, rel) if isinstance(rel, str) else None
-            if full is None:
-                ds.append(
-                    _d(
-                        "G11",
-                        where,
-                        f"{rel!r} is not a file inside the directory of the sidecar",
-                        "a model file is kept beside the sidecar, so that the sidecar cannot read what it does not own",
-                        "write a relative path inside that directory, or give `text`",
-                    )
-                )
-                continue
-            try:
-                with open(full, "rb") as fh:
-                    m["text"] = fh.read().decode("utf-8")
-                del m["text_file"]
-            except (OSError, UnicodeDecodeError) as exc:
-                ds.append(
-                    _d(
-                        "G11",
-                        where,
-                        f"cannot read {rel}: {getattr(exc, 'strerror', None) or 'not UTF-8 text'}",
-                        "the model text is the artifact the claims are about",
-                        "write the model file as UTF-8, or give `text`",
-                    )
-                )
-    return ds
-
-
 # --------------------------------------------------------------------------- canonical form
-def enc(o: t.Any, field: str | None = None) -> t.Any:
+def enc(o: t.Any, field: str | None = None, *, ordered: bool = False) -> t.Any:
     if dc.is_dataclass(o) and not isinstance(o, type):
-        return {f.name: enc(getattr(o, f.name), f.name) for f in dc.fields(o)}
+        return {
+            f.name: enc(getattr(o, f.name), f.name, ordered=ordered)
+            for f in dc.fields(o)
+        }
+    if isinstance(o, dict):
+        return {key: enc(value, ordered=ordered) for key, value in o.items()}
     if isinstance(o, tuple):
-        items = [enc(x) for x in o]
-        if field in T.SEQUENCE_FIELDS:
+        items = [enc(x, ordered=ordered) for x in o]
+        if ordered or field in T.SEQUENCE_FIELDS:
             return items
         uniq = {json.dumps(i, sort_keys=True, ensure_ascii=False): i for i in items}
         return [uniq[k] for k in sorted(uniq)]
@@ -606,8 +634,8 @@ def sha(o: t.Any) -> str:
 def to_json(h: T.Handoff) -> dict:
     return {
         "sections": [
-            {"kind": k, "scope": s, "status": enc(e.status)}
-            for (k, s), e in sorted(h.items())
+            {"kind": k, "scope": s, "status": enc(e.status, ordered=True)}
+            for (k, s), e in h.items()
         ]
     }
 

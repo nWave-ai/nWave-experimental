@@ -1,4 +1,4 @@
-"""The closed v1 DESIGN-document semantic value and its two projections."""
+"""The normalized DESIGN language and its catalog, binding and projections."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 import shlex
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, fields, is_dataclass, replace
 from functools import partial
 from typing import TYPE_CHECKING, Generic, TypeVar
 
@@ -23,16 +23,21 @@ from des.ports.driven_ports.task_invocation_port import (
     ApplicableADR,
     ApplicableAgreementAnalysis,
     ApplicableArchitecturalTests,
+    ApplicableBoundaries,
     ApplicableContractTests,
     ApplicableImpactClosure,
     ApplicablePrefactoring,
     ArchitecturalTestObligation,
+    BoundaryFailure,
     ContractTestObligation,
     DesignFacts,
     DesignTarget,
+    FactId,
+    FactRecord,
+    FactRef,
     ImpactItem,
-    LegacyDesignFacts,
     NotApplicable,
+    PreNormalizedDesign,
     PublicOracle,
     ReuseAnalysis,
     ReuseCandidate,
@@ -45,7 +50,416 @@ if TYPE_CHECKING:
 
 
 class DesignDocumentInvalid(InputDefects):
-    """The supplied document is not a member of the closed v1 language."""
+    """The supplied document is not a member of the normalized language."""
+
+
+def normalized_wire(value: object) -> object:
+    """Preserve native records and ordering at the JSON boundary."""
+    if isinstance(value, DesignFacts):
+        from des.application.architect_handoff import wire
+
+        return {
+            field.name: (
+                wire(value.architect_handoff)
+                if field.name == "architect_handoff"
+                and value.architect_handoff is not None
+                else normalized_wire(getattr(value, field.name))
+            )
+            for field in fields(value)
+            if field.name != "architect_handoff" or value.architect_handoff is not None
+        }
+    if is_dataclass(value):
+        return {
+            field.name: normalized_wire(getattr(value, field.name))
+            for field in fields(value)
+        }
+    if isinstance(value, dict):
+        return {key: normalized_wire(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [normalized_wire(item) for item in value]
+    return value
+
+
+def fact_references(value: object) -> Iterator[FactRef]:
+    if isinstance(value, FactRef):
+        yield value
+    elif is_dataclass(value):
+        for field in fields(value):
+            if field.name not in ("facts", "inherits"):
+                yield from fact_references(getattr(value, field.name))
+    elif isinstance(value, dict):
+        if set(value) == {"ref"}:
+            yield FactRef(FactId(value["ref"]))
+        else:
+            for key, item in value.items():
+                if key not in ("facts", "inherits"):
+                    yield from fact_references(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from fact_references(item)
+
+
+def fact_reference_list_defects(
+    references: Iterable[FactRef], path: str
+) -> tuple[str, ...]:
+    """The preserved uniqueness rule for one semantic reference list."""
+    seen: set[FactId] = set()
+    repeated: set[FactId] = set()
+    defects: list[str] = []
+    for reference in references:
+        if reference.ref in seen and reference.ref not in repeated:
+            defects.append(
+                f"DesignListEntryRepeated {path}: repeated reference {reference.ref}; "
+                "retain one entry in this list; reuse across different slots is allowed"
+            )
+            repeated.add(reference.ref)
+        seen.add(reference.ref)
+    return tuple(defects)
+
+
+class FactCatalogConstructionRefused(Exception):
+    """The catalog invariant owner was bypassed."""
+
+
+_CATALOG_TOKEN = object()
+
+
+class FactCatalog:
+    __slots__ = ("_texts", "records")
+    __hash__ = None
+
+    def __init__(self, records: tuple[FactRecord, ...], *, token: object):
+        if token is not _CATALOG_TOKEN:
+            raise FactCatalogConstructionRefused(
+                "WHAT: FactCatalog built outside design_document.py; "
+                "WHY: the catalog bijection is owned by its smart constructor; "
+                "HOW: call design_document.build_fact_catalog"
+            )
+        self.records = records
+        self._texts = {record.id: record.text for record in records}
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, FactCatalog):
+            return NotImplemented
+        return self.records == other.records
+
+    def resolve(self, reference: FactRef) -> str:
+        return self._texts[reference.ref]
+
+    def reachable(self, *roots: object) -> dict[str, str]:
+        reached = {
+            reference.ref for root in roots for reference in fact_references(root)
+        }
+        return {
+            record.id: record.text for record in self.records if record.id in reached
+        }
+
+
+def build_fact_catalog(records: Iterable[FactRecord]) -> FactCatalog | tuple[str, ...]:
+    admitted = tuple(records)
+    defects: list[str] = []
+    ids: set[str] = set()
+    texts: dict[str, str] = {}
+    for record in admitted:
+        if (
+            not isinstance(record.id, str)
+            or re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", record.id) is None
+        ):
+            defects.append(f"DesignFactIdShape facts.{record.id}: invalid identifier")
+        if record.id in ids:
+            defects.append(f"DesignFactIdClash facts.{record.id}: id already defined")
+        ids.add(record.id)
+        if not isinstance(record.text, str):
+            defects.append(
+                f"DesignKeyNotInGrammar facts.{record.id}.text: text must be a string"
+            )
+            continue
+        normalized = " ".join(record.text.split()).casefold()
+        if not normalized:
+            defects.append(
+                f"DesignKeyNotInGrammar facts.{record.id}.text: text must be non-empty"
+            )
+        if normalized in texts:
+            defects.append(
+                f"DesignFactTextRepeated facts.{record.id}: same normalized text as {texts[normalized]}"
+            )
+        texts[normalized] = record.id
+    return tuple(defects) if defects else FactCatalog(admitted, token=_CATALOG_TOKEN)
+
+
+def _record_ids(value: object) -> Iterator[str]:
+    if is_dataclass(value):
+        if isinstance(value, (FactRef, FactRecord)):
+            return
+        for field in fields(value):
+            item = getattr(value, field.name)
+            if field.name == "id":
+                yield item
+            elif field.name != "facts":
+                yield from _record_ids(item)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            if key == "id":
+                yield item
+            elif key != "facts":
+                yield from _record_ids(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _record_ids(item)
+
+
+def _local_reference_defects(
+    root: Mapping[str, object], *, shared: bool
+) -> Iterator[str]:
+    records = tuple(FactRecord(**item) for item in root.get("facts") or ())
+    catalog = build_fact_catalog(records)
+    if isinstance(catalog, tuple):
+        yield from catalog
+    ids = {record.id for record in records}
+    for identifier in _record_ids(root):
+        if identifier in ids:
+            yield f"DesignFactIdClash {identifier}: record id already defined"
+        ids.add(identifier)
+    if shared and root.get("inherits") is not None:
+        yield "DesignInheritsOnShared manifest.inherits: only values select shared records"
+    if not root.get("inherits"):
+        for name, member in (
+            ("architectural_tests", "obligations"),
+            ("contract_tests", "obligations"),
+            ("agreement_analysis", "parties"),
+        ):
+            decision = root.get(name)
+            if (
+                decision
+                and decision["applicability"] == "applicable"
+                and not decision[member]
+            ):
+                yield f"DesignInheritanceContradiction manifest.{name}: empty own records require inherits"
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedDesign:
+    catalog: FactCatalog
+    design: DesignFacts
+    inherited_records: dict[str, object]
+    shared_verification: dict[str, tuple[str, ...]]
+
+
+def inheritable_records(design: DesignFacts) -> dict[str, tuple[str, object]]:
+    records: dict[str, tuple[str, object]] = {}
+    for name, member in (
+        ("architectural_tests", "obligations"),
+        ("contract_tests", "obligations"),
+        ("agreement_analysis", "parties"),
+    ):
+        decision = getattr(design, name)
+        for record in getattr(decision, member, ()):
+            records[record.id] = (name, record)
+    from des.application.architect_handoff import wire
+
+    handoff = wire(design.architect_handoff) if design.architect_handoff else {}
+    for section in handoff.get("sections", ()):
+        content = section["status"].get("payload", {})
+        for member in (
+            "observations",
+            "constructors",
+            "generators",
+            "laws",
+            "refuted",
+            "claims",
+            "models",
+            "closures",
+        ):
+            for record in content.get(member, ()):
+                identifier = record.get("id")
+                if identifier is None and isinstance(record.get("subject"), dict):
+                    identifier = record["subject"].get("ref")
+                if identifier:
+                    records[identifier] = (
+                        f"architect_handoff.{section.get('kind')}",
+                        record,
+                    )
+    return records
+
+
+def resolve_inheritance(
+    shared: DesignFacts | None,
+    siblings: Iterable[DesignFacts],
+    value: DesignFacts,
+) -> ResolvedDesign | tuple[str, ...]:
+    """Resolve the current value against one supplied binding snapshot."""
+    siblings = tuple(
+        sibling for sibling in siblings if isinstance(sibling, DesignFacts)
+    )
+    if isinstance(value, (PreNormalizedDesign, str)):
+        return ("DesignFactsPreNormalized: use des design --replace-current --input -",)
+    if shared is not None and not isinstance(shared, DesignFacts):
+        return (
+            "DesignFactsPreNormalized shared: use des design --shared --replace-current --input -",
+        )
+    population = (*(() if shared is None else (shared,)), *siblings, value)
+    catalog = build_fact_catalog(
+        record for design in population for record in design.facts
+    )
+    defects = list(catalog) if isinstance(catalog, tuple) else []
+    identities: set[str] = set()
+    for design in population:
+        for identifier in (
+            *[record.id for record in design.facts],
+            *_record_ids(design),
+        ):
+            if identifier in identities:
+                defect = f"DesignFactIdClash {identifier}: catalog or record id already defined"
+                if defect not in defects:
+                    defects.append(defect)
+            identities.add(identifier)
+    context = value.authority_locator or "submitted value"
+    available_facts = {
+        record.id
+        for design in (() if shared is None else (shared,)) + (value,)
+        for record in design.facts
+    }
+    references = tuple(fact_references(value))
+    if shared is None and (
+        value.inherits or any(ref.ref not in available_facts for ref in references)
+    ):
+        defects.append(
+            f"DesignInheritanceWithoutShared {context}: shared references require a bound shared design"
+        )
+    for reference in references:
+        if reference.ref not in available_facts:
+            defects.append(
+                f"DesignFactUnresolved {context}: missing fact {reference.ref}"
+            )
+    if shared is not None:
+        shared_facts = {record.id for record in shared.facts}
+        for reference in fact_references(shared):
+            if reference.ref not in shared_facts:
+                defects.append(
+                    f"DesignFactUnresolved shared: missing fact {reference.ref}, dependent {context}"
+                )
+    shared_records = {} if shared is None else inheritable_records(shared)
+    inherited: dict[str, object] = {}
+    selected: dict[str, list[object]] = {}
+    commands: dict[str, tuple[str, ...]] = {}
+    verification = list(value.verification)
+    seen_inherits: set[str] = set()
+    unresolved_inheritance = False
+    for reference in value.inherits:
+        if reference.ref in seen_inherits:
+            continue
+        seen_inherits.add(reference.ref)
+        entry = shared_records.get(reference.ref)
+        if entry is None:
+            unresolved_inheritance = True
+            defects.append(
+                f"DesignFactUnresolved {context}: missing inherited record {reference.ref}"
+            )
+            continue
+        name, record = entry
+        if not name.startswith("architect_handoff."):
+            inherited[reference.ref] = normalized_wire(record)
+        selected.setdefault(name, []).append(record)
+        if hasattr(record, "verification_index"):
+            index = record.verification_index
+            if index >= len(shared.verification):
+                defects.append(
+                    f"DesignFactUnresolved {context}: record {reference.ref} missing shared verification {index}"
+                )
+                continue
+            argv = shared.verification[index]
+            commands[str(index)] = argv
+            if argv not in verification:
+                verification.append(argv)
+            selected[name][-1] = replace(
+                record, verification_index=verification.index(argv)
+            )
+    if shared is not None and value.architect_handoff:
+        from des.application.architect_handoff import g10_types as T
+
+        shared_vocabulary = {
+            record.id
+            for entry in (shared.architect_handoff or {}).values()
+            if isinstance(entry.status, T.Applicable)
+            and isinstance(entry.status.payload, T.Laws)
+            for record in (
+                *entry.status.payload.observations,
+                *entry.status.payload.constructors,
+                *entry.status.payload.generators,
+            )
+        }
+        for entry in value.architect_handoff.values():
+            if not isinstance(entry.status, T.Applicable) or not isinstance(
+                entry.status.payload, T.Laws
+            ):
+                continue
+            for law in entry.status.payload.laws:
+                references = law.uses
+                if isinstance(law.treatment, T.Broad):
+                    references = (*references, law.treatment.generator)
+                for identifier in dict.fromkeys(references):
+                    if (
+                        identifier in shared_vocabulary
+                        and identifier not in seen_inherits
+                    ):
+                        defects.append(
+                            f"DesignFactUnresolved {context}: law {law.id} references shared vocabulary "
+                            f"{identifier} without explicit inheritance; submit des design --input - "
+                            f'with {{"ref":"{identifier}"}} in this value\'s inherits'
+                        )
+    if unresolved_inheritance:
+        defects.append(
+            "UNRUN: inherited obligation and party cardinality checks (unresolved inherited records)"
+        )
+    replacements: dict[str, object] = {"verification": tuple(verification)}
+    for name, member in (
+        ("architectural_tests", "obligations"),
+        ("contract_tests", "obligations"),
+        ("agreement_analysis", "parties"),
+    ):
+        decision = getattr(value, name)
+        inherited_kind = selected.get(name, ())
+        if isinstance(decision, NotApplicable) and inherited_kind:
+            defects.append(
+                f"DesignInheritanceContradiction {context}.{name}: not_applicable with inherited records"
+            )
+        elif hasattr(decision, member):
+            own = getattr(decision, member)
+            if not own and not inherited_kind and not unresolved_inheritance:
+                defects.append(
+                    f"DesignInheritanceContradiction {context}.{name}: no own or inherited records"
+                )
+            replacements[name] = replace(decision, **{member: (*own, *inherited_kind)})
+    if defects:
+        return tuple(dict.fromkeys(defects))
+    effective = replace(value, **replacements)
+    for name in ("architectural_tests", "contract_tests"):
+        decision = getattr(effective, name)
+        if isinstance(decision, NotApplicable):
+            continue
+        for obligation in decision.obligations:
+            if obligation.verification_index >= len(effective.verification):
+                defects.append(
+                    f"{name}.verification_index must name one declared verification command"
+                )
+            if isinstance(obligation, ContractTestObligation):
+                agreement = effective.agreement_analysis
+                parties = getattr(agreement, "parties", ())
+                for role in ("producer", "consumer"):
+                    if not any(
+                        party.contract == obligation.contract
+                        and party.role == role
+                        and party.locator == getattr(obligation, role)
+                        for party in parties
+                    ):
+                        defects.append(
+                            _unlinked_party_defect(role, obligation, parties)
+                        )
+    return (
+        tuple(defects)
+        if defects
+        else ResolvedDesign(catalog, effective, inherited, commands)
+    )
 
 
 def _object(value: object, name: str) -> dict[str, object]:
@@ -56,7 +470,9 @@ def _object(value: object, name: str) -> dict[str, object]:
 
 def _keys(value: dict[str, object], keys: set[str], name: str) -> None:
     if set(value) != keys:
-        raise DesignDocumentInvalid(f"{name} must contain exactly {sorted(keys)}")
+        raise DesignDocumentInvalid(
+            f"DesignKeyNotInGrammar {name}: must contain exactly {sorted(keys)}"
+        )
 
 
 def _text(value: object, name: str) -> str:
@@ -73,7 +489,9 @@ def _duplicates(values: tuple[object, ...], name: str) -> None:
 def _path(value: object, name: str) -> str:
     path = _text(value, name)
     if not is_repository_relative_whole_file_locator(path):
-        raise DesignDocumentInvalid(f"{name} must be a repository-relative path")
+        raise DesignDocumentInvalid(
+            f"{name} must be a repository-relative path: supplied {value!r}"
+        )
     return path
 
 
@@ -189,7 +607,8 @@ class _Product(_Form[dict[str, object]]):
         allowed = {field.name for field in self.fields}
         if not required <= set(decoded) <= allowed:
             defects.add(
-                f"{name} must contain {sorted(required)}; optional: {sorted(allowed - required)}"
+                f"DesignKeyNotInGrammar {name}: required {sorted(required)}; "
+                f"unknown {sorted(set(decoded) - allowed)}"
             )
         return self.decode_fields(decoded, name, defects)
 
@@ -245,9 +664,14 @@ class _ListOf(_Form[tuple[object, ...]]):
             defects.take(partial(self.item.decode, item, f"{name}[{index}]"))
             for index, item in enumerate(value)
         )
-        # Duplicates are judged only over a wholly decoded list.
+        if self.unique and self.item is _FACT_REF:
+            for defect in fact_reference_list_defects(
+                (reference for reference in decoded if isinstance(reference, FactRef)),
+                name,
+            ):
+                defects.add(defect)
         defects.close()
-        if self.unique:
+        if self.unique and self.item is not _FACT_REF:
             _duplicates(tuple(self.identity(item) for item in decoded), name)
         return decoded
 
@@ -281,6 +705,10 @@ class _Choice(_Form[object]):
                     if self is _TARGET_DECISION or self is _PRODUCT_CHANGE
                     else ""
                 )
+                if self is _ADR_STATUS:
+                    raise DesignDocumentInvalid(
+                        f"DesignAdrStatusRetired {name}: use proposed or accepted"
+                    )
                 raise DesignDocumentInvalid(
                     f"WHAT: {name} is not supported; WHY: supplied {decoded!r}, "
                     f"expected {self.alternatives!r}; HOW: choose a supported alternative{correction}"
@@ -322,25 +750,20 @@ class _Choice(_Form[object]):
         return tuple(lines)
 
 
-def _plain_heading(value: object, name: str) -> str:
-    heading = _text(value, name)
-    if "\n" in heading or "\r" in heading or heading.startswith("#"):
-        raise DesignDocumentInvalid(
-            f"{name} must be plain text, not a Markdown heading"
-        )
-    return heading
-
-
 _TEXT = _Leaf("non-empty text.", _text)
 _PATH = _Leaf("repository-relative file path.", _path)
 _ORACLE = _Leaf(f"{_ORACLE_SHAPE}.", _oracle)
 _REUSE_LOCATOR = _Leaf("repository-relative path and positive line.", _reuse_locator)
 _SCHEMA_VERSION = _Leaf(
-    "integer `1`.",
+    "integer `2`.",
     lambda value, name: (
         value
-        if isinstance(value, int) and not isinstance(value, bool) and value == 1
-        else (_ for _ in ()).throw(DesignDocumentInvalid(f"{name} must be 1"))
+        if isinstance(value, int) and not isinstance(value, bool) and value == 2
+        else (_ for _ in ()).throw(
+            DesignDocumentInvalid(
+                f"DesignManifestSchemaRetired {name}: use schema_version 2"
+            )
+        )
     ),
 )
 _PARADIGM = _Choice(("object_oriented", "functional", "procedural"))
@@ -350,6 +773,42 @@ _REUSE_DECISION = _Choice(("REUSE", "EXTEND", "REPLACE", "CREATE_NEW"))
 _FAILURE_OUTCOME = _Choice(("Refusal", "Retry", "Indeterminate"))
 
 _TEXTS = _ListOf(_TEXT)
+
+
+def _fact_id(value: object, name: str) -> FactId:
+    if (
+        not isinstance(value, str)
+        or re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", value) is None
+    ):
+        raise DesignDocumentInvalid(
+            f"DesignFactIdShape {name}: expected [A-Za-z][A-Za-z0-9_-]{{0,63}}"
+        )
+    return FactId(value)
+
+
+def _fact_ref(value: object, name: str) -> FactRef:
+    if not isinstance(value, dict) or set(value) != {"ref"}:
+        raise DesignDocumentInvalid(
+            f'DesignFactRefExpected {name}: use exactly {{"ref": id}}'
+        )
+    if not isinstance(value["ref"], str):
+        raise DesignDocumentInvalid(
+            f"DesignFactRefExpected {name}.ref: expected an identifier string"
+        )
+    return FactRef(_fact_id(value["ref"], f"{name}.ref"))
+
+
+def _fact_text(value: object, name: str) -> str:
+    _text(value, name)
+    return value
+
+
+_FACT_ID = _Leaf("identifier [A-Za-z][A-Za-z0-9_-]{0,63}.", _fact_id)
+_FACT_REF = _Leaf('exact object {"ref": id}.', _fact_ref)
+_FACT_REFS = _ListOf(_FACT_REF, non_empty=False)
+_FACT_TEXT = _Leaf("non-empty text, retained verbatim.", _fact_text)
+_FACT_RECORD = _Product((_Field("id", _FACT_ID), _Field("text", _FACT_TEXT)))
+_FACT_RECORDS = _ListOf(_FACT_RECORD, non_empty=False, unique=False)
 _PATHS = _ListOf(_PATH, non_empty=False)
 #: Both rules are refused by `DesignDocument.from_json`; stated here so the
 #: generated grammar teaches them before a submission (native architect runs
@@ -409,7 +868,7 @@ _TARGET = _Product(
     (
         _Field("path", _PATH),
         _Field("decision", _TARGET_DECISION),
-        _Field("reason", _TEXT),
+        _Field("reason", _FACT_REF),
     )
 )
 _TARGETS = _ListOf(
@@ -423,7 +882,7 @@ _REUSE_CANDIDATE = _Product(
         _Field("symbol", _TEXT),
         _Field("locator", _REUSE_LOCATOR),
         _Field("decision", _REUSE_DECISION),
-        _Field("reason", _TEXT),
+        _Field("reason", _FACT_REF),
     )
 )
 _REUSE_ANALYSIS = _Product(
@@ -445,8 +904,8 @@ _PREFACTORING = _Choice(
             _Product(
                 (
                     _Field("existing_oracle", _ORACLE),
-                    _Field("move", _TEXT),
-                    _Field("preserved_observation", _TEXT),
+                    _Field("move", _FACT_REF),
+                    _Field("preserved_observation", _FACT_REF),
                     _Field("verification", _VERIFICATION),
                     _Field(
                         "acceptance_supports",
@@ -458,7 +917,7 @@ _PREFACTORING = _Choice(
         ),
         (
             "not_applicable",
-            _Product((_Field("reason", _TEXT),)),
+            _Product((_Field("reason", _FACT_REF),)),
         ),
     ),
 )
@@ -466,11 +925,12 @@ _AGREEMENT_ROLE = _Choice(("producer", "consumer"))
 _AGREEMENT_DECISION = _Choice(("MIGRATED", "UNCHANGED_COMPATIBLE", "INCOMPATIBLE"))
 _AGREEMENT_PARTY = _Product(
     (
+        _Field("id", _FACT_ID),
         _Field("contract", _TEXT),
         _Field("role", _AGREEMENT_ROLE),
         _Field("locator", _REUSE_LOCATOR),
         _Field("decision", _AGREEMENT_DECISION),
-        _Field("reason", _TEXT),
+        _Field("reason", _FACT_REF),
     )
 )
 _AGREEMENT_ANALYSIS = _Choice(
@@ -478,19 +938,26 @@ _AGREEMENT_ANALYSIS = _Choice(
     products=(
         (
             "applicable",
-            _Product((_Field("parties", _ListOf(_AGREEMENT_PARTY)),)),
+            _Product(
+                (
+                    _Field(
+                        "parties",
+                        _ListOf(_AGREEMENT_PARTY, non_empty=False, unique=False),
+                    ),
+                )
+            ),
         ),
         (
             "not_applicable",
-            _Product((_Field("reason", _TEXT),)),
+            _Product((_Field("reason", _FACT_REF),)),
         ),
     ),
 )
 _FAILURE = _Product(
     (
-        _Field("condition", _TEXT),
+        _Field("condition", _FACT_REF),
         _Field("outcome", _FAILURE_OUTCOME),
-        _Field("observation", _TEXT),
+        _Field("observation", _FACT_REF),
     )
 )
 _BOUNDARIES = _Choice(
@@ -500,33 +967,25 @@ _BOUNDARIES = _Choice(
             "applicable",
             _Product(
                 (
-                    _Field("driving_port", _TEXT),
-                    _Field("driven_ports", _TEXTS),
-                    _Field("dependency_direction", _TEXT),
+                    _Field("driving_port", _FACT_REF),
+                    _Field("driven_ports", _FACT_REFS),
+                    _Field("dependency_direction", _FACT_REF),
                     _Field("failures", _ListOf(_FAILURE)),
                 )
             ),
         ),
         (
             "not_applicable",
-            _Product((_Field("reason", _TEXT),)),
+            _Product((_Field("reason", _FACT_REF),)),
         ),
     ),
 )
 _PUBLIC_ORACLE = _Product(
     (
-        _Field("observation", _TEXT),
-        _Field("stimulus", _TEXT),
-        _Field("expected", _TEXT),
-        _Field("falsifier", _TEXT),
-    )
-)
-_AUTHORITY = _Product(
-    (
-        _Field(
-            "heading",
-            _Leaf("plain non-empty text, not a Markdown heading.", _plain_heading),
-        ),
+        _Field("observation", _FACT_REF),
+        _Field("stimulus", _FACT_REF),
+        _Field("expected", _FACT_REF),
+        _Field("falsifier", _FACT_REF),
     )
 )
 
@@ -536,45 +995,60 @@ def _applicability(form: _Product) -> _Choice:
         tag="applicability",
         products=(
             ("applicable", form),
-            ("not_applicable", _Product((_Field("reason", _TEXT),))),
+            ("not_applicable", _Product((_Field("reason", _FACT_REF),))),
         ),
     )
 
 
 _ARCHITECTURAL_OBLIGATION = _Product(
     (
-        _Field("obligation", _TEXT),
+        _Field("id", _FACT_ID),
+        _Field("obligation", _FACT_REF),
         _Field("oracle", _ORACLE),
         _Field("verification_index", _ORACLE_VERIFICATION_INDEX),
     )
 )
 _CONTRACT_OBLIGATION = _Product(
     (
-        _Field("obligation", _TEXT),
+        _Field("id", _FACT_ID),
+        _Field("obligation", _FACT_REF),
         _Field("contract", _TEXT),
         _Field("producer", _REUSE_LOCATOR),
         _Field("consumer", _REUSE_LOCATOR),
-        _Field("observation", _TEXT),
+        _Field("observation", _FACT_REF),
         _Field("oracle", _ORACLE),
         _Field("verification_index", _ORACLE_VERIFICATION_INDEX),
     )
 )
 _ARCHITECTURAL_TESTS = _applicability(
-    _Product((_Field("obligations", _ListOf(_ARCHITECTURAL_OBLIGATION)),))
+    _Product(
+        (
+            _Field(
+                "obligations",
+                _ListOf(_ARCHITECTURAL_OBLIGATION, non_empty=False, unique=False),
+            ),
+        )
+    )
 )
 _CONTRACT_TESTS = _applicability(
-    _Product((_Field("obligations", _ListOf(_CONTRACT_OBLIGATION)),))
+    _Product(
+        (
+            _Field(
+                "obligations",
+                _ListOf(_CONTRACT_OBLIGATION, non_empty=False, unique=False),
+            ),
+        )
+    )
 )
+_ADR_STATUS = _Choice(("proposed", "accepted"))
 _ADR = _applicability(
     _Product(
         (
-            _Field("context", _TEXT),
-            _Field("decision", _TEXT),
-            _Field("alternatives", _TEXTS),
-            _Field("consequences", _TEXTS),
-            _Field(
-                "status", _Choice(("proposed", "accepted", "superseded", "deprecated"))
-            ),
+            _Field("context", _FACT_REF),
+            _Field("decision", _FACT_REF),
+            _Field("alternatives", _FACT_REFS),
+            _Field("consequences", _FACT_REFS),
+            _Field("status", _ADR_STATUS),
         )
     )
 )
@@ -604,7 +1078,7 @@ _IMPACT_ITEM = _Product(
         _Field("kind", _IMPACT_KIND),
         _Field("locator", _IMPACT_LOCATOR),
         _Field("decision", _IMPACT_DECISION),
-        _Field("reason", _TEXT),
+        _Field("reason", _FACT_REF),
     )
 )
 _IMPACT_CLOSURE = _applicability(
@@ -637,13 +1111,15 @@ def _architect_handoff_input(value: object, name: str) -> dict:
     from des.application.architect_handoff import decode, wire
 
     try:
-        return wire(decode(value))
+        return wire(decode(value, source_path=name))
     except ValueError as error:
-        raise DesignDocumentInvalid(f"{name}: {error}") from error
+        raise DesignDocumentInvalid(
+            *(line for line in str(error).splitlines() if line.strip())
+        ) from error
 
 
 _ARCHITECT_HANDOFF = _Leaf(
-    "typed architect sections from `des handoff describe`; raw model text is retained.",
+    "current typed architect sections with FactRefs; model source is an external locator.",
     _architect_handoff_input,
 )
 
@@ -651,9 +1127,12 @@ _ARCHITECT_HANDOFF = _Leaf(
 _MANIFEST = _Product(
     (
         _Field("schema_version", _SCHEMA_VERSION),
-        _Field("authority", _AUTHORITY),
-        _Field("purpose", _TEXT),
-        _Field("constraints", _TEXTS),
+        _Field("facts", _FACT_RECORDS),
+        _Field(
+            "inherits", _ListOf(_FACT_REF, non_empty=False, unique=False), optional=True
+        ),
+        _Field("purpose", _FACT_REF),
+        _Field("constraints", _FACT_REFS),
         _Field(
             "product_change",
             _PRODUCT_CHANGE,
@@ -662,7 +1141,7 @@ _MANIFEST = _Product(
         ),
         _Field("targets", _TARGETS),
         _Field("paradigm", _PARADIGM),
-        _Field("decisions", _TEXTS),
+        _Field("decisions", _ListOf(_FACT_REF)),
         _Field("reuse_analysis", _REUSE_ANALYSIS),
         _Field("prefactoring", _PREFACTORING),
         _Field("agreement_analysis", _AGREEMENT_ANALYSIS),
@@ -714,22 +1193,17 @@ def _decode_architect_handoff(raw: object) -> dict:
     try:
         return decode(raw)
     except ValueError as error:
-        raise DesignDocumentInvalid(str(error)) from error
+        raise DesignDocumentInvalid(
+            *(line for line in str(error).splitlines() if line.strip())
+        ) from error
 
 
-def decode_design_decisions(
-    raw: dict[str, object], *, historical: bool = False
-) -> dict[str, object]:
+def decode_design_decisions(raw: dict[str, object]) -> dict[str, object]:
     """Decode required decisions with the constructor's sole grammar."""
     selected = {
         field.name: raw[field.name] for field in _DECISION_FIELDS if field.name in raw
     }
-    form = _DESIGN_DECISIONS
-    if historical:
-        form = _Product(
-            tuple(replace(field, optional=True) for field in _DECISION_FIELDS)
-        )
-    decoded = form.decode(selected, "design")
+    decoded = _DESIGN_DECISIONS.decode(selected, "design")
     return {
         name: _decision_record(name, decision) for name, decision in decoded.items()
     }
@@ -770,27 +1244,22 @@ def _decision_record(name: str, decision: object) -> object:
     )
 
 
-def design_decisions_defect(
-    facts: DesignFacts, *, historical: bool = False
-) -> str | None:
+def design_decisions_defect(facts: DesignFacts | PreNormalizedDesign) -> str | None:
     """Validate shape and declared linkage, not whether a check is sufficient."""
-    defects = design_decisions_defects(facts, historical=historical)
+    defects = design_decisions_defects(facts)
     return str(DesignDocumentInvalid(*defects)) if defects else None
 
 
 def design_decisions_defects(
-    facts: DesignFacts, *, historical: bool = False
+    facts: DesignFacts | PreNormalizedDesign,
 ) -> tuple[str, ...]:
     """Every shape and declared-linkage defect of ``facts``, found in one pass."""
-    if isinstance(facts, LegacyDesignFacts) and not historical:
+    if isinstance(facts, PreNormalizedDesign):
         return (
-            f"historical DESIGN decisions are unassessed: {', '.join(facts.missing_decisions)}; "
-            "reconstruct complete DESIGN with --replace-current --input - before reusing delivery proof",
+            "DesignFactsPreNormalized: regenerate with des design --replace-current --input -",
         )
     try:
-        decisions = decode_design_decisions(
-            design_decisions_wire(facts), historical=historical
-        )
+        decisions = decode_design_decisions(design_decisions_wire(facts))
     except DesignDocumentInvalid as error:
         return error.defects
     except (TypeError, AttributeError) as error:
@@ -798,7 +1267,7 @@ def design_decisions_defects(
     found: list[str] = []
     try:
         for defect in _decision_rule_defects(
-            decisions, facts.targets, facts.verification
+            decisions, facts.targets, facts.verification, inheritance=facts.inherits
         ):
             found.append(defect)
     except (TypeError, AttributeError) as error:
@@ -839,6 +1308,8 @@ def _decision_rule_defects(
     decisions: Mapping[str, object],
     targets: Iterable[DesignTarget] | None,
     verification: Sequence[object] | None,
+    *,
+    inheritance: tuple[FactRef, ...] = (),
 ) -> Iterator[str]:
     """Each declared-linkage defect among the decided ``decisions``.
 
@@ -854,8 +1325,10 @@ def _decision_rule_defects(
         ):
             continue
         contract = name == "contract_tests"
-        if contract and isinstance(
-            agreement, (NotApplicable, UnassessedDesignDecision)
+        if (
+            contract
+            and not inheritance
+            and isinstance(agreement, (NotApplicable, UnassessedDesignDecision))
         ):
             yield "contract_tests requires applicable agreement_analysis"
         for obligation in decision.obligations:  # type: ignore[attr-defined]
@@ -863,7 +1336,11 @@ def _decision_rule_defects(
                 verification
             ):
                 yield f"{name}.verification_index must name one declared verification command"
-            if not contract or not isinstance(agreement, ApplicableAgreementAnalysis):
+            if (
+                inheritance
+                or not contract
+                or not isinstance(agreement, ApplicableAgreementAnalysis)
+            ):
                 continue
             for role in ("producer", "consumer"):
                 locator = getattr(obligation, role)
@@ -975,7 +1452,7 @@ def _manifest_rule_defects(root: Mapping[str, object]) -> Iterator[str]:
     if targets is not None and oracle is not None:
         defect = product_change_defect(
             root.get("product_change") or "required",
-            tuple(DesignTarget(item["path"], item["decision"]) for item in targets),
+            tuple(DesignTarget(**item) for item in targets),
             oracle,
         )
         if defect is not None:
@@ -1009,10 +1486,11 @@ def _manifest_rule_defects(root: Mapping[str, object]) -> Iterator[str]:
         None
         if targets is None
         else tuple(
-            DesignTarget(item["path"], item["decision"])  # type: ignore[index]
+            DesignTarget(**item)
             for item in targets  # type: ignore[attr-defined]
         ),
         verification,  # type: ignore[arg-type]
+        inheritance=root.get("inherits") or (),
     )
 
 
@@ -1056,7 +1534,16 @@ def _form_schema(form: _Form[object]) -> dict[str, object]:
             )
         return {"anyOf": alternatives}
     if form is _SCHEMA_VERSION:
-        return {"type": "integer", "const": 1}
+        return {"type": "integer", "const": 2}
+    if form is _FACT_ID:
+        return {"type": "string", "pattern": r"^[A-Za-z][A-Za-z0-9_-]{0,63}$"}
+    if form is _FACT_REF:
+        return {
+            "type": "object",
+            "properties": {"ref": _form_schema(_FACT_ID)},
+            "required": ["ref"],
+            "additionalProperties": False,
+        }
     if form is _ORACLE_VERIFICATION_INDEX:
         return {"type": "integer", "minimum": 0}
     if form is _ARCHITECT_HANDOFF:
@@ -1083,12 +1570,7 @@ def _form_schema(form: _Form[object]) -> dict[str, object]:
             "minLength": 1,
             "pattern": r"^[^\u0000]*[^\s\u0000][^\u0000]*$",
         }
-    if isinstance(form, _Leaf) and form.decoder is _plain_heading:
-        return {
-            "type": "string",
-            "pattern": r"^(?!\s*#)[^\r\n]*\S[^\r\n]*$",
-        }
-    if form is not _TEXT:
+    if form not in (_TEXT, _FACT_TEXT):
         raise TypeError(f"Unsupported DESIGN scalar form: {form!r}")
     return {"type": "string", "minLength": 1, "pattern": r"\S"}
 
@@ -1239,114 +1721,6 @@ def _fenced(language: str, content: str) -> list[str]:
     return [f"{fence}{language}", content, fence]
 
 
-def _assurance_blocks(facts: DesignFacts, suffix: str = "") -> list[list[str]]:
-    blocks: list[list[str]] = []
-    for title, decision in (
-        ("Architectural tests", facts.architectural_tests),
-        ("Contract tests", facts.contract_tests),
-    ):
-        blocks.append([f"### {title}{suffix}"])
-        if isinstance(decision, NotApplicable):
-            blocks.append(_wrap(f"Not applicable: {decision.reason}"))
-            continue
-        blocks.append(
-            _wrap(
-                "The following checks falsify the declared obligations using the linked native verification command."
-            )
-        )
-        for check in decision.obligations:
-            blocks += [
-                _wrap(f"Obligation: {check.obligation}"),
-                _wrap(f"Test locator: `{check.oracle}`"),
-                _wrap(f"Verification command index: `{check.verification_index}`"),
-            ]
-            if isinstance(check, ContractTestObligation):
-                blocks += [
-                    _wrap(f"Contract: {check.contract}"),
-                    _wrap(
-                        f"Producer: `{check.producer}`; consumer: `{check.consumer}`"
-                    ),
-                    _wrap(f"Observation: {check.observation}"),
-                ]
-    if facts.adr is not None:
-        blocks.append([f"### Architecture decision record{suffix}"])
-        if isinstance(facts.adr, NotApplicable):
-            blocks.append(_wrap(f"Not applicable: {facts.adr.reason}"))
-        else:
-            adr = facts.adr
-            blocks += [
-                _wrap(f"Context: {adr.context}"),
-                _wrap(f"Decision: {adr.decision}"),
-                _wrap(f"Status: {adr.status}"),
-                _wrap("Alternatives considered:"),
-                _bullets(adr.alternatives),
-                _wrap("Consequences of this decision:"),
-                _bullets(adr.consequences),
-            ]
-    return blocks
-
-
-def _impact_closure_blocks(facts: DesignFacts, suffix: str = "") -> list[list[str]]:
-    closure = facts.impact_closure
-    if isinstance(closure, UnassessedDesignDecision):
-        return []
-    blocks: list[list[str]] = [[f"### Impact closure{suffix}"]]
-    if isinstance(closure, NotApplicable):
-        blocks.append(_wrap(f"Not applicable: {closure.reason}"))
-    else:
-        blocks.append(
-            _bullets(
-                tuple(
-                    f"{item.kind}: `{item.locator}`; {item.decision}: {item.reason}"
-                    for item in closure.items
-                )
-            )
-        )
-    return blocks
-
-
-def _reuse_blocks(facts: DesignFacts) -> list[list[str]]:
-    reuse = facts.reuse_analysis
-    if isinstance(reuse, UnassessedDesignDecision):
-        return []
-    blocks: list[list[str]] = [["### Reuse analysis"]]
-    blocks.append(
-        _bullets(
-            tuple(
-                f"{item.symbol}: `{item.locator}`; {item.decision}: {item.reason}"
-                for item in reuse.candidates
-            )
-        )
-        or _wrap("No reuse candidates were found.")
-    )
-    return blocks
-
-
-def _preservation_commands(facts: DesignFacts) -> list[list[str]]:
-    if not isinstance(facts.prefactoring, ApplicablePrefactoring):
-        return []
-    blocks = [
-        _wrap(
-            "Preservation uses the same existing test and support content before and after the move, before behavior changes."
-        )
-    ]
-    if facts.prefactoring.acceptance_supports:
-        blocks.append(
-            _bullets(
-                tuple(
-                    f"Preservation support: `{path}`"
-                    for path in facts.prefactoring.acceptance_supports
-                )
-            )
-        )
-    for argv in facts.prefactoring.verification:
-        blocks += [
-            _wrap("Preservation verification command:"),
-            _fenced("sh", shlex.join(argv)),
-        ]
-    return blocks
-
-
 @dataclass(frozen=True, slots=True)
 class DesignDocument:
     heading: str
@@ -1376,29 +1750,38 @@ class DesignDocument:
         return replace(self.facts, authority_locator=authority_locator)
 
     @classmethod
-    def from_json(cls, raw: str) -> DesignDocument:
+    def from_json(
+        cls, raw: str, *, value: int = 1, shared: bool = False
+    ) -> DesignDocument:
         try:
-            value = json.loads(raw)
+            decoded_input = json.loads(raw)
         except (json.JSONDecodeError, UnicodeDecodeError) as error:
             raise DesignDocumentInvalid(f"input is not JSON: {error}") from error
-        manifest = _object(value, "manifest")
-        # An unsupported schema_version is the envelope: no other field is
-        # judged against a language the input does not claim.
-        if "schema_version" in manifest:
-            _SCHEMA_VERSION.decode(
-                manifest["schema_version"], "manifest.schema_version"
+        manifest = _object(decoded_input, "manifest")
+        if manifest.get("schema_version") != 2:
+            raise DesignDocumentInvalid(
+                "DesignManifestSchemaRetired manifest.schema_version: submit schema_version 2",
+                "UNRUN: bound-state reference checks (manifest did not decode)",
             )
         defects = Defects(DesignDocumentInvalid)
         root = _MANIFEST.decode_into(manifest, "manifest", defects)
         for defect in _manifest_rule_defects(root):
             defects.add(defect)
-        defects.close()
-        # An absent new carrier must not invalidate already-bound legacy DESIGN identities.
+        for defect in _local_reference_defects(root, shared=shared):
+            defects.add(defect)
+        try:
+            defects.close()
+        except DesignDocumentInvalid as error:
+            raise DesignDocumentInvalid(
+                *error.defects,
+                "UNRUN: bound-state reference checks (manifest did not decode)",
+            ) from error
         identity = {
-            key: value
-            for key, value in root.items()
-            if (key != "architect_handoff" or value is not None)
-            and (key != "product_change" or value == "none")
+            key: item
+            for key, item in normalized_wire(root).items()
+            if (key != "architect_handoff" or item is not None)
+            and (key != "product_change" or item == "none")
+            and (key != "inherits" or item)
         }
         semantic_sha256 = hashlib.sha256(
             json.dumps(
@@ -1407,8 +1790,7 @@ class DesignDocument:
         ).hexdigest()
         # Decoding above is the only validation pass.  Everything below is a
         # projection of normalized descriptor values into domain records.
-        authority = root["authority"]  # type: ignore[assignment]
-        heading = authority["heading"]  # type: ignore[index]
+        heading = "Shared design" if shared else f"Value {value}"
         purpose = root["purpose"]
         constraints = root["constraints"]
         paradigm = root["paradigm"]
@@ -1451,25 +1833,19 @@ class DesignDocument:
                 agreement_root["applicability"],  # type: ignore[index]
                 agreement_root["reason"],  # type: ignore[index]
             )
-        boundaries_root = root["boundaries"]  # type: ignore[assignment]
-        if boundaries_root["applicability"] == "applicable":  # type: ignore[index]
-            boundaries = (
-                boundaries_root["applicability"],  # type: ignore[index]
-                f"Driving port: {boundaries_root['driving_port']}",  # type: ignore[index]
-                *(f"Driven port: {port}" for port in boundaries_root["driven_ports"]),  # type: ignore[index]
-                f"Dependency direction: {boundaries_root['dependency_direction']}",  # type: ignore[index]
-                *(
-                    "Failure: "
-                    f"Condition: {failure['condition']} | Outcome: {failure['outcome']} | "
-                    f"Observation: {failure['observation']}"
-                    for failure in boundaries_root["failures"]  # type: ignore[index]
+        boundaries_root = root["boundaries"]
+        if boundaries_root["applicability"] == "applicable":
+            boundary_record = ApplicableBoundaries(
+                driving_port=boundaries_root["driving_port"],
+                driven_ports=boundaries_root["driven_ports"],
+                dependency_direction=boundaries_root["dependency_direction"],
+                failures=tuple(
+                    BoundaryFailure(**item) for item in boundaries_root["failures"]
                 ),
             )
         else:
-            boundaries = (
-                boundaries_root["applicability"],  # type: ignore[index]
-                boundaries_root["reason"],  # type: ignore[index]
-            )
+            boundary_record = NotApplicable(boundaries_root["reason"])
+        boundaries = (boundary_record,)
         public_oracle_tuple = tuple(
             root["public_oracle"][key]  # type: ignore[index]
             for key in ("observation", "stimulus", "expected", "falsifier")
@@ -1479,14 +1855,21 @@ class DesignDocument:
         verification = root["verification"]
         oracle_verification_index = root["oracle_verification_index"]
         facts = DesignFacts(
-            tuple(DesignTarget(path, decision) for path, decision, _ in targets),
+            tuple(
+                DesignTarget(path, decision, reason)
+                for path, decision, reason in targets
+            ),
             paradigm,
             decisions,
             oracle,
             supports,
             verification,
             oracle_verification_index,
-            constraints,
+            facts=tuple(FactRecord(**item) for item in root["facts"]),
+            purpose=purpose,
+            constraints=constraints,
+            inherits=root["inherits"] or (),
+            boundaries=boundary_record,
             public_oracle=public_oracle,
             product_change=root.get("product_change") or "required",
             architect_handoff=(
@@ -1522,7 +1905,7 @@ class DesignDocument:
 
     @classmethod
     def input_description(cls) -> str:
-        """The closed v1 input language for the CLI and installed author guidance."""
+        """The sole normalized input language for CLI and installed author guidance."""
         return "\n".join(
             (
                 "DESIGN constructor input is one strict UTF-8 JSON manifest:",
@@ -1538,249 +1921,110 @@ class DesignDocument:
         )
 
     def markdown(self) -> str:
-        """Render the owned section as Markdown a default markdownlint accepts.
+        """Render definitions once, with references in every other section."""
 
-        Every block is separated by exactly one blank line, sub-headings carry
-        the section heading so several sections in one file stay unique, prose
-        is wrapped at 80 columns, and tables and fences are never wrapped.
-        """
-
-        def heading(title: str) -> list[str]:
-            return [f"### {title} ({self.heading})"]
-
-        def table(header: tuple[str, ...], rows: object) -> list[str]:
+        def table(
+            header: tuple[str, ...], rows: Iterable[tuple[str, ...]]
+        ) -> list[str]:
             return [
                 "| " + " | ".join(header) + " |",
                 "|" + "---|" * len(header),
                 *(
                     "| " + " | ".join(_table_cell(cell) for cell in row) + " |"
-                    for row in rows  # type: ignore[attr-defined]
+                    for row in rows
                 ),
             ]
 
-        product_change_blocks = (
-            [["Product change: none"], ["No product changes authorized."]]
-            if self.facts.product_change == "none"
-            else []
-        )
+        projection = normalized_wire(self.facts)
         blocks: list[list[str]] = [
             [f"## {self.heading}"],
-            *product_change_blocks,
-            heading("Purpose"),
-            _wrap(self.purpose),
-            heading("Constraints"),
-            _bullets(self.constraints),
-            heading("Targets"),
-            table(
-                ("Path", "Decision", "Reason"),
-                (
-                    (f"`{path}`", decision, reason)
-                    for path, decision, reason in self.targets
-                ),
-            ),
-            heading("Paradigm"),
-            _wrap(self.paradigm),
-            heading("Decisions"),
-            _bullets(self.decisions),
-            heading("Reuse analysis"),
-            table(
-                ("Symbol", "Locator", "Decision", "Reason"),
-                (
-                    (symbol, f"`{locator}`", decision, reason)
-                    for symbol, locator, decision, reason in self.reuse
-                ),
-            ),
-            heading("Prefactoring"),
+            [f"### Facts ({self.heading})"],
         ]
-        if self.prefactoring[0] == "not_applicable":
-            blocks.append(_wrap(f"Not applicable: {self.prefactoring[1]}"))
-        else:
-            blocks += [
-                _wrap(f"Existing oracle: `{self.prefactoring[1]}`"),
-                _wrap(f"Move: {self.prefactoring[2]}"),
-                _wrap(f"Preserved observation: {self.prefactoring[3]}"),
-            ]
-            blocks += _preservation_commands(self.facts)
-        blocks.append(heading("Agreement analysis"))
-        if self.agreement_analysis[0] == "not_applicable":
-            blocks.append(_wrap(f"Not applicable: {self.agreement_analysis[1]}"))
-        else:
+        definitions = tuple(
+            f"{record.id}: {record.text}" for record in self.facts.facts
+        )
+        blocks.append(_bullets(definitions) if definitions else ["No own facts."])
+        for name, item in projection.items():
+            if (
+                name in ("facts", "schema_version", "authority_locator", "verification")
+                or item is None
+            ):
+                continue
             blocks.append(
-                table(
-                    ("Contract", "Role", "Locator", "Decision", "Reason"),
-                    (
-                        (contract, role, f"`{locator}`", decision, reason)
-                        for contract, role, locator, decision, reason in self.agreement_analysis[  # type: ignore[misc]
-                            1
-                        ]
-                    ),
-                )
+                [f"### {name.replace('_', ' ').capitalize()} ({self.heading})"]
             )
-        blocks += _impact_closure_blocks(self.facts, f" ({self.heading})")
-        blocks += _assurance_blocks(self.facts, f" ({self.heading})")
-        blocks.append(heading("Boundaries"))
-        blocks.append(
-            _wrap(f"Not applicable: {self.boundaries[1]}")
-            if self.boundaries[0] == "not_applicable"
-            else _bullets(self.boundaries[1:])
-        )
-        if self.facts.acceptance_supports:
-            blocks += [
-                heading("Acceptance supports"),
-                _bullets(
-                    tuple(f"`{support}`" for support in self.facts.acceptance_supports)
-                ),
-            ]
-        blocks += [
-            heading("Public oracle"),
-            _wrap(f"Observation: {self.public_oracle.observation}"),
-            _wrap(f"Stimulus: {self.public_oracle.stimulus}"),
-            _wrap(f"Expected: {self.public_oracle.expected}"),
-            _wrap(f"Falsifier: {self.public_oracle.falsifier}"),
-            heading("Oracle and verification"),
-            [
-                *_wrap(f"Oracle target locator: `{self.facts.oracle}`"),
-                f"Oracle verification command index: "
-                f"`{self.facts.oracle_verification_index}`",
-            ],
-        ]
+            if name in ("purpose", "constraints", "decisions", "inherits"):
+                references = item if isinstance(item, list) else [item]
+                blocks.append(
+                    _wrap(
+                        ", ".join(reference["ref"] for reference in references)
+                        or "None"
+                    )
+                )
+            elif name == "targets":
+                blocks.append(
+                    table(
+                        ("Path", "Decision", "Reason"),
+                        (
+                            (
+                                f"`{target['path']}`",
+                                target["decision"],
+                                target["reason"]["ref"],
+                            )
+                            for target in item
+                        ),
+                    )
+                )
+            elif name == "reuse_analysis":
+                blocks.append(
+                    table(
+                        ("Symbol", "Locator", "Decision", "Reason"),
+                        (
+                            (
+                                candidate["symbol"],
+                                f"`{candidate['locator']}`",
+                                candidate["decision"],
+                                candidate["reason"]["ref"],
+                            )
+                            for candidate in item["candidates"]
+                        ),
+                    )
+                )
+            elif name == "agreement_analysis" and item["applicability"] == "applicable":
+                blocks.append(
+                    table(
+                        ("Id", "Contract", "Role", "Locator", "Decision", "Reason"),
+                        (
+                            (
+                                party["id"],
+                                party["contract"],
+                                party["role"],
+                                f"`{party['locator']}`",
+                                party["decision"],
+                                party["reason"]["ref"],
+                            )
+                            for party in item["parties"]
+                        ),
+                    )
+                )
+            elif name == "product_change":
+                blocks.append(_wrap(f"Product change: {item}"))
+            elif isinstance(item, str):
+                blocks.append(_wrap(item))
+            else:
+                blocks.append(
+                    _fenced("json", json.dumps(item, ensure_ascii=False, indent=2))
+                )
+        blocks.append([f"### Verification ({self.heading})"])
         for argv in self.facts.verification:
-            blocks += [_wrap("Verification command:"), _fenced("sh", shlex.join(argv))]
-        if self.facts.architect_handoff is not None:
-            from des.application.architect_handoff import wire
-
-            blocks += [
-                heading("Typed architect handoff"),
-                _fenced(
-                    "json",
-                    json.dumps(
-                        wire(self.facts.architect_handoff), ensure_ascii=False, indent=2
-                    ),
-                ),
-            ]
+            blocks.extend(
+                [_wrap("Verification command:"), _fenced("sh", shlex.join(argv))]
+            )
         return "\n\n".join("\n".join(block) for block in blocks) + "\n"
-
-    def legacy_markdown_v1(self) -> str:
-        """Return the frozen pre-lint projection for exact migration proof.
-
-        This is deliberately a historical compatibility projection, not an
-        alternative authoring format.  A migration admits it only when the
-        complete owned section on disk equals these bytes exactly.
-        """
-        lines = [
-            f"## {self.heading}",
-            "",
-            "### Purpose",
-            self.purpose,
-            "",
-            "### Constraints",
-            *(f"- {item}" for item in self.constraints),
-            "",
-            "### Targets",
-            "| Path | Decision | Reason |",
-            "|---|---|---|",
-            *(
-                f"| `{path}` | {decision} | {reason} |"
-                for path, decision, reason in self.targets
-            ),
-            "",
-            "### Paradigm",
-            self.paradigm,
-            "",
-            "### Decisions",
-            *(f"- {item}" for item in self.decisions),
-            "",
-            "### Reuse analysis",
-            "| Symbol | Locator | Decision | Reason |",
-            "|---|---|---|---|",
-            *(
-                f"| {symbol} | `{locator}` | {decision} | {reason} |"
-                for symbol, locator, decision, reason in self.reuse
-            ),
-            "",
-            "### Prefactoring",
-            *(
-                [f"Not applicable: {self.prefactoring[1]}"]
-                if self.prefactoring[0] == "not_applicable"
-                else [
-                    f"Existing oracle: `{self.prefactoring[1]}`",
-                    "",
-                    f"Move: {self.prefactoring[2]}",
-                    "",
-                    f"Preserved observation: {self.prefactoring[3]}",
-                ]
-            ),
-            "",
-            "### Agreement analysis",
-            *(
-                [f"Not applicable: {self.agreement_analysis[1]}"]
-                if self.agreement_analysis[0] == "not_applicable"
-                else [
-                    "| Contract | Role | Locator | Decision | Reason |",
-                    "|---|---|---|---|---|",
-                    *(
-                        f"| {contract} | {role} | `{locator}` | {decision} | {reason} |"
-                        for contract, role, locator, decision, reason in self.agreement_analysis[
-                            1
-                        ]
-                    ),
-                ]
-            ),
-            "",
-            "### Boundaries",
-        ]
-        lines += (
-            [f"Not applicable: {self.boundaries[1]}"]
-            if self.boundaries[0] == "not_applicable"
-            else [f"- {boundary}" for boundary in self.boundaries[1:]]
-        )
-        if self.facts.acceptance_supports:
-            lines += [
-                "",
-                "### Acceptance supports",
-                *(f"- `{support}`" for support in self.facts.acceptance_supports),
-            ]
-        lines += [
-            "",
-            "### Public oracle",
-            f"Observation: {self.public_oracle.observation}",
-            "",
-            f"Stimulus: {self.public_oracle.stimulus}",
-            "",
-            f"Expected: {self.public_oracle.expected}",
-            "",
-            f"Falsifier: {self.public_oracle.falsifier}",
-            "",
-            "### Oracle and verification",
-            f"Oracle target locator: `{self.facts.oracle}`",
-            f"Oracle verification command index: `{self.facts.oracle_verification_index}`",
-            "",
-        ]
-        lines.extend(
-            f"Verification command: `{' '.join(argv)}`"
-            for argv in self.facts.verification
-        )
-        return "\n".join(lines) + "\n"
 
     def facts_json(self, facts: DesignFacts | None = None) -> str:
         facts = self.facts if facts is None else facts
-        projection: dict[str, object] = {
-            "targets": [
-                {"path": target.path, "decision": target.decision}
-                for target in facts.targets
-            ],
-            "paradigm": facts.paradigm,
-            "decisions": list(facts.decisions),
-            "oracle": facts.oracle,
-            "acceptance_supports": list(facts.acceptance_supports),
-            "verification": [list(argv) for argv in facts.verification],
-            "oracle_verification_index": facts.oracle_verification_index,
-            "obligations": list(facts.obligations),
-            **design_decisions_wire(facts),
-            **({"product_change": "none"} if facts.product_change == "none" else {}),
-        }
-        if facts.authority_locator:
-            projection["authority_locator"] = facts.authority_locator
+        projection = normalized_wire(facts)
         return json.dumps(
             projection,
             ensure_ascii=False,

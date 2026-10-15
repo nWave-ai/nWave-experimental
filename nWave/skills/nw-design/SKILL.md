@@ -41,8 +41,8 @@ shared contract the slice needs first; an independent slice proceeds when
 inherited architecture suffices, and that does not make the feature design
 complete. Honor an explicit human instruction to design shared decisions first.
 A single-value Request needs no shared section. A value oracle covers the slice
-delta and still carries inherited common constraints and feature
-walking-skeleton obligations; it does not attest feature completeness. This paragraph is the sole owner
+delta and references inherited common constraints and feature walking-skeleton
+obligations by stable ids, without copying definitions; it does not attest feature completeness. This paragraph is the sole owner
 of this rule; other roles and skills reference it.
 
 Resolve cited `Proposed` decisions by confirming or changing them with a reason.
@@ -141,12 +141,21 @@ Performed by the coordinating architect, not the outer host or a consulted lens.
    evidence only when the application decision is genuinely open, not from
    taste; all consume the same laws/boundaries. Preserve an evidenced imperative
    transaction script as `procedural`, not FP merely because it exposes
-   functions. Do not introduce classes or new files to fit a label. Follow
-   `construction:design-paradigm-projection` for absent or contested authority,
-   or settled authority outside these three values: that is a bounded
+   functions. Do not introduce classes or new files merely to fit a label.
+   Follow `construction:design-paradigm-projection` for absent or contested
+   authority, or settled authority outside these three values: that is a bounded
    representation gap, not permission to coerce its design or submit an
    unsupported field. Read OO/FP design guidance only for its matching
    paradigm; procedural does not force either specialized skill.
+   For `object_oriented` and `functional`, design for the rules the crafter
+   applies: the same `nw-code-design-oo` or `nw-code-design-fp` you read. Give
+   each domain decision a cohesive owner that holds its data, justified in the
+   reuse analysis, and target it `EXTEND` when it exists or `CREATE_NEW` when it
+   does not (value object, first-class collection, choice type). A policy that
+   spans several aggregates may live in a domain service. Never place a decision
+   about one object's data in an application service or script: the crafter
+   refuses a design that forces an anemic entity, an application transaction
+   script or domain decisions in effectful code.
 6. **Cross-layer algebra** — for every affected layer name states, operations,
    observations, equality and falsifiable laws:
    - domain: legal states and transitions;
@@ -201,20 +210,13 @@ Performed by the coordinating architect, not the outer host or a consulted lens.
    cache key. Unsupported recipes omit reuse for cold isolation. Use
    `des verify --fresh` for a new observation, not a recovered `RECORDED` receipt.
    Gate: DISTILL cannot invent an ambient interpreter or boundary.
-9. **Human projection** — state observations/equality, examples/counterexamples,
-   alternatives/provenance, laws, consequences/trade-offs, failure handling and
-   guarantee ceiling/exclusions in ordinary language. Ask only where an answer
-   changes equality, carrier, law or irreducible trade-off; otherwise proceed.
-   It projects the same model, never a second authority or changed metaphor.
-   **Explain before you formalize (owner rule, Ale 2026-09-06):** every section
-   a human will read opens with one or two sentences in ordinary language that
-   say what it means and why it matters, BEFORE any table, law or symbol; a
-   technical term that cannot be avoided is glossed in half a line at its first
-   use; a word replaces a symbol wherever a word suffices. This is a rule of the
-   projection, not a style of one document: the HTML rendering
-   (`nw-doc-as-artifact`) adds no content, so readability must already be in the
-   markdown, or the people who decide cannot take part. Gate: a section that
-   opens with a table, a formula or an undefined term fails the projection.
+9. **Human projection** — explain current observations/equality, alternatives,
+   laws, consequences/trade-offs, failures and guarantee ceilings in ordinary
+   language in catalog facts. Semantic slots contain FactRefs, not parallel
+   explanations. DES compiles subsection labels and scope headings; do not
+   author introductions, headings or title prose outside Facts. Ask only when
+   an answer changes equality, carrier, law or an irreducible trade-off.
+   Human-readable views project the same current model, never a second authority.
 10. **Agreement analysis** — reuse asks "does something already own this?";
     agreement analysis asks the question reuse cannot: "who else must agree
     with the contract I am changing?" For every shared contract the change
@@ -260,7 +262,7 @@ refusals, while the host decides compatibility, continuation and authorized repa
 
 DESIGN supplies semantic decisions; it does not edit a durable brief or ADR and
 never authors Markdown for a DESIGN document. The LLM supplies typed semantic
-inputs as a closed, complete JSON manifest (schema_version 1). The same field
+inputs as a closed, complete JSON manifest (schema_version 2). The same field
 grammar applies to `--shared`: fill targets, obligations, primary observable
 oracle and verification from the common feature-level contract, without a slice ID. DES is the sole writer: for a feature with missing or
 human-requested common decisions, invoke
@@ -279,7 +281,7 @@ uncertainty duties above, and bound each empirical probe to its load-bearing
 unknown under the self-falsification discipline below.
 
 Return one closed envelope with `outcome`, opaque `diagnostic` and `manifest`.
-An `accepted` response requires the complete closed v1 manifest described below.
+An `accepted` response requires the complete closed v2 manifest described below.
 A `rejected` or `indeterminate` response omits `manifest` or sets it to `null`
 and supplies a nonempty diagnostic naming `BLOCKED-BY` for a prerequisite or
 `DEFECT-OWNER` for a finding. The host submits only an accepted manifest,
@@ -292,96 +294,148 @@ write. For a rework of the same configured destination and section heading, use
 the explicit `--replace-current --input -` constructor; do not imply replacement
 without that flag.
 
+### Sole normalized current form
+
+`facts` defines each semantic text once as `{id, text}`; all other semantic
+slots use exact `{"ref": id}` objects. Ids match
+`[A-Za-z][A-Za-z0-9_-]{0,63}` and share the Request namespace with record ids.
+Neither ids nor normalized texts may repeat across shared and value catalogs.
+Values declare only own facts; select shared decisions/constraints with FactRefs
+in their corresponding arrays and shared manifest/typed records through
+value-only `inherits`. Dependencies of selected typed records remain selected.
+Non-inheritable structure remains value-owned scalars with shared FactRefs.
+Select architectural/contract obligations and agreement parties by their record
+ids; select laws/refuted laws, observations, constructors, generators,
+construction claims and models by id, and closures by subject FactRef id.
+A value-owned law using a shared observation/constructor or broad generator
+must explicitly select each shared id in `inherits`; missing selections are
+`DesignFactUnresolved`, never auto-resolved. Inheriting a shared law still brings
+its uses, generator and equality as dependencies. Equality is included whenever
+an own or selected law uses a shared observation. A construction claim retains
+admitted/excluded/unknown states; a model retains atoms/mutants.
+An inherited liveness claim retains the
+shared closure with the same subject. An applicable test/agreement kind may have
+an empty own list only when `inherits` selects that kind; `not_applicable` cannot
+contradict that selection. No other shared structure is inherited wholesale.
+
+DES compiles `Shared design` and `Value N` headings and subsection labels.
+No `authority`, `heading`, historical containers or retired ADR states;
+ADR status is only `proposed` or `accepted`. Fact texts must be minimal current
+next-role facts, never historical narration, provenance, receipts, traces or
+supersession prose. Independent review and EXAMINE judge this semantic duty;
+there is no semantic classifier or substring gate.
+
+Receiving-role `facts` contains exactly the closure reachable after role filtering
+from `selected_authority`, id-keyed `inherited_records`, index-keyed
+`shared_verification` and `architect_projection`. `shared_design` is identity-only.
+Inherited obligation indexes select shared argv, never value argv. Do not repeat
+catalog texts in the roots or include unrelated shared facts.
+
+Models/proofs are external files cited by `Model.source: {path, sha256}`.
+Checker/probe runs, outputs, traces, skill-read evidence and Jev receipts stay
+external; `des handoff run` and `des handoff record` own the driven run store.
+Typed claims cite run ids; no submitted receipts section or inline model text.
+Native consumers obtain the bound FactCatalog. Detached FILE consumers require
+explicit digest-bound schema-2 manifest catalog locators; no inline override.
+Without context, render/summary/prompt refuse and dependent check rules are UNRUN,
+not passed. Old authorities are refusal-only opaque inputs, replaced explicitly
+with `--replace-current`, never executed or rendered through a legacy path.
+
 <!-- GENERATED:design-document-input START — source of truth: des.domain.design_document.DesignDocument.input_description(); do not hand-edit (docgen renders this region) -->
 DESIGN constructor input is one strict UTF-8 JSON manifest:
 object with exactly:
-- `schema_version`: integer `1`.
-- `authority`: object with exactly:
-  - `heading`: plain non-empty text, not a Markdown heading.
-- `purpose`: non-empty text.
-- `constraints`: non-empty unique list of non-empty text.
+- `schema_version`: integer `2`.
+- `facts`: list of object with exactly:
+    - `id`: identifier [A-Za-z][A-Za-z0-9_-]{0,63}.
+    - `text`: non-empty text, retained verbatim.
+- `inherits` (optional): list of exact object {"ref": id}.
+- `purpose`: exact object {"ref": id}.
+- `constraints`: unique list of exact object {"ref": id}.
 - `product_change` (optional): `required` or `none`; omission means required with a mutable production target excluding the oracle; none requires targets=[]; consultation belongs in reuse_analysis.candidates.
 - `targets`: unique list with distinct paths of object with exactly:
     - `path`: repository-relative file path.
     - `decision`: `EXTEND` or `CREATE_NEW`
-    - `reason`: non-empty text.
+    - `reason`: exact object {"ref": id}.
 - `paradigm`: `object_oriented` or `functional` or `procedural`
-- `decisions`: non-empty unique list of non-empty text.
+- `decisions`: non-empty unique list of exact object {"ref": id}.
 - `reuse_analysis`: object with exactly:
   - `candidates`: unique list of object with exactly:
       - `symbol`: non-empty text.
       - `locator`: repository-relative path and positive line.
       - `decision`: `REUSE` or `EXTEND` or `REPLACE` or `CREATE_NEW`
-      - `reason`: non-empty text.
+      - `reason`: exact object {"ref": id}.
 - `prefactoring`: tagged object on `applicability`:
   - `applicable`:
     object with exactly:
     - `applicability`: `applicable`
     - `existing_oracle`: a repository-relative DESIGN oracle locator: the whole file (`test/orders.ml`) or the file with an optional `::selector` (`tests/orders.rs::reject_cancelled`); native runner targets select that file; a `:line` suffix is not accepted.
-    - `move`: non-empty text.
-    - `preserved_observation`: non-empty text.
+    - `move`: exact object {"ref": id}.
+    - `preserved_observation`: exact object {"ref": id}.
     - `verification`: non-empty unique list of non-empty argv list of non-empty text without NUL.
     - `acceptance_supports`: unique list of repository-relative file path; never `existing_oracle`'s own file.
   - `not_applicable`:
     object with exactly:
     - `applicability`: `not_applicable`
-    - `reason`: non-empty text.
+    - `reason`: exact object {"ref": id}.
 - `agreement_analysis`: tagged object on `applicability`:
   - `applicable`:
     object with exactly:
     - `applicability`: `applicable`
-    - `parties`: non-empty unique list of object with exactly:
+    - `parties`: list of object with exactly:
+        - `id`: identifier [A-Za-z][A-Za-z0-9_-]{0,63}.
         - `contract`: non-empty text.
         - `role`: `producer` or `consumer`
         - `locator`: repository-relative path and positive line.
         - `decision`: `MIGRATED` or `UNCHANGED_COMPATIBLE` or `INCOMPATIBLE`
-        - `reason`: non-empty text.
+        - `reason`: exact object {"ref": id}.
   - `not_applicable`:
     object with exactly:
     - `applicability`: `not_applicable`
-    - `reason`: non-empty text.
+    - `reason`: exact object {"ref": id}.
 - `architectural_tests`: tagged object on `applicability`:
   - `applicable`:
     object with exactly:
     - `applicability`: `applicable`
-    - `obligations`: non-empty unique list of object with exactly:
-        - `obligation`: non-empty text.
+    - `obligations`: list of object with exactly:
+        - `id`: identifier [A-Za-z][A-Za-z0-9_-]{0,63}.
+        - `obligation`: exact object {"ref": id}.
         - `oracle`: a repository-relative DESIGN oracle locator: the whole file (`test/orders.ml`) or the file with an optional `::selector` (`tests/orders.rs::reject_cancelled`); native runner targets select that file; a `:line` suffix is not accepted.
         - `verification_index`: non-negative integer.
   - `not_applicable`:
     object with exactly:
     - `applicability`: `not_applicable`
-    - `reason`: non-empty text.
+    - `reason`: exact object {"ref": id}.
 - `contract_tests`: tagged object on `applicability`:
   - `applicable`:
     object with exactly:
     - `applicability`: `applicable`
-    - `obligations`: non-empty unique list of object with exactly:
-        - `obligation`: non-empty text.
+    - `obligations`: list of object with exactly:
+        - `id`: identifier [A-Za-z][A-Za-z0-9_-]{0,63}.
+        - `obligation`: exact object {"ref": id}.
         - `contract`: non-empty text.
         - `producer`: repository-relative path and positive line.
         - `consumer`: repository-relative path and positive line.
-        - `observation`: non-empty text.
+        - `observation`: exact object {"ref": id}.
         - `oracle`: a repository-relative DESIGN oracle locator: the whole file (`test/orders.ml`) or the file with an optional `::selector` (`tests/orders.rs::reject_cancelled`); native runner targets select that file; a `:line` suffix is not accepted.
         - `verification_index`: non-negative integer.
   - `not_applicable`:
     object with exactly:
     - `applicability`: `not_applicable`
-    - `reason`: non-empty text.
+    - `reason`: exact object {"ref": id}.
 - `adr` (optional): tagged object on `applicability`:
   - `applicable`:
     object with exactly:
     - `applicability`: `applicable`
-    - `context`: non-empty text.
-    - `decision`: non-empty text.
-    - `alternatives`: non-empty unique list of non-empty text.
-    - `consequences`: non-empty unique list of non-empty text.
-    - `status`: `proposed` or `accepted` or `superseded` or `deprecated`
+    - `context`: exact object {"ref": id}.
+    - `decision`: exact object {"ref": id}.
+    - `alternatives`: unique list of exact object {"ref": id}.
+    - `consequences`: unique list of exact object {"ref": id}.
+    - `status`: `proposed` or `accepted`
   - `not_applicable`:
     object with exactly:
     - `applicability`: `not_applicable`
-    - `reason`: non-empty text.
-- `architect_handoff` (optional): typed architect sections from `des handoff describe`; raw model text is retained.
+    - `reason`: exact object {"ref": id}.
+- `architect_handoff` (optional): current typed architect sections with FactRefs; model source is an external locator.
 - `impact_closure`: tagged object on `applicability`:
   - `applicable`:
     object with exactly:
@@ -390,31 +444,31 @@ object with exactly:
         - `kind`: `public_interface` or `consumer` or `test` or `fixture` or `export` or `discovery` or `build_metadata` or `manifest` or `lock` or `runtime`
         - `locator`: repository-relative path, optionally followed by `:line`.
         - `decision`: `CHANGED` or `MIGRATED` or `UNCHANGED_COMPATIBLE`
-        - `reason`: non-empty text.
+        - `reason`: exact object {"ref": id}.
   - `not_applicable`:
     object with exactly:
     - `applicability`: `not_applicable`
-    - `reason`: non-empty text.
+    - `reason`: exact object {"ref": id}.
 - `boundaries`: tagged object on `applicability`:
   - `applicable`:
     object with exactly:
     - `applicability`: `applicable`
-    - `driving_port`: non-empty text.
-    - `driven_ports`: non-empty unique list of non-empty text.
-    - `dependency_direction`: non-empty text.
+    - `driving_port`: exact object {"ref": id}.
+    - `driven_ports`: unique list of exact object {"ref": id}.
+    - `dependency_direction`: exact object {"ref": id}.
     - `failures`: non-empty unique list of object with exactly:
-        - `condition`: non-empty text.
+        - `condition`: exact object {"ref": id}.
         - `outcome`: `Refusal` or `Retry` or `Indeterminate`
-        - `observation`: non-empty text.
+        - `observation`: exact object {"ref": id}.
   - `not_applicable`:
     object with exactly:
     - `applicability`: `not_applicable`
-    - `reason`: non-empty text.
+    - `reason`: exact object {"ref": id}.
 - `public_oracle`: object with exactly:
-  - `observation`: non-empty text.
-  - `stimulus`: non-empty text.
-  - `expected`: non-empty text.
-  - `falsifier`: non-empty text.
+  - `observation`: exact object {"ref": id}.
+  - `stimulus`: exact object {"ref": id}.
+  - `expected`: exact object {"ref": id}.
+  - `falsifier`: exact object {"ref": id}.
 - `oracle`: a repository-relative DESIGN oracle locator: the whole file (`test/orders.ml`) or the file with an optional `::selector` (`tests/orders.rs::reject_cancelled`); native runner targets select that file; a `:line` suffix is not accepted.
 - `acceptance_supports`: unique list of repository-relative file path; only acceptance-owned fixtures the oracle needs before craft: never the `oracle`'s own file and never a `targets` path (a production module the oracle imports is a target).
 - `verification`: non-empty unique list of non-empty argv list of non-empty text without NUL.
@@ -529,18 +583,18 @@ architecture decision. The caller may route that rework with
 destination and section heading; plain `--input -` continues to refuse a
 conflicting already-bound fact set.
 
-The semantic input records the decision evidence, public validation, and
-executable support. Describe `purpose`, common architecture and each value's
-delta so a reader unfamiliar with the Request can understand parts,
+The semantic input records only current decisions and executable obligations.
+Define purpose, common architecture and each value's delta once as catalog facts
+so a reader unfamiliar with the Request can understand parts,
 responsibilities and binding rules. Carry the driving port, public observations,
 native substrate and runner argv, architectural/contract obligations, typed
 carriers and invariants required by the downstream oracle owner. Inherit common
 constraints without copying a second authority. The next role consumes the
 constructed authority and role facts, not the architect's terminal reply.
 
-Supply formal model/proof bytes and retained execution artifacts through the
-existing semantic constructor input under the formal-verification skill;
-DES alone persists authority, handover and deterministic projections.
+Keep complete formal model/proof bytes in external source files, cited by
+`Model.source: {path, sha256}`; keep execution artifacts in the driven evidence
+store under the formal-verification skill. DES persists normalized authority.
 Keep software-observed argv, exits, outputs, traces and identities distinct from
 modeler-declared property coverage, backend, seed, bounds and interpretation.
 An asserted receipt or hash alone proves no run; missing evidence stays explicit.

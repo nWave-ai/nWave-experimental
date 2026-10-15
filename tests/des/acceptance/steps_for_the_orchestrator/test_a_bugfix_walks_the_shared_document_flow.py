@@ -20,6 +20,7 @@ import json
 import sys
 from pathlib import Path
 
+from tests.des._helpers.host_facts import design_manifest
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import block, git
 
 
@@ -72,9 +73,7 @@ def discuss_payload() -> dict[str, object]:
 
 
 def design_payload() -> dict[str, object]:
-    return {
-        "schema_version": 1,
-        "authority": {"heading": "Reported defect in the published value"},
+    facts = {
         "architectural_tests": {
             "applicability": "not_applicable",
             "reason": "The fixture has no structural boundary change.",
@@ -131,6 +130,7 @@ def design_payload() -> dict[str, object]:
         "verification": [[sys.executable, "-m", "pytest", ORACLE]],
         "oracle_verification_index": 0,
     }
+    return design_manifest(facts, facts["purpose"], 1)
 
 
 def distill_payload() -> dict[str, object]:

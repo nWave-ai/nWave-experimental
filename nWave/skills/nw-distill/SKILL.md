@@ -24,7 +24,12 @@ successor, or create a separate cycle for an internal technical fragment.
 
 Read `~/.claude/skills/nw-role-invocation/SKILL.md` before delegating. The
 native host invokes installed `nw-acceptance-designer` to author the oracle;
-`des oracle --repo-root ROOT --value N --input -` measures and records its work.
+`des oracle --repo-root ROOT --value N --baseline <original source commit> --input -`
+first measures current oracle/support bytes in the existing disposable checkout
+and records its source. Never use HEAD if it already includes the implementation.
+Later remeasurements omit `--baseline` to reuse the recorded witness baseline;
+an explicit override wins. With no available source, `OracleBaselineMissing`
+explains WHAT/WHY/HOW instead of measuring the workspace.
 
 Before craft, MUST read `~/.claude/skills/nw-at-completeness-check/SKILL.md`
 for before-code alignment. Reuse a prior adequate alignment when the original

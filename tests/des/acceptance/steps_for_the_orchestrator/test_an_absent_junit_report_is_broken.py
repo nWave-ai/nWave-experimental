@@ -61,7 +61,11 @@ from tests.des._helpers.host_facts import design_manifest
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import observation
 
 
-def design_facts(verification: list[list[str]]) -> dict:
+def design_facts(
+    verification: list[list[str]],
+    *,
+    supports: tuple[str, ...] = (SUPPORT,),
+) -> dict:
     return {
         "structured_output": {
             "outcome": "accepted",
@@ -72,7 +76,7 @@ def design_facts(verification: list[list[str]]) -> dict:
                     "paradigm": "object_oriented",
                     "decisions": ["one opaque semantic decision"],
                     "oracle": ORACLE,
-                    "acceptance_supports": [SUPPORT],
+                    "acceptance_supports": list(supports),
                     "verification": verification,
                     "oracle_verification_index": 0,
                     "architectural_tests": {
@@ -111,7 +115,13 @@ def authored(body: str, extra: dict[str, str] | None = None) -> dict:
     }
 
 
-def bound(root: Path, step, verification: list[list[str]]) -> None:
+def bound(
+    root: Path,
+    step,
+    verification: list[list[str]],
+    *,
+    supports: tuple[str, ...] = (SUPPORT,),
+) -> None:
     """Decompose and bind, so the value carries the vector this arm measures."""
     code, out, err = step(
         "po",
@@ -128,14 +138,31 @@ def bound(root: Path, step, verification: list[list[str]]) -> None:
         str(root),
         "--value",
         "1",
-        answers=[design_facts(verification)],
+        answers=[design_facts(verification, supports=supports)],
     )
     assert code == 0, out + err
 
 
-def run_oracle(root: Path, step, verification: list[list[str]], answer: dict):
-    bound(root, step, verification)
-    return step("oracle", "--repo-root", str(root), "--value", "1", answers=[answer])
+def run_oracle(  # noqa: PLR0913 - explicit fixture, native recipe, authored bytes and retained source context
+    root: Path,
+    step,
+    verification: list[list[str]],
+    answer: dict,
+    *,
+    supports: tuple[str, ...] = (SUPPORT,),
+    baseline: str | None = None,
+):
+    bound(root, step, verification, supports=supports)
+    extra = () if baseline is None else ("--baseline", baseline)
+    return step(
+        "oracle",
+        "--repo-root",
+        str(root),
+        "--value",
+        "1",
+        *extra,
+        answers=[answer],
+    )
 
 
 def turn_refs(root: Path) -> list[str]:
@@ -188,20 +215,51 @@ def test_a_pytest_vector_that_produced_no_report_is_broken_and_refused(
     assert not any("des craft" in item for item in nexts(out)), nexts(out)
 
 
-def test_a_vector_that_asked_for_no_report_keeps_exit_status_only(
+def test_a_vector_that_offers_only_an_exit_status_is_refused_before_craft(
     root: Path, step, turns: Path
 ) -> None:
-    """CONTROL: no report was asked for, so its absence accuses nothing."""
+    """An exit status alone can never become GREEN, so it is refused at RED time.
+
+    Without a terminal observation or a report, the same vector exiting 0 after
+    implementation would be indistinguishable from one that ran no test, so
+    `des craft` could never record it. Refusing here costs no craft turn and
+    names the agnostic observation protocol the vector must speak.
+    """
     code, out, err = run_oracle(
         root, step, [[sys.executable, ORACLE]], authored(JOURNEY_ORACLE)
     )
 
-    assert code == 0, out + err
+    assert code != 0, out + err
     lines = block(out, err)
-    assert lines["DELIVERY-OUTCOME"] == "Success", lines
+    assert lines["WHAT"] == "OracleRedUnobservable", lines
     assert "verdict=indeterminate" in lines["ORACLE-RED"], lines["ORACLE-RED"]
     assert "axis=exit-status-only" in lines["ORACLE-RED"], lines["ORACLE-RED"]
-    assert "exit=1" in lines["ORACLE-RED"], lines["ORACLE-RED"]
+    assert "DES-ORACLE-OBSERVATION:" in lines["HOW"], lines["HOW"]
+    assert not any(ref.endswith("/oracle") for ref in turn_refs(root)), turn_refs(root)
+    assert not any("des craft" in item for item in nexts(out)), nexts(out)
+
+
+def test_a_vector_that_exits_zero_without_an_observation_names_the_protocol(
+    root: Path, step, turns: Path
+) -> None:
+    """Exit 0 with no observation is refused with the same agnostic remedy.
+
+    A runner such as `dotnet test` exits 0 when its tests pass and prints no
+    observation line. The refusal must name the line the vector has to print,
+    as it does for a non-zero exit; otherwise the user reads a generic remedy
+    and cannot tell what DES expects.
+    """
+    code, out, err = run_oracle(
+        root, step, [[sys.executable, ORACLE]], authored("print('ran')\n")
+    )
+
+    assert code != 0, out + err
+    lines = block(out, err)
+    assert lines["WHAT"] == "OracleRedUnobservable", lines
+    assert "axis=native-observation-no-observation" in lines["ORACLE-RED"], lines
+    assert "DES-ORACLE-OBSERVATION:" in lines["HOW"], lines["HOW"]
+    assert not any(ref.endswith("/oracle") for ref in turn_refs(root)), turn_refs(root)
+    assert not any("des craft" in item for item in nexts(out)), nexts(out)
 
 
 def test_a_pytest_vector_that_produced_a_report_is_still_judged_on_it(
@@ -232,6 +290,7 @@ def test_a_wrapper_vector_naming_no_pytest_still_earns_the_report_axis(
     module.write_text("ANSWER = 41\n")
     git(root, "add", "src/existing_answer.py")
     git(root, "commit", "-qm", "Existing product imported through the wrapper")
+    original = git(root, "rev-parse", "HEAD")
     code, out, err = run_oracle(
         root,
         step,
@@ -242,6 +301,8 @@ def test_a_wrapper_vector_naming_no_pytest_still_earns_the_report_axis(
             "    assert ANSWER == 42\n",
             {WRAPPER: wrapper_body()},
         ),
+        supports=(SUPPORT, WRAPPER),
+        baseline=original,
     )
 
     assert code == 0, out + err

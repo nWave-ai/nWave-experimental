@@ -14,6 +14,7 @@ import pytest
 
 from des.application.handover import read_handover
 from des.domain.feature_documents import merge_feature_destinations
+from des.domain.nwave_dir_gitignore import runtime_gitignore_content
 from tests.common.in_process_cli import run_cli_in_process
 from tests.des.acceptance.design_document_construction.test_design_document_construction import (
     MANIFEST,
@@ -68,9 +69,13 @@ def _nwave(root: Path, *argv: str) -> tuple[int, str]:
 
 def _tree(root: Path) -> dict[str, str]:
     return {
-        str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+        str(p.relative_to(root)): (
+            "exists"
+            if p.relative_to(root).as_posix() == ".nwave/des/commit.lock"
+            else hashlib.sha256(p.read_bytes()).hexdigest()
+        )
         for p in sorted(root.rglob("*"))
-        if p.is_file() and ".git" not in p.parts and p.suffix != ".lock"
+        if p.is_file() and ".git" not in p.parts
     }
 
 
@@ -161,9 +166,15 @@ def test_bad_scope_config_and_mismatch_refuse_before_any_write(
     discuss = ["discuss", "--repo-root", str(root), "--input", "-"]
     raw = json.dumps(_discuss_payload())
     before = _tree(root)
+    ignore = root / ".nwave/des/.gitignore"
     for bad in ("Bad_ID", "../x", "-a", ""):
         code, _ = _des(root, *discuss, "--feature", bad, stdin=raw)
         assert code != 0 and _tree(root) == before, bad
+        assert not ignore.exists() and not (root / ".nwave/des/commit.lock").exists(), (
+            "WHAT: an invalid feature id created runtime housekeeping. "
+            "WHY: this refusal precedes lock acquisition and must write nothing. "
+            "HOW: reject the invalid id before creating the ignore or lock."
+        )
     for bad_config in (
         "{not json",
         json.dumps({"documents": {"design": {"destination": "../out.md"}}}),
@@ -175,11 +186,32 @@ def test_bad_scope_config_and_mismatch_refuse_before_any_write(
         cfg.parent.mkdir(parents=True, exist_ok=True)
         cfg.write_text(bad_config)
         before = _tree(root)
+        ignore_before = ignore.read_bytes() if ignore.exists() else None
         code, _ = _des(root, *discuss, "--feature", "feature-a", stdin=raw)
-        assert code != 0 and _tree(root) == before
+        after = _tree(root)
+        for housekeeping in (".nwave/des/commit.lock", ".nwave/des/.gitignore"):
+            if housekeeping not in before:
+                after.pop(housekeeping, None)
+        assert code != 0 and after == before, (
+            "WHAT: malformed feature configuration changed non-housekeeping state. "
+            "WHY: only previously absent literal runtime housekeeping may appear. "
+            "HOW: preserve every existing file and forbid all other additions."
+        )
+        if ignore.exists() or ignore_before is not None:
+            expected_ignore = (
+                runtime_gitignore_content() if ignore_before is None else ignore_before
+            )
+            assert ignore.is_file() and ignore.read_bytes() == expected_ignore, (
+                "WHAT: refused DISCUSS changed existing ignore bytes or created "
+                "a noncanonical runtime ignore. "
+                "WHY: only create-if-absent canonical housekeeping is admitted. "
+                "HOW: preserve existing bytes and create runtime_gitignore_content() "
+                "only when the ignore is absent."
+            )
     cfg.unlink()
     assert _des(root, *discuss, "--feature", "feature-a", stdin=raw)[0] == 0
     before = _tree(root)
+    ignore_before = ignore.read_bytes()
     code, _ = _des(
         root,
         "design",
@@ -194,6 +226,11 @@ def test_bad_scope_config_and_mismatch_refuse_before_any_write(
         stdin=json.dumps(MANIFEST),
     )
     assert code != 0 and _tree(root) == before
+    assert ignore.is_file() and ignore.read_bytes() == ignore_before, (
+        "WHAT: refused DESIGN changed or deleted the existing runtime ignore. "
+        "WHY: scope mismatch must preserve all existing ignore bytes. "
+        "HOW: retain create-if-absent housekeeping without rewriting the ignore."
+    )
 
 
 def test_merge_law_resolves_each_wave_independently_and_ignores_flat_paths() -> None:
@@ -440,6 +477,14 @@ def test_root_document_commands_require_explicit_scope_before_writing(
     code, _text = _des(root, command, "--repo-root", str(root), stdin="{}")
     assert code != 0
     assert _tree(root) == before
+    assert (
+        not (root / ".nwave/des/.gitignore").exists()
+        and not (root / ".nwave/des/commit.lock").exists()
+    ), (
+        f"WHAT: missing-scope {command} created runtime housekeeping. "
+        "WHY: explicit scope is required before any lock or ignore write. "
+        "HOW: refuse missing scope without creating either literal runtime path."
+    )
 
 
 def test_epic_configuration_is_separate_and_malformed_config_writes_nothing(
@@ -467,9 +512,16 @@ def test_epic_configuration_is_separate_and_malformed_config_writes_nothing(
     override.parent.mkdir(parents=True)
     override.write_text("{broken")
     before = _tree(root)
+    ignore = root / ".nwave/des/.gitignore"
+    ignore_before = ignore.read_bytes()
     code, _text = _des(root, *args, "--replace-current", stdin=raw)
     assert code != 0
     assert _tree(root) == before
+    assert ignore.is_file() and ignore.read_bytes() == ignore_before, (
+        "WHAT: malformed epic configuration changed or deleted the runtime ignore. "
+        "WHY: the existing ignore's exact bytes and presence must survive refusal. "
+        "HOW: retain create-if-absent housekeeping and never rewrite an existing ignore."
+    )
 
 
 @pytest.mark.parametrize(

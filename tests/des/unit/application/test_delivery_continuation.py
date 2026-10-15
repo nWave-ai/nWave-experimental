@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import stat
 import subprocess
 from dataclasses import replace
@@ -26,6 +27,7 @@ from des.application.handover import (
     design_facts_defect,
     handover_path,
 )
+from des.domain.design_document import DesignDocument
 from des.ports.driven_ports.task_invocation_port import (
     AgreementParty,
     ApplicableADR,
@@ -33,11 +35,18 @@ from des.ports.driven_ports.task_invocation_port import (
     ApplicableImpactClosure,
     DesignFacts,
     DesignTarget,
+    FactId,
+    FactRecord,
+    FactRef,
     ImpactItem,
     NotApplicable,
     ReuseAnalysis,
     ReuseCandidate,
 )
+from tests.des._helpers.host_facts import design_manifest
+
+
+TARGET_REASON = FactRef(FactId("V1-F4"))
 
 
 def test_initial_foreign_observation_includes_rename_and_copy_paths() -> None:
@@ -86,14 +95,13 @@ def repo(tmp_path: Path, relative: str, text: str = SECTION) -> Path:
 # Directory and filename convey no authority: a document outside the former
 # `docs/product/architecture` whitelist is eligible on the same evidence
 # (the Prism defect a path whitelist caused).
-def test_authority_is_derived_from_any_tracked_markdown_section(tmp_path) -> None:
+def test_locator_authority_is_refused_even_in_tracked_markdown(tmp_path) -> None:
     relative = "notes/any.md"
     root = repo(tmp_path, relative)
-
-    facts = DeliveryContinuationRunner._derive(root, f"{relative}#Value")
-
-    assert isinstance(facts, AuthorityFacts)
-    assert facts.acceptance_oracle_locator == "tests/acceptance/test_value.py"
+    outcome = DeliveryContinuationRunner._derive(root, f"{relative}#Value")
+    assert isinstance(outcome, DeliveryOutcome)
+    assert outcome.failure.what == "DesignFactsPreNormalized"
+    assert "--replace-current" in outcome.failure.how
 
 
 @pytest.mark.parametrize(
@@ -172,25 +180,52 @@ Verification command: `python3 -m pytest tests/acceptance/test_value.py`
 
 
 def _typed(supports: tuple[str, ...]) -> DesignFacts:
-    return DesignFacts(
-        targets=(DesignTarget("src/value.py", "EXTEND"),),
-        paradigm="object_oriented",
-        decisions=("reuse the existing port",),
-        oracle="tests/acceptance/test_value.py",
-        acceptance_supports=supports,
-        verification=(("python3", "-m", "pytest", "tests/acceptance/test_value.py"),),
-        oracle_verification_index=0,
-        architectural_tests=NotApplicable(
-            "The fixture has no structural boundary change."
-        ),
-        contract_tests=NotApplicable("The fixture changes no shared contract."),
-        prefactoring=NotApplicable("The fixture requires no preservation move."),
-        agreement_analysis=NotApplicable("The fixture has no affected agreement."),
-        reuse_analysis=ReuseAnalysis(()),
-        impact_closure=NotApplicable(
-            "The fixture reaches no public surface, consumer or build metadata."
-        ),
-    )
+    return DesignDocument.from_json(
+        json.dumps(
+            design_manifest(
+                {
+                    "targets": [
+                        {
+                            "path": "src/value.py",
+                            "decision": "EXTEND",
+                            "reason": "Own the value.",
+                        }
+                    ],
+                    "paradigm": "object_oriented",
+                    "decisions": ["reuse the existing port"],
+                    "oracle": "tests/acceptance/test_value.py",
+                    "acceptance_supports": list(supports),
+                    "verification": [
+                        ["python3", "-m", "pytest", "tests/acceptance/test_value.py"]
+                    ],
+                    "oracle_verification_index": 0,
+                    "architectural_tests": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture has no structural boundary change.",
+                    },
+                    "contract_tests": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture changes no shared contract.",
+                    },
+                    "prefactoring": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture requires no preservation move.",
+                    },
+                    "agreement_analysis": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture has no affected agreement.",
+                    },
+                    "reuse_analysis": {"candidates": []},
+                    "impact_closure": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                    },
+                },
+                "Expose value.",
+                1,
+            )
+        )
+    ).facts
 
 
 def test_an_ignored_generated_acceptance_support_is_refused(tmp_path) -> None:
@@ -233,7 +268,7 @@ def test_an_ignored_support_declared_in_markdown_authority_is_refused(
 
     assert isinstance(outcome, DeliveryOutcome)
     assert outcome.failure is not None
-    assert outcome.failure.what == "AcceptanceSupportIgnored"
+    assert outcome.failure.what == "DesignFactsPreNormalized"
 
 
 def test_a_support_the_designer_has_not_authored_yet_is_admitted(tmp_path) -> None:
@@ -339,25 +374,7 @@ def test_an_absent_git_degrades_loud_instead_of_raising(tmp_path, monkeypatch) -
 def _typed_targets(
     targets: tuple[DesignTarget, ...], supports: tuple[str, ...]
 ) -> DesignFacts:
-    return DesignFacts(
-        targets=targets,
-        paradigm="object_oriented",
-        decisions=("reuse the existing port",),
-        oracle="tests/acceptance/test_value.py",
-        acceptance_supports=supports,
-        verification=(("python3", "-m", "pytest", "tests/acceptance/test_value.py"),),
-        oracle_verification_index=0,
-        architectural_tests=NotApplicable(
-            "The fixture has no structural boundary change."
-        ),
-        contract_tests=NotApplicable("The fixture changes no shared contract."),
-        prefactoring=NotApplicable("The fixture requires no preservation move."),
-        agreement_analysis=NotApplicable("The fixture has no affected agreement."),
-        reuse_analysis=ReuseAnalysis(()),
-        impact_closure=NotApplicable(
-            "The fixture reaches no public surface, consumer or build metadata."
-        ),
-    )
+    return replace(_typed(()), targets=targets, acceptance_supports=supports)
 
 
 def test_an_extend_target_required_as_acceptance_support_is_refused_before_binding(
@@ -375,7 +392,7 @@ def test_an_extend_target_required_as_acceptance_support_is_refused_before_bindi
     outcome = DeliveryContinuationRunner._derive(
         root,
         _typed_targets(
-            (DesignTarget("src/value.py", "EXTEND"),),
+            (DesignTarget("src/value.py", "EXTEND", TARGET_REASON),),
             ("src/value.py", "tests/acceptance/support.py"),
         ),
     )
@@ -395,7 +412,7 @@ def test_an_acceptance_owned_fixture_beside_an_extend_target_stays_admitted(
     facts = DeliveryContinuationRunner._derive(
         root,
         _typed_targets(
-            (DesignTarget("src/value.py", "EXTEND"),),
+            (DesignTarget("src/value.py", "EXTEND", TARGET_REASON),),
             ("tests/acceptance/support.py",),
         ),
     )
@@ -424,7 +441,7 @@ def test_markdown_refuses_a_new_non_oracle_target_required_as_acceptance_support
 
     assert isinstance(outcome, DeliveryOutcome)
     assert outcome.failure is not None
-    assert outcome.failure.what == "TargetAcceptanceSupportConflict"
+    assert outcome.failure.what == "DesignFactsPreNormalized"
 
 
 def test_typed_facts_refuse_a_new_non_oracle_target_required_as_acceptance_support(
@@ -435,7 +452,7 @@ def test_typed_facts_refuse_a_new_non_oracle_target_required_as_acceptance_suppo
     outcome = DeliveryContinuationRunner._derive(
         root,
         _typed_targets(
-            (DesignTarget("tests/support/new_helper.py", "CREATE_NEW"),),
+            (DesignTarget("tests/support/new_helper.py", "CREATE_NEW", TARGET_REASON),),
             ("tests/support/new_helper.py",),
         ),
     )
@@ -454,8 +471,10 @@ def test_the_oracle_is_never_a_mutable_target(tmp_path) -> None:
         root,
         _typed_targets(
             (
-                DesignTarget("tests/acceptance/test_value.py", "CREATE_NEW"),
-                DesignTarget("src/value.py", "EXTEND"),
+                DesignTarget(
+                    "tests/acceptance/test_value.py", "CREATE_NEW", TARGET_REASON
+                ),
+                DesignTarget("src/value.py", "EXTEND", TARGET_REASON),
             ),
             (),
         ),
@@ -480,7 +499,12 @@ def test_a_target_table_that_declares_only_the_oracle_is_refused_before_binding(
     outcome = DeliveryContinuationRunner._derive(
         root,
         _typed_targets(
-            (DesignTarget("tests/acceptance/test_value.py", "CREATE_NEW"),), ()
+            (
+                DesignTarget(
+                    "tests/acceptance/test_value.py", "CREATE_NEW", TARGET_REASON
+                ),
+            ),
+            (),
         ),
     )
 
@@ -495,29 +519,13 @@ def test_a_target_table_that_declares_only_the_oracle_is_refused_before_binding(
 
 def _verification_facts(
     *,
-    targets: tuple[DesignTarget, ...] = (DesignTarget("src/value.py", "EXTEND"),),
+    targets: tuple[DesignTarget, ...] = (
+        DesignTarget("src/value.py", "EXTEND", TARGET_REASON),
+    ),
     supports: tuple[str, ...] = (),
     verification: tuple[tuple[str, ...], ...],
 ) -> DesignFacts:
-    return DesignFacts(
-        targets=targets,
-        paradigm="object_oriented",
-        decisions=("reuse the existing port",),
-        oracle="tests/acceptance/test_value.py",
-        acceptance_supports=supports,
-        verification=verification,
-        oracle_verification_index=0,
-        architectural_tests=NotApplicable(
-            "The fixture has no structural boundary change."
-        ),
-        contract_tests=NotApplicable("The fixture changes no shared contract."),
-        prefactoring=NotApplicable("The fixture requires no preservation move."),
-        agreement_analysis=NotApplicable("The fixture has no affected agreement."),
-        reuse_analysis=ReuseAnalysis(()),
-        impact_closure=NotApplicable(
-            "The fixture reaches no public surface, consumer or build metadata."
-        ),
-    )
+    return replace(_typed_targets(targets, supports), verification=verification)
 
 
 def test_an_unresolvable_typed_verification_executable_is_refused_before_bind(
@@ -577,8 +585,8 @@ def test_an_unresolvable_markdown_verification_executable_is_refused_before_bind
 
     assert isinstance(outcome, DeliveryOutcome)
     assert outcome.failure is not None
-    assert outcome.failure.what == "VerificationExecutableUnresolvable"
-    assert "tools/missing-checker" in outcome.failure.why
+    assert outcome.failure.what == "DesignFactsPreNormalized"
+    assert "--replace-current" in outcome.failure.how
 
 
 def test_a_missing_relative_verification_executable_is_admitted_when_targeted(
@@ -591,7 +599,7 @@ def test_a_missing_relative_verification_executable_is_admitted_when_targeted(
     facts = DeliveryContinuationRunner._derive(
         root,
         _verification_facts(
-            targets=(DesignTarget("tools/checker", "CREATE_NEW"),),
+            targets=(DesignTarget("tools/checker", "CREATE_NEW", TARGET_REASON),),
             verification=(("./tools/checker",),),
         ),
     )
@@ -610,7 +618,9 @@ def test_a_missing_relative_markdown_executable_is_admitted_when_support_declare
 
     facts = DeliveryContinuationRunner._derive(root, "notes/any.md#Value")
 
-    assert isinstance(facts, AuthorityFacts)
+    assert isinstance(facts, DeliveryOutcome)
+    assert facts.failure.what == "DesignFactsPreNormalized"
+    assert "--replace-current" in facts.failure.how
 
 
 def test_an_existing_relative_verification_executable_must_be_executable(
@@ -681,7 +691,7 @@ def test_the_oracle_only_target_table_is_refused_in_markdown_authority_too(
 
     assert isinstance(outcome, DeliveryOutcome)
     assert outcome.failure is not None
-    assert outcome.failure.what == "NoMutableProductionTarget"
+    assert outcome.failure.what == "DesignFactsPreNormalized"
 
 
 def test_an_out_of_range_markdown_oracle_binding_names_its_repair(tmp_path) -> None:
@@ -698,8 +708,8 @@ def test_an_out_of_range_markdown_oracle_binding_names_its_repair(tmp_path) -> N
 
     assert isinstance(outcome, DeliveryOutcome)
     assert outcome.failure is not None
-    assert outcome.failure.what == "OracleVerificationBindingInvalid"
-    assert "zero-based verification command ordinal" in outcome.failure.how
+    assert outcome.failure.what == "DesignFactsPreNormalized"
+    assert "--replace-current" in outcome.failure.how
 
 
 def test_restoring_an_oracle_only_handover_is_refused_before_publication(
@@ -714,7 +724,14 @@ def test_restoring_an_oracle_only_handover_is_refused_before_publication(
                 "the tool answers",
                 (),
                 _typed_targets(
-                    (DesignTarget("tests/acceptance/test_value.py", "CREATE_NEW"),), ()
+                    (
+                        DesignTarget(
+                            "tests/acceptance/test_value.py",
+                            "CREATE_NEW",
+                            TARGET_REASON,
+                        ),
+                    ),
+                    (),
                 ),
             ),
         ),
@@ -729,25 +746,49 @@ def test_restoring_an_oracle_only_handover_is_refused_before_publication(
 def _reasoned(**overrides) -> DesignFacts:
     return replace(
         _typed(()),
+        facts=(
+            *_typed(()).facts,
+            *(
+                FactRecord(FactId(identifier), text)
+                for identifier, text in (
+                    ("ReuseReason", "No existing renderer fits the contract."),
+                    ("ImpactReason", "The target is rewritten."),
+                    ("AdrContext", "context"),
+                    ("AdrDecision", "decision"),
+                    ("AdrAlternative", "alternative"),
+                    ("AdrConsequence", "consequence"),
+                    ("NoAdr", "The fixture needs no decision record."),
+                    ("MigratedReason", "The target is migrated."),
+                    ("ProtocolReason", "Protocol v1 remains unchanged."),
+                )
+            ),
+        ),
         reuse_analysis=ReuseAnalysis(
             (
                 ReuseCandidate(
                     "Value.render",
                     "src/value.py:10",
                     "CREATE_NEW",
-                    "No existing renderer fits the contract.",
+                    FactRef(FactId("ReuseReason")),
                 ),
             )
         ),
         impact_closure=ApplicableImpactClosure(
             (
                 ImpactItem(
-                    "runtime", "src/value.py", "CHANGED", "The target is rewritten."
+                    "runtime",
+                    "src/value.py",
+                    "CHANGED",
+                    FactRef(FactId("ImpactReason")),
                 ),
             )
         ),
         adr=ApplicableADR(
-            "context", "decision", ("alternative",), ("consequence",), "accepted"
+            FactRef(FactId("AdrContext")),
+            FactRef(FactId("AdrDecision")),
+            (FactRef(FactId("AdrAlternative")),),
+            (FactRef(FactId("AdrConsequence")),),
+            "accepted",
         ),
         **overrides,
     )
@@ -773,11 +814,14 @@ def test_selected_revision_identity_moves_with_each_reuse_adr_and_closure(
     assert isinstance(facts, AuthorityFacts)
     variants = {
         "reuse_analysis": ReuseAnalysis(()),
-        "adr": NotApplicable("The fixture needs no decision record."),
+        "adr": NotApplicable(FactRef(FactId("NoAdr"))),
         "impact_closure": ApplicableImpactClosure(
             (
                 ImpactItem(
-                    "runtime", "src/value.py", "MIGRATED", "The target is migrated."
+                    "runtime",
+                    "src/value.py",
+                    "MIGRATED",
+                    FactRef(FactId("MigratedReason")),
                 ),
             )
         ),
@@ -800,22 +844,26 @@ def test_typed_and_shared_projections_carry_reuse_closure_and_adr_when_present(
     assert typed["reuse_analysis"]["candidates"][0]["decision"] == "CREATE_NEW"
     assert typed["impact_closure"]["applicability"] == "applicable"
     assert typed["impact_closure"]["items"][0]["locator"] == "src/value.py"
-    assert typed["adr"]["decision"] == "decision"
-    assert "adr" not in DeliveryContinuationRunner._typed_facts(
-        replace(derived, adr=None)
-    )
+    assert typed["adr"]["decision"] == {"ref": "AdrDecision"}
+    without_adr = DeliveryContinuationRunner._derive(root, replace(with_adr, adr=None))
+    assert isinstance(without_adr, AuthorityFacts)
+    assert DeliveryContinuationRunner._typed_facts(without_adr).get("adr") is None
 
     def shared_of(design: DesignFacts) -> dict:
         stored = SimpleNamespace(
-            shared_design=SharedDesign("notes/any.md#Value", "a" * 64, "b" * 64, design)
+            shared_design=SharedDesign(
+                "notes/any.md#Shared design", "a" * 64, "b" * 64, design
+            )
         )
         return DeliveryContinuationRunner._shared(stored)["shared_design"]
 
     shared = shared_of(with_adr)
-    assert shared["reuse_analysis"]["candidates"][0]["locator"] == "src/value.py:10"
-    assert shared["impact_closure"]["items"][0]["decision"] == "CHANGED"
-    assert shared["adr"]["decision"] == "decision"
-    assert "adr" not in shared_of(replace(with_adr, adr=None))
+    assert shared == {
+        "authority_locator": "notes/any.md#Shared design",
+        "section_sha256": "a" * 64,
+        "semantic_sha256": "b" * 64,
+    }
+    assert shared_of(replace(with_adr, adr=None)) == shared
 
 
 def test_facts_whose_impact_closure_omits_a_declared_consumer_are_refused() -> None:
@@ -824,11 +872,12 @@ def test_facts_whose_impact_closure_omits_a_declared_consumer_are_refused() -> N
         agreement_analysis=ApplicableAgreementAnalysis(
             (
                 AgreementParty(
+                    FactId("ProtocolConsumer"),
                     "answer-protocol",
                     "consumer",
                     "bin/main.ml:1",
                     "UNCHANGED_COMPATIBLE",
-                    "Protocol v1 remains unchanged.",
+                    FactRef(FactId("ProtocolReason")),
                 ),
             )
         ),
@@ -850,9 +899,15 @@ def test_bound_no_change_authority_has_no_crafter_mutation_population(
     declared = replace(
         _typed_targets((), ()),
         product_change="none",
+        facts=(
+            *_typed(()).facts,
+            FactRecord(FactId("ConsultOwner"), "Consult existing owner."),
+        ),
         reuse_analysis=ReuseAnalysis(
             tuple(
-                ReuseCandidate(path, path + ":1", "REUSE", "Consult existing owner.")
+                ReuseCandidate(
+                    path, path + ":1", "REUSE", FactRef(FactId("ConsultOwner"))
+                )
                 for path in consulted
             )
         ),

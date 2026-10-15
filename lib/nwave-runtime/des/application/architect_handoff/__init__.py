@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from des.application.handover import StoredHandover
+    from des.domain.design_document import FactCatalog
 
 
 # Published identities are translated here only. Internal views remain private
@@ -38,11 +39,23 @@ ROLE_VIEWS = {
 }
 
 
-def decode(raw: object) -> T.Handoff:
+def decode(raw: object, *, source_path: str = "$") -> T.Handoff:
     """Use the original closed constructor; never extract typed facts from prose."""
     handoff, defects = C.decode_handoff(raw)
     if handoff is None:
-        raise ValueError(report(defects))
+        defects = [
+            dc.replace(defect, where=source_path + defect.where[1:])
+            if defect.where.startswith("$")
+            else defect
+            for defect in defects
+        ]
+        raise ValueError(
+            "\n"
+            + "\n".join(
+                f"{defect.rule} {defect.where}: WHAT: {defect.what}; WHY: {defect.why}; HOW: {defect.how}"
+                for defect in defects
+            )
+        )
     return handoff
 
 
@@ -50,19 +63,19 @@ def wire(handoff: T.Handoff) -> dict:
     return C.to_json(handoff)
 
 
+def selected_handoff(
+    handoff: T.Handoff, value: int, inherits: t.Iterable[T.FactRef]
+) -> T.Handoff:
+    """Select semantic records and their dependencies before role filtering."""
+    return P.selected_handoff(handoff, value, inherits)
+
+
 def decode_receipts(raw: object) -> tuple[T.Run, ...]:
-    handoff = decode(
-        {
-            "sections": [
-                {
-                    "kind": "receipts",
-                    "scope": "shared",
-                    "status": {"tag": "applicable", "payload": {"runs": raw}},
-                }
-            ]
-        }
-    )
-    return handoff[("receipts", "shared")].status.payload.runs
+    defects: list[Defect] = []
+    runs = C.dec(tuple[T.Run, ...], raw, "$.architect_receipts", defects)
+    if runs is C.BAD:
+        raise ValueError(report(defects))
+    return runs
 
 
 def accumulated(stored: StoredHandover) -> T.Handoff:
@@ -71,6 +84,10 @@ def accumulated(stored: StoredHandover) -> T.Handoff:
 
     handoff: T.Handoff = {}
     if stored.shared_design is not None:
+        if not isinstance(stored.shared_design.design, DesignFacts):
+            raise ValueError(
+                "DesignFactsPreNormalized: HOW: des design --shared --replace-current"
+            )
         handoff = C.merge(handoff, stored.shared_design.design.architect_handoff or {})
     for value in stored.values:
         if isinstance(value.authority, DesignFacts):
@@ -97,13 +114,15 @@ def accumulated(stored: StoredHandover) -> T.Handoff:
     return handoff
 
 
-def projection(
+def projection(  # noqa: PLR0913 - explicit role, scope and bound-catalog context
     role_id: str,
     handoff: T.Handoff,
     *,
     value: int | None = None,
     targets: tuple[str, ...] | None = None,
     base_dir: str | None = None,
+    catalog: FactCatalog | None = None,
+    inherits: tuple[T.FactRef, ...] = (),
 ) -> list[dict[str, object]]:
     """Expose exactly the original consumer views, including UNASSESSED markers."""
     role = ROLE_VIEWS[role_id.partition("#")[0]]
@@ -116,7 +135,7 @@ def projection(
             "content": content,
         }
         for kind, scope, digest, view, content in P.project(
-            handoff, role, value, targets, base_dir
+            handoff, role, value, targets, base_dir, catalog=catalog, inherits=inherits
         )
     ]
 
@@ -134,11 +153,21 @@ def compose(  # noqa: PLR0913
     targets: tuple[str, ...] | None = None,
     base_dir: str | None = None,
     prepared_projection: list[dict[str, object]] | None = None,
+    catalog: FactCatalog | None = None,
+    inherits: tuple[T.FactRef, ...] = (),
 ) -> str:
     """Retain verbatim root bytes; the prototype's optional stripping is not used."""
     role = ROLE_VIEWS[role_id.partition("#")[0]]
     rows = (
-        projection(role_id, handoff, value=value, targets=targets, base_dir=base_dir)
+        projection(
+            role_id,
+            handoff,
+            value=value,
+            targets=targets,
+            base_dir=base_dir,
+            catalog=catalog,
+            inherits=inherits,
+        )
         if prepared_projection is None
         else prepared_projection
     )
@@ -297,6 +326,8 @@ def input_schema() -> dict:
                 result["prefixItems"] = [shape(str, {"pattern": T.ARGV_EXECUTABLE_RE})]
             if metadata.get("nonempty"):
                 result["minItems"] = 1
+            if metadata.get("unique_refs"):
+                result["uniqueItems"] = True
             return result
         if isinstance(tp, t.NewType):
             return {"type": "string", "pattern": T.PATTERNS[tp.__name__]}

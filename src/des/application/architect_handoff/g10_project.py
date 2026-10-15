@@ -22,8 +22,12 @@ from . import g10_render as R
 from . import g10_rules as RU
 from . import g10_scope as S
 from . import g10_types as T
-from .g10_codec import canon, enc, is_union, sha
+from .g10_codec import canon, canonical, enc, is_union, sha
 from .g10_defect import Defect
+
+
+if t.TYPE_CHECKING:
+    from des.domain.design_document import FactCatalog
 
 
 ROLES = (
@@ -280,18 +284,18 @@ _ATOM_KEEP["falsifiers"] = _ATOM_KEEP["interface"]
 def _closure_view(payload: T.ClosureSet, view: str) -> dict:
     out = []
     for c in payload.closures:
-        row: dict[str, t.Any] = {"subject": c.subject}
+        row: dict[str, t.Any] = {"subject": enc(c.subject)}
         for cname in ("safety", "inhabitation", "public_reachability", "liveness"):
             e = getattr(c, cname)
             if isinstance(e, T.Claim):
                 d: dict[str, t.Any] = {
-                    "statement": e.statement,
+                    "statement": enc(e.statement),
                     "design": e.design,
                     "runtime": e.runtime,
                 }
                 for k in ("design_note", "runtime_note"):
                     if getattr(e, k):
-                        d[k] = getattr(e, k)
+                        d[k] = enc(getattr(e, k))
                 if view == "readable":
                     d["rests_on"] = e.basis.tag + (
                         f", proof {e.basis.proof}"
@@ -299,18 +303,23 @@ def _closure_view(payload: T.ClosureSet, view: str) -> dict:
                         else ""
                     )
                     if isinstance(e.basis, T.Checked) and e.basis.proof_note:
-                        d["proof_note"] = e.basis.proof_note
+                        d["proof_note"] = enc(e.basis.proof_note)
                     if e.assumptions:
                         d["assumptions"] = enc(e.assumptions)
                 row[cname] = d
             else:
                 row[cname] = enc(e)
         out.append(row)
-    return {"closures": _by(out, lambda r: r["subject"])}
+    return {"closures": _by(out, lambda r: canon(r["subject"]))}
 
 
 def view_payload(
-    kind: str, payload: t.Any, view: str, targets: t.Collection[str] | None = None
+    kind: str,
+    payload: t.Any,
+    view: str,
+    targets: t.Collection[str] | None = None,
+    *,
+    dependency_uses: t.Collection[str] = (),
 ) -> t.Any:
     if view == "owned" and targets is None:
         raise ProjectionError(
@@ -326,7 +335,13 @@ def view_payload(
         # the crafter keeps the laws its targets own: statement, kind, layer, owner and the vocabulary they use.
         # How a law is TESTED (treatment, generators, evidence) and what was refuted belong to the oracle author.
         mine = _owned(payload.laws, targets, ("owner",))
-        used = {u for lw in mine for u in lw.uses}
+        used = {u for lw in mine for u in lw.uses} | set(dependency_uses)
+        shared_equality_used = bool(
+            set(dependency_uses)
+            & {observation.id for observation in payload.observations}
+        )
+        if shared_equality_used:
+            used.update(payload.equality.under)
         obs = tuple(o for o in payload.observations if o.id in used)
         d = enc(
             dc.replace(
@@ -343,10 +358,8 @@ def view_payload(
         for lw in d["laws"]:
             lw.pop("treatment")
             lw.pop("evidence")
-        if not mine:
-            d.pop(
-                "equality"
-            )  # equality is read through a law; no owned law, nothing to read it for
+        if not mine and not shared_equality_used:
+            d.pop("equality")
         else:
             shown = {o.id for o in obs}
             d["equality"]["under"] = [
@@ -386,7 +399,7 @@ def view_payload(
                     (
                         {
                             "id": mu.id,
-                            "description": mu.description,
+                            "description": enc(mu.description),
                             "kills": sorted({k.property for k in mu.kills}),
                         }
                         for mu in m.mutants
@@ -401,15 +414,15 @@ def view_payload(
 
 
 def _rendered_scenarios(
-    h: T.Handoff, scope: str, payload: T.Scenarios, base_dir: str | None
+    h: T.Handoff, scope: str, payload: T.Scenarios, base_dir: str | None, catalog=None
 ) -> dict:
     v = S.visible(h, scope)
     out = []
     for sc in _by(payload.scenarios, lambda x: x.id):
-        r = R.render_scenario(v, sc, base_dir)
+        r = R.render_scenario(v, sc, base_dir, catalog)
         row: dict[str, t.Any] = {
             "id": sc.id,
-            "title": sc.title,
+            "title": enc(sc.title),
             "kind": sc.kind,
             "review": enc(sc.review),
         }
@@ -429,7 +442,9 @@ def _rendered_scenarios(
             )
             if r.scenario.kind == "mutant":
                 mid = r.run.variant.removeprefix("mutant:")
-                row["what_the_bug_does"] = R.mutant_description(r.model, mid) or ""
+                description = R.mutant_description(v.models[r.model.id], mid)
+                if description is not None:
+                    row["what_the_bug_does"] = enc(description)
         else:
             row["NOT_RENDERED"] = (
                 r.reason if isinstance(r, R.Skipped) else "; ".join(r.problems)
@@ -438,15 +453,116 @@ def _rendered_scenarios(
     return {"scenarios": out}
 
 
-def project(
+def selected_handoff(
+    h: T.Handoff, value: int, inherits: t.Iterable[T.FactRef]
+) -> T.Handoff:
+    selected = {ref.ref for ref in inherits}
+    out = {
+        key: entry
+        for key, entry in h.items()
+        if key[1] == f"value:{value}" and key[0] != "receipts"
+    }
+    for (kind, scope), entry in h.items():
+        if scope != "shared" or not isinstance(entry.status, T.Applicable):
+            continue
+        payload = entry.status.payload
+        if kind == "laws":
+            laws = tuple(law for law in payload.laws if law.id in selected)
+            refuted = tuple(law for law in payload.refuted if law.id in selected)
+            vocabulary = {
+                item.id for item in (*payload.observations, *payload.constructors)
+            } & selected
+            selected_generators = {
+                generator.id for generator in payload.generators
+            } & selected
+            if not laws and not refuted and not vocabulary and not selected_generators:
+                continue
+            used = vocabulary | {identifier for law in laws for identifier in law.uses}
+            own = out.get(("laws", f"value:{value}"))
+            own_uses = (
+                {
+                    identifier
+                    for law in own.status.payload.laws
+                    for identifier in law.uses
+                }
+                if own and isinstance(own.status, T.Applicable)
+                else set()
+            )
+            if laws or own_uses & vocabulary & {
+                observation.id for observation in payload.observations
+            }:
+                used.update(payload.equality.under)
+            generators = selected_generators | {
+                law.treatment.generator
+                for law in laws
+                if isinstance(law.treatment, T.Broad)
+            }
+            payload = dc.replace(
+                payload,
+                laws=laws,
+                refuted=refuted,
+                observations=tuple(
+                    item for item in payload.observations if item.id in used
+                ),
+                constructors=tuple(
+                    item for item in payload.constructors if item.id in used
+                ),
+                generators=tuple(
+                    item for item in payload.generators if item.id in generators
+                ),
+            )
+        elif kind == "construction":
+            claims = tuple(claim for claim in payload.claims if claim.id in selected)
+            if not claims:
+                continue
+            payload = dc.replace(payload, claims=claims)
+        elif kind == "model":
+            models = tuple(model for model in payload.models if model.id in selected)
+            if not models:
+                continue
+            payload = dc.replace(payload, models=models)
+        elif kind == "closure":
+            own = h.get(("closure", f"value:{value}"))
+            subjects = (
+                {
+                    closure.subject.ref
+                    for closure in own.status.payload.closures
+                    if isinstance(closure.liveness, T.Inherited)
+                }
+                if own and isinstance(own.status, T.Applicable)
+                else set()
+            )
+            closures = tuple(
+                closure
+                for closure in payload.closures
+                if closure.subject.ref in selected | subjects
+            )
+            if not closures:
+                continue
+            payload = dc.replace(payload, closures=closures)
+        else:
+            continue
+        out[(kind, scope)] = dc.replace(entry, status=T.Applicable(payload=payload))
+    return out
+
+
+def project(  # noqa: PLR0913 - preserve public scope axes and explicit catalog ownership
     h: T.Handoff,
     role: str,
     value: int | None = None,
     targets: t.Collection[str] | None = None,
     base_dir: str | None = None,
+    *,
+    catalog: FactCatalog | None = None,
+    inherits: t.Iterable[T.FactRef] = (),
 ) -> list[tuple]:
     """[(kind, scope, sha_of_what_is_shown, view, content)] in a fixed order. `value` keeps shared + that value only."""
+    h = {key: canonical(entry) for key, entry in h.items()}
     need = CONSUMERS[role]
+    if value is not None:
+        evidence = {key: entry for key, entry in h.items() if key[0] == "receipts"}
+        h = selected_handoff(h, value, inherits)
+        h.update(evidence)
     out = []
     for (kind, scope), e in sorted(h.items()):
         if kind not in need or (
@@ -455,28 +571,34 @@ def project(
             continue
         view = need[kind][0]
         if isinstance(e.status, T.NotApplicable):
-            content: t.Any = {"not_applicable": e.status.reason}
+            content: t.Any = {"not_applicable": enc(e.status.reason)}
         elif view == "rendered":
-            content = _rendered_scenarios(h, scope, e.status.payload, base_dir)
+            content = _rendered_scenarios(h, scope, e.status.payload, base_dir, catalog)
         else:
             payload = e.status.payload
-            if kind == "laws" and view == "owned":
-                # Owned value laws may cite shared vocabulary, never another value's.
-                visible = [h.get(("laws", source)) for source in S.scopes_for(scope)]
-                vocabulary = {
-                    field: tuple(
-                        {
-                            item.id: item
-                            for entry in visible
-                            if entry is not None
-                            and isinstance(entry.status, T.Applicable)
-                            for item in getattr(entry.status.payload, field)
-                        }.values()
+            dependency_uses: set[str] = set()
+            if (
+                kind == "laws"
+                and scope == "shared"
+                and view == "owned"
+                and targets is not None
+            ):
+                dependency_uses = {
+                    identifier
+                    for (source_kind, source_scope), own_entry in h.items()
+                    if source_kind == "laws"
+                    and source_scope != "shared"
+                    and (value is None or source_scope == f"value:{value}")
+                    and isinstance(own_entry.status, T.Applicable)
+                    for law in _owned(
+                        own_entry.status.payload.laws, targets, ("owner",)
                     )
-                    for field in ("observations", "constructors")
+                    for identifier in law.uses
                 }
-                payload = dc.replace(payload, **vocabulary)
-            content = view_payload(kind, payload, view, targets)
+            content = view_payload(
+                kind, payload, view, targets, dependency_uses=dependency_uses
+            )
+        content = enc(content) if dc.is_dataclass(content) else content
         out.append((kind, scope, sha(content), view, content))
     for kind, (view, _d, _b) in need.items():
         if (kind, "shared") not in h:
@@ -506,8 +628,10 @@ def _fmt(tp: t.Any, meta: t.Mapping[str, t.Any]) -> str:
     if o is t.Literal:
         return "|".join(map(str, t.get_args(tp)))
     if o is tuple:
-        return f"[{_fmt(t.get_args(tp)[0], {})}]" + (
-            "+" if meta.get("nonempty") else ""
+        return (
+            f"[{_fmt(t.get_args(tp)[0], {})}]"
+            + ("+" if meta.get("nonempty") else "")
+            + (" (unique refs)" if meta.get("unique_refs") else "")
         )
     if tp is int:
         return "int>=1" if meta.get("positive") else "int"
@@ -557,6 +681,7 @@ def describe_types() -> str:
         "Every record is a closed JSON object: no extra key. `tag` selects a variant. "
         + string_rule
         + ";",
+        "Semantic slots are exact FactRef objects {ref: FactId}; define text only in the schema-2 DESIGN facts catalog. Values select shared typed records by inherits ids, with their dependencies.",
         '[X]+ is a list with at least one item; a field with `?` may be left out. A document is {"sections": [{"kind", "scope", "status"}]};',
         'status is {"tag":"applicable","payload":...} or {"tag":"not_applicable","reason":...};',
         "kind is one of " + "|".join(T.KINDS) + "; scope is `shared` or `value:<n>`.",
@@ -615,17 +740,33 @@ def compose(  # noqa: PLR0913, PLR0917
     value: int | None = None,
     targets: t.Collection[str] | None = None,
     base_dir: str | None = None,
+    catalog: FactCatalog | None = None,
+    inherits: t.Iterable[T.FactRef] = (),
 ) -> str:
+    if catalog is None:
+        raise ValueError(R.CATALOG_UNAVAILABLE)
+    rows = project(
+        h, role, value, targets, base_dir, catalog=catalog, inherits=inherits
+    )
     parts = [
         f"=== [T] WHAT ({role}) ===\n{template_what.strip()}\n{grammar_what(role)}"
     ]
-    for kind, scope, s, view, content in project(h, role, value, targets, base_dir):
+    for kind, scope, s, view, content in rows:
         parts.append(
             f"=== [H] {kind}@{scope} sha={s[:12]} view={view} ===\n"
             + json.dumps(
                 content, sort_keys=True, separators=(",", ":"), ensure_ascii=False
             )
         )
+    parts.append(
+        "=== [F] facts ===\n"
+        + json.dumps(
+            catalog.reachable(*(row[4] for row in rows)),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+    )
     ctx = "\n".join(f"{k}: {(context or {})[k]}" for k in sorted(context or {}))
     parts.append(
         "=== [C] orchestrator ===\n" + ctx + (("\n" if ctx else "") + verbatim.strip())
@@ -634,8 +775,9 @@ def compose(  # noqa: PLR0913, PLR0917
 
 
 # --------------------------------------------------------------------------- summary and human views
-def summary(h: T.Handoff) -> dict:
+def summary(h: T.Handoff, catalog: FactCatalog | None = None) -> dict:
     """GDP-8 arity: the third state (could not verify, absent, pending) reaches the aggregate."""
+    h = R.resolved(h, catalog)
     out: dict[str, t.Any] = {
         "sections": {},
         "missing_shared": [k for k in T.REQUIRED_SHARED if (k, "shared") not in h],
@@ -695,8 +837,11 @@ def summary(h: T.Handoff) -> dict:
     return out
 
 
-def render_markdown(h: T.Handoff, base_dir: str | None = None) -> str:
+def render_markdown(
+    h: T.Handoff, base_dir: str | None = None, catalog: FactCatalog | None = None
+) -> str:
     """Human projection of the typed sections. Never re-parsed by code (ADR-DES-003)."""
+    h = {key: canonical(entry) for key, entry in R.resolved(h, catalog).items()}
     out = []
     for (kind, scope), e in sorted(h.items()):
         out.append(f"## {kind} ({scope})")
@@ -763,7 +908,7 @@ def render_markdown(h: T.Handoff, base_dir: str | None = None) -> str:
         else:  # scenarios: the kinds are closed, so nothing else reaches here
             v = S.visible(h, scope)
             for sc in _by(p.scenarios, lambda x: x.id):
-                r = R.render_scenario(v, sc, base_dir)
+                r = R.render_scenario(v, sc, base_dir, catalog)
                 out.append(
                     R.scenario_text(r)
                     if isinstance(r, R.Rendered)
@@ -774,8 +919,11 @@ def render_markdown(h: T.Handoff, base_dir: str | None = None) -> str:
     return "\n".join(out)
 
 
-def render_html(h: T.Handoff, base_dir: str | None = None) -> str:
+def render_html(
+    h: T.Handoff, base_dir: str | None = None, catalog: FactCatalog | None = None
+) -> str:
     """The shared HTML view of the scenarios (E-G09-03): self-contained, escaped, deterministic."""
+    h = R.resolved(h, catalog)
     items: list[R.Rendered] = []
     missing: list[str] = []
     for (kind, scope), e in sorted(h.items()):
@@ -783,7 +931,7 @@ def render_html(h: T.Handoff, base_dir: str | None = None) -> str:
             continue
         v = S.visible(h, scope)
         for sc in _by(e.status.payload.scenarios, lambda x: x.id):
-            r = R.render_scenario(v, sc, base_dir)
+            r = R.render_scenario(v, sc, base_dir, catalog)
             if isinstance(r, R.Rendered):
                 items.append(r)
             else:

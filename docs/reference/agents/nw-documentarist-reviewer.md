@@ -5,7 +5,7 @@ Use for reviewing documentarist assessments. Validates classification accuracy, 
 **Wave:** Other
 **Model:** haiku
 **Max turns:** 40
-**Tools:** [Read, Glob, Grep]
+**Tools:** [Read, Glob, Grep, Bash]
 
 ## Commands
 

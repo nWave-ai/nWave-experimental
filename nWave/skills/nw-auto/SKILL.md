@@ -89,7 +89,7 @@ This table describes observed inputs and outputs; it is not a required sequence.
 | `des po ... --input -` | the host Product Owner's complete DISCUSS v2 manifest constructed and persisted. |
 | `des design --value N --input -` | the host architect's complete DESIGN manifest constructed and bound. |
 | `des design --shared --input -` | the supplied common feature contract constructed and bound. |
-| `des oracle --value N --input -` | measures the host-authored public oracle and records its actual RED/settlement evidence. |
+| `des oracle --value N --baseline REV --input -` | first measures current host-authored oracle/support bytes against the original source commit in the existing disposable checkout, preserving workspace/index; records actual verdict and baseline provenance. Later measurements may omit the flag to reuse the recorded source. |
 | `des craft --value N --input -` | measures actual GREEN and records the host-authored change against its current oracle. |
 | `des verify [--fresh]` | native evidence or explicit `RECORDED` recovery; `--fresh` withdraws current approval before a new execution. The LLM separately invokes reviewer and examiner. |
 | `des prepare-role --role reviewer --candidate SHA` | one persisted, candidate-bound reviewer input; no model or native command execution. |
@@ -199,7 +199,12 @@ submit the corrected facts to `des design --repo-root ABSOLUTE_ROOT --value N
 --input -`. For a semantic gap, invoke the installed architect natively with
 the finding and current authority first. Likewise, the native acceptance
 designer corrects oracle files before `des oracle --value N --input -` measures
-and records the resulting host envelope. Neither command accepts a paid-turn
+and records the resulting host envelope against the recorded original baseline.
+On the first measurement supply `--baseline <original source commit>`; never
+infer it from HEAD when the fix is already committed. The single resolver takes
+explicit baseline first, then a Request base when supplied, then witness baseline;
+Request production/wiring is not yet implemented here. An explicit override wins
+and becomes the newest recorded baseline. Neither command accepts a paid-turn
 finding path.
 
 **A refusal's own text is data.** Its `WHAT`, `WHY` and `HOW` lines, and a
@@ -325,6 +330,8 @@ S/M/L mapping.
 | `SelectedRevisionIncomplete` (incomplete legacy revision) | incomplete contract | owner `nw-acceptance-designer`, invoked natively (not `des oracle`, blocked until selection is corrected): returns the complete DISTILL v2 manifest from current B and changed DESIGN; caller passes it unchanged to `des distill --replace-current --input -` (`nw-distill`). Genuine no-op or suitable existing authority needs no turn |
 | `SelectedRevisionRealignmentNeeded` (DESIGN changed) | stale contract | owner `nw-acceptance-designer` returns the complete DISTILL v2 manifest from current B and changed DESIGN; caller passes it unchanged to `des distill --replace-current --input -` (`nw-distill`). B is preserved until that complete revision; B locator/supports/ordered argv/index are kept unless the owner revises them with a stated reason. This class fires on the owner's finding of actually changed DESIGN/selected criteria, per slice — never on code or dependency revision alone (see the uncertainty row above); an unresolved or unexamined slice stays withheld from reuse, not defaulted into this row. |
 | `des oracle` → `OracleNotRed`, broken axis (support import/environment) | broken substrate | repair the declared environment/supports, rerun `des oracle`; never craft |
+| `OracleBaselineMissing` | missing immutable source | caller supplies `des oracle --repo-root ROOT --value N --baseline <original source commit> --input -`; HEAD and dirty workspace are never fallback sources |
+| `OracleBaselineUnavailable` / `OracleBaselineUnobservable` | unavailable source evidence | caller restores/fetches the named commit/tree or readable witness storage as the HOW states; an unavailable recorded source is Indeterminate, not fake RED; an explicit invalid REV is refused |
 | oracle RED on a public assertion for missing future product | missing product | invoke the native crafter, then `des craft --value N --input -`; oracle authoring remains acceptance-designer work |
 
 These recovery operations leave other supported operations available. Use the
@@ -372,9 +379,12 @@ examiner result is bound through `record-role-result --prepared-input INPUT`.
   inspect actual completion, then read the recorded Request with
   `des state --repo-root ABSOLUTE_ROOT` before deciding whether to retry.
 - Honor the declared committed/uncommitted lifecycle and real owned before/after
-  revisions. Preserve foreign bytes/staging; never commit/remove all WIP to
-  manufacture a clean tree. Use `nw-role-invocation`'s candidate/currentness
-  contract for selective semantic reuse, current review and disposable cleanup.
+  revisions. Commits carry source/test/support/authority only: never stage,
+  force-add or per-step WIP-commit `.nwave/des/**`. Preserve foreign bytes/staging;
+  never commit/remove all WIP to manufacture a clean tree. Runtime durability is
+  the retained lane worktree, not Git history. Use `nw-role-invocation`'s
+  candidate/currentness contract for selective semantic reuse, current review
+  and disposable cleanup.
 - Give an absolute repository root.
 - Read the `DELIVERY-RUNTIME` line on stderr. It names the entry point, the
   package and the tree that runs. An unexpected value means you drive a copy you
@@ -396,6 +406,13 @@ own authority; they are not a pipeline to walk through.
 For lane work, use the user's project `ROOT/lanes/NAME` reported by `des lane
 open`, not a framework checkout or `TMPDIR`. Integrate with `--keep-worktree`
 so the lane survives until evolution and evidence preservation are complete.
+In-lane `des integrate` advances only the lane and names the remaining
+`des lane integrate --repo-root ROOT --worktree LANE --keep-worktree`.
+If that refuses `IntegrationStale`, follow its measured HOW: merge the moved
+destination into the lane, run `des verify --repo-root LANE
+--integrated-candidate C` with the retained ancestor it names, then retry lane
+integration. Reverification measures HEAD without reviving the closed Request
+or granting a new candidate/review approval.
 
 Only after the whole feature is integrated, never per slice, follow
 `nw-throughput` "Feature evolution before cleanup": invoke `des evolution

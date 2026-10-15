@@ -6,6 +6,7 @@
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -20,7 +21,7 @@ def test_maintainer_accepts_all_managed_role_tool_contracts():
     environment.pop("CI", None)
     result = subprocess.run(
         [
-            "python3",
+            sys.executable,
             "-m",
             "pytest",
             "tests/plugins/test_agent_frontmatter.py::TestAgentFrontmatterAcceptance::test_managed_roles_declare_least_privilege_tools",

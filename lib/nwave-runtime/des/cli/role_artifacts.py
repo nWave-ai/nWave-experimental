@@ -13,13 +13,9 @@ from typing import TYPE_CHECKING
 
 from des.adapters.driven.git.git_observation import observe_bytes
 from des.adapters.driven.task_invocation.model_envelope import decode_model_run
-from des.application.architect_handoff import accumulated
-from des.application.architect_handoff import projection as architect_projection
 from des.application.delivery_continuation import DeliveryContinuationRunner
 from des.application.delivery_steps import StepOutcome, _from_blocked, _prepared
 from des.application.handover import (
-    _facts_wire,
-    _shared_wire,
     design_basis_sha256,
     stored_candidate_handover,
     stored_handover,
@@ -44,6 +40,7 @@ from des.ports.driven_ports.task_invocation_port import DesignFacts, ModelOutcom
 
 
 if TYPE_CHECKING:
+    from des.domain.design_document import FactCatalog
     from des.ports.driven_ports.task_invocation_port import ModelRun
 
 
@@ -175,13 +172,20 @@ def _redact_repository_locators(
 
 
 def _redacted_fields(
-    source: object, names: tuple[str, ...], owned_paths: tuple[str, ...]
+    source: object,
+    names: tuple[str, ...],
+    owned_paths: tuple[str, ...],
+    *,
+    catalog: FactCatalog | None = None,
 ) -> dict[str, object]:
     """The named text fields with known locators withheld, and which were."""
     projected: dict[str, object] = {}
     redacted: list[str] = []
     for name in names:
-        text, withheld = _redact_repository_locators(getattr(source, name), owned_paths)
+        value = getattr(source, name)
+        text, withheld = _redact_repository_locators(
+            value if catalog is None else catalog.resolve(value), owned_paths
+        )
         projected[name] = text
         if withheld:
             redacted.append(name)
@@ -245,19 +249,27 @@ def _projected_selected_acceptance(
                         ),
                     }
                 )
+        public_oracle = None
+        if design.public_oracle is not None:
+            if design.resolved is None:
+                raise ValueError(
+                    "WHAT: ArchitectHandoffCatalogUnavailable; "
+                    "WHY: public-oracle FactRefs require the selected DESIGN catalog; "
+                    "HOW: prepare the examiner from current bound DESIGN with des prepare-role"
+                )
+            public_oracle = _redacted_fields(
+                design.public_oracle,
+                ("observation", "stimulus", "expected", "falsifier"),
+                owned_paths,
+                catalog=design.resolved.catalog,
+            )
         projected.append(
             {
                 "value": position,
                 "source": "DISTILL" if obligations else "DESIGN",
                 "revision_sha256": design.selected_revision_sha256,
                 "criteria": criteria,
-                "public_oracle": None
-                if design.public_oracle is None
-                else _redacted_fields(
-                    design.public_oracle,
-                    ("observation", "stimulus", "expected", "falsifier"),
-                    owned_paths,
-                ),
+                "public_oracle": public_oracle,
                 "oracle_witness": _examiner_witness(witness),
             }
         )
@@ -497,6 +509,12 @@ def _recovery_path(root: Path, value: int, path_sha256: str | None = None) -> Pa
     )
 
 
+def _current_role_packet(stored, role, value, root, *, design=None):
+    from des.cli.handoff import _facts
+
+    return _facts(stored, role, value, None, str(root / ".nwave/des"), design=design)
+
+
 def _recovery_facts(root: Path, value: int, finding: str) -> dict[str, object]:
     """Measure the exact stale selection and current design a recovery may read."""
     stored = stored_handover(root)
@@ -504,29 +522,14 @@ def _recovery_facts(root: Path, value: int, finding: str) -> dict[str, object]:
         raise ValueError("handover unavailable")
     if value < 1 or value > len(stored.values):
         raise ValueError(f"value {value} is outside the stored Request")
+    defect = DeliveryContinuationRunner.design_consumption_defect(stored, value)
+    if defect is not None:
+        raise ValueError(f"{defect.what}: {defect.why}; {defect.how}")
     selected = stored.values[value - 1]
     if not isinstance(selected.authority, DesignFacts):
-        raise ValueError(f"value {value} has no complete bound value DESIGN facts")
-    if (
-        selected.design_semantic_sha256 is not None
-        and selected.authority.public_oracle is None
-    ):
         raise ValueError(
-            "bound value DESIGN facts predate the public-oracle projection; "
-            "re-run des design --repo-root ROOT --value N --input - with the bound "
-            "manifest (unchanged section bytes: only the handover projection is re-bound, "
-            "the selection basis is unchanged), then des prepare-role again"
-        )
-    if (
-        stored.shared_design is not None
-        and stored.shared_design.semantic_sha256 is not None
-        and stored.shared_design.design.public_oracle is None
-    ):
-        raise ValueError(
-            "bound shared DESIGN facts predate the public-oracle projection; "
-            "re-run des design --repo-root ROOT --shared --input - with the bound "
-            "manifest (unchanged section bytes: only the handover projection is re-bound, "
-            "the selection basis is unchanged), then des prepare-role again"
+            "DesignFactsPreNormalized: value DESIGN cannot be consumed; "
+            "use des design --value N --replace-current --input -"
         )
     if not finding.strip():
         raise ValueError("finding must be non-empty")
@@ -580,25 +583,9 @@ def _recovery_facts(root: Path, value: int, finding: str) -> dict[str, object]:
             if stored.shared_design is None
             else stored.shared_design.semantic_sha256
         ),
-        # The identities above make later changes stale; these complete facts
-        # are the immutable semantic material the acceptance designer may use
-        # for this one recovery.  Reuse the handover's canonical wire rather
-        # than independently re-encoding DESIGN fields here.
-        "current_value_design": _facts_wire(selected.authority),
-        "current_shared_design": (
-            None if stored.shared_design is None else _shared_wire(stored.shared_design)
-        ),
+        **_current_role_packet(stored, "nw-acceptance-designer", value, root),
         "finding": finding,
     }
-    payload["current_value_design"].pop("architect_handoff", None)
-    if payload["current_shared_design"] is not None:
-        payload["current_shared_design"]["design"].pop("architect_handoff", None)
-    payload["architect_projection"] = architect_projection(
-        "nw-acceptance-designer",
-        accumulated(stored),
-        value=value,
-        base_dir=str(root / ".nwave/des"),
-    )
     payload["recovery_binding_sha256"] = _recovery_binding_sha256(payload)
     return payload
 
@@ -788,6 +775,9 @@ def prepare(
     stored = _stored_for_candidate(root, candidate, runner)
     if stored is None or not hasattr(stored, "request"):
         raise ValueError("handover unavailable")
+    design_defect = runner.design_consumption_defect(stored)
+    if design_defect is not None:
+        raise SelectedRevisionUnavailable(_from_blocked(design_defect))
     authority_defect = runner.product_authority_defect(root, stored)
     if authority_defect is not None:
         raise SelectedRevisionUnavailable(_from_blocked(authority_defect))
@@ -922,33 +912,51 @@ def prepare(
             if observed.returncode:
                 raise ValueError(f"candidate oracle {path} is unavailable")
             approved.append([path, observed.stdout])
+        packets = [
+            _current_role_packet(
+                stored, "nw-software-crafter-reviewer", position, root, design=design
+            )
+            for position, (_, design) in enumerate(prepared, 1)
+        ]
         payload = {
             **common,
             "diff": diff,
             "values": [
                 {
-                    **facts,
+                    **packet["values"][0],
                     "oracle_witness": None if witness is None else list(witness),
                 }
-                for facts, witness in zip(
-                    runner._prepared_facts(prepared), witnesses, strict=True
-                )
+                for packet, witness in zip(packets, witnesses, strict=True)
             ],
+            "selected_authority": {
+                str(position): packet["selected_authority"]
+                for position, packet in enumerate(packets, 1)
+            },
+            "inherited_records": {
+                identity: record
+                for packet in packets
+                for identity, record in packet["inherited_records"].items()
+            },
+            "shared_verification": {
+                index: argv
+                for packet in packets
+                for index, argv in packet["shared_verification"].items()
+            },
+            "architect_projection": {
+                str(position): packet["architect_projection"]
+                for position, packet in enumerate(packets, 1)
+            },
+            "facts": {
+                identity: text
+                for packet in packets
+                for identity, text in packet["facts"].items()
+            },
             **runner._shared(stored),
             "owned_paths": runner._request_owned_paths(prepared),
             "approved_oracles": approved,
             "native_evidence": native,
             "radius": radius,
         }
-        for facts in payload["values"]:
-            facts.pop("architect_handoff", None)
-        if "shared_design" in payload:
-            payload["shared_design"].pop("architect_handoff", None)
-        payload["architect_projection"] = architect_projection(
-            "nw-software-crafter-reviewer",
-            accumulated(stored),
-            base_dir=str(root / ".nwave/des"),
-        )
     else:
         raise ValueError("role must be reviewer or examiner")
     raw = _sealed(payload, "role_input")

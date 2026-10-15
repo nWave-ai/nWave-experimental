@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from hypothesis import strategies as st
+from tests.des._helpers.host_facts import design_manifest
+from tests.des.architect_handoff.tests.test_g10 import fixture_context
 
 
 VALUE = (
@@ -36,11 +38,10 @@ def not_applicable(reason: str) -> dict:
     return {"applicability": "not_applicable", "reason": reason}
 
 
-def canonical_manifest() -> dict:
-    """A complete v1 input supplied independently of all production encoders."""
+def _canonical_input() -> dict:
+    """Complete source-specific semantic input, before catalog construction."""
     return {
-        "schema_version": 1,
-        "authority": {"heading": "Accepted architect manifest"},
+        "schema_version": 2,
         "purpose": "Bind the architect response without translating its input.",
         "constraints": ["Preserve the selected product observation."],
         "targets": [
@@ -70,6 +71,10 @@ def canonical_manifest() -> dict:
         "verification": [["python", "-m", "pytest", "-q", "tests/test_manifest.py"]],
         "oracle_verification_index": 0,
     }
+
+
+def canonical_manifest() -> dict:
+    return design_manifest(_canonical_input(), VALUE, 1)
 
 
 def product_manifest() -> dict:
@@ -105,7 +110,7 @@ def accepted(manifest: dict) -> dict:
 
 def decided_manifest() -> dict:
     """Constructively reachable applicable alternatives with valid linkages."""
-    manifest = canonical_manifest()
+    manifest = _canonical_input()
     manifest["reuse_analysis"]["candidates"] = [
         {
             "symbol": "Public example",
@@ -190,12 +195,19 @@ def decided_manifest() -> dict:
     return manifest
 
 
-def typed_handoff() -> dict:
-    """Reuse the existing native semantic fixture, not a production renderer."""
+def typed_handoff() -> tuple[dict, list[dict]]:
+    """Construct the current typed fixture with its explicit catalog."""
     path = (
         Path(__file__).resolve().parents[2] / "architect_handoff/fixtures/oo.g10.json"
     )
-    return json.loads(path.read_text(encoding="utf-8"))
+    normalized, catalog, _driven = fixture_context(
+        json.loads(path.read_text(encoding="utf-8"))
+    )
+    for section in normalized["sections"]:
+        section["scope"] = "value:1"
+    return normalized, [
+        {"id": record.id, "text": record.text} for record in catalog.records
+    ]
 
 
 @dataclass(frozen=True)
@@ -210,7 +222,7 @@ class ManifestCase:
 
 
 def finite_manifests() -> list[ManifestCase]:
-    plain = canonical_manifest()
+    plain = _canonical_input()
     adr = decided_manifest()
     adr["adr"] = {
         "applicability": "applicable",
@@ -220,22 +232,25 @@ def finite_manifests() -> list[ManifestCase]:
         "consequences": ["The constructor consumes exactly the supplied input."],
         "status": "accepted",
     }
-    handoff = canonical_manifest()
-    handoff["architect_handoff"] = typed_handoff()
+    handoff = _canonical_input()
+    handoff["architect_handoff"], handoff["facts"] = typed_handoff()
     # Intrinsically nullable typed fields are not the nonnullable manifest optionals.
     handoff["architect_handoff"]["sections"][0]["status"]["payload"]["generators"][0][
         "depth_bound"
     ] = None
-    unbounded_contract = canonical_manifest()
+    unbounded_contract = _canonical_input()
     unbounded_contract["purpose"] = "x" * 256
     unbounded_contract["constraints"] = [
         f"Distinct admitted constraint {index}" for index in range(5)
     ]
+    empty_constraints = _canonical_input()
+    empty_constraints["constraints"] = []
     return [
-        ManifestCase(plain),
-        ManifestCase(adr),
-        ManifestCase(handoff),
-        ManifestCase(unbounded_contract),
+        ManifestCase(design_manifest(plain, VALUE, 1)),
+        ManifestCase(design_manifest(adr, VALUE, 1)),
+        ManifestCase(design_manifest(handoff, VALUE, 1)),
+        ManifestCase(design_manifest(unbounded_contract, VALUE, 1)),
+        ManifestCase(design_manifest(empty_constraints, VALUE, 1)),
     ]
 
 
@@ -247,17 +262,21 @@ def manifest_cases(draw):
     Hypothesis retains normal shrinking and example-database replay.
     """
     alternative = draw(st.sampled_from(("plain", "decided", "typed")))
-    manifest = decided_manifest() if alternative == "decided" else canonical_manifest()
+    manifest = decided_manifest() if alternative == "decided" else _canonical_input()
     text = st.text(
         alphabet="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789éλ",
         min_size=1,
         max_size=64,
     )
-    heading = draw(text)
-    manifest["authority"]["heading"] = heading
+    distinct_texts = st.lists(
+        text,
+        min_size=1,
+        max_size=4,
+        unique_by=str.casefold,
+    )
     manifest["purpose"] = draw(text)
-    manifest["constraints"] = draw(st.lists(text, min_size=1, max_size=4, unique=True))
-    manifest["decisions"] = draw(st.lists(text, min_size=1, max_size=4, unique=True))
+    manifest["constraints"] = draw(distinct_texts)
+    manifest["decisions"] = draw(distinct_texts)
     manifest["paradigm"] = draw(
         st.sampled_from(("object_oriented", "functional", "procedural"))
     )
@@ -276,15 +295,13 @@ def manifest_cases(draw):
             "applicability": adr,
             "context": draw(text),
             "decision": draw(text),
-            "alternatives": draw(st.lists(text, min_size=1, max_size=4, unique=True)),
-            "consequences": draw(st.lists(text, min_size=1, max_size=4, unique=True)),
-            "status": draw(
-                st.sampled_from(("proposed", "accepted", "superseded", "deprecated"))
-            ),
+            "alternatives": draw(distinct_texts),
+            "consequences": draw(distinct_texts),
+            "status": draw(st.sampled_from(("proposed", "accepted"))),
         }
     if alternative == "typed":
-        manifest["architect_handoff"] = typed_handoff()
+        manifest["architect_handoff"], manifest["facts"] = typed_handoff()
         manifest["architect_handoff"]["sections"][0]["status"]["payload"]["generators"][
             0
         ]["depth_bound"] = draw(st.one_of(st.none(), st.integers(1, 4)))
-    return ManifestCase(manifest)
+    return ManifestCase(design_manifest(manifest, VALUE, 1))

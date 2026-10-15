@@ -3,7 +3,7 @@ name: nw-product-owner-reviewer
 description: Reviews DISCUSS product decisions, human understanding and visible increments, or an explicitly assigned expectation-charter namespace.
 model: claude-opus-5
 maxTurns: 40
-tools: Read, Glob, Grep
+tools: Read, Glob, Grep, Bash
 skills:
   - nw-typesafe-system-one
   - nw-por-review-criteria

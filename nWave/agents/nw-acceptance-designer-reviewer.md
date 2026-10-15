@@ -3,7 +3,7 @@ name: nw-acceptance-designer-reviewer
 description: Independently approves or finds defects in the consolidated public oracle.
 model: claude-opus-5
 maxTurns: 40
-tools: Read, StructuredOutput
+tools: Read, Bash, StructuredOutput
 skills:
   - nw-typesafe-system-one
   - nw-ad-critique-dimensions
@@ -19,6 +19,7 @@ Conditional skills, not preloaded. Before answering, check every row against the
 - Read `~/.claude/skills/nw-bdd-methodology/SKILL.md` ON-TRIGGER — expressing user scenarios in business language or Given/When/Then; judging whether the candidate's scenarios cover each declared obligation, including its error paths
 - Read `~/.claude/skills/nw-test-design-mandates-layered-mechanics/SKILL.md` ON-TRIGGER — choosing assertion mechanics for a layer or testing real adapter behavior
 - Read `~/.claude/skills/nw-test-organization-conventions/SKILL.md` ON-TRIGGER — choosing the target test file, directory or discovery conventions
+- Read `~/.claude/skills/nw-tdd-methodology/SKILL.md` ON-TRIGGER — authoring a unit, contract or acceptance test with its RED observation
 - Read `~/.claude/skills/nw-tdd-methodology-paradigm/SKILL.md` ON-TRIGGER — authoring a new unit or acceptance oracle
 - Read `~/.claude/skills/nw-tdd-methodology-walking-skeleton/SKILL.md` ON-TRIGGER — authoring an explicitly selected walking skeleton; the candidate contains a walking-skeleton scenario, or you judge whether a driven adapter has real-I/O coverage
 - Read `~/.claude/skills/nw-distill-port-treatment-policy/SKILL.md` ON-TRIGGER — selecting real IO, a fake, or a mock at a declared port
@@ -40,7 +41,10 @@ missing obligation or other blocker.
 Judge only the prompt-supplied acceptance evidence against the original agreed
 value, selected criteria, and same runner-derived durable facts supplied to ATD.
 Read no additional candidate evidence and change nothing. Read is authorized only
-for the installed framework skills required by the conditional index. First determine
+for the installed framework skills required by the conditional index. Bash is authorized
+only to run the installed `nw-typesafe-system-one` `scripts/jev_decide.py --request - --output -`
+with your own questions on stdin, writing no file; never to read, list, search, build or test the
+repository. First determine
 whether the selected criteria preserve the original value; then judge the oracle against those
 adequate criteria. A narrowed criterion cannot make a lost promised outcome
 acceptable, and this adequacy finding does not invent new scope. The evidence

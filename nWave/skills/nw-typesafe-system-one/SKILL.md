@@ -53,6 +53,11 @@ The LLM owns orchestration. DES constructs documents and suggests steps. Jev sup
 python <this-skill>/scripts/jev_decide.py --request request.json --output result.json
 ```
 
+A role that may not write files (for example a reviewer) passes `-` for both
+`--request` and `--output`, supplying the request JSON on stdin (a heredoc);
+the raw response is printed on stdout, so no file is created and every write
+prohibition of the role still holds.
+
 Request fields are exactly `state`, `model`, and non-empty `questions`. Use the
 configured supported model; retained calls currently use `jev-1.13.0`. Include
 `insufficient` where legitimate. Service responses are judgments, not proof.

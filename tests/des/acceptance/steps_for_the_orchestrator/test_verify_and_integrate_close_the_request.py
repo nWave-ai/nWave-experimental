@@ -44,16 +44,21 @@ RED_ORACLE = (
 )
 
 
-from tests.des._helpers.host_facts import design_manifest
+from tests.des._helpers.host_facts import design_manifest, referencing_manifest
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import observation
 
 
-def design_facts(position: int = 1) -> dict:
+def design_facts(position: int = 1, *, shared: dict | None = None) -> dict:
+    def manifest(facts, observation, position):
+        if shared is None:
+            return design_manifest(facts, observation, position)
+        return referencing_manifest(facts, observation, position, shared)
+
     return {
         "structured_output": {
             "outcome": "accepted",
             "diagnostic": "bound the value to its typed design facts",
-            "manifest": design_manifest(
+            "manifest": manifest(
                 {
                     "targets": [{"path": TARGET, "decision": "CREATE_NEW"}],
                     "paradigm": "object_oriented",
@@ -345,18 +350,28 @@ def test_verify_and_integrate_need_current_bytes_not_each_roles_history(
         )[0]
         == 0
     )
+    # Repeated semantic facts belong to one shared DESIGN, not three catalogs.
+    shared = design_facts()["structured_output"]["manifest"]
+    designed = step(
+        "design",
+        "--repo-root",
+        str(root),
+        "--shared",
+        "--input",
+        "-",
+        stdin=json.dumps(shared),
+    )
+    assert designed[0] == 0, designed[1] + designed[2]
     for value in (1, 2, 3):
-        assert (
-            step(
-                "design",
-                "--repo-root",
-                str(root),
-                "--value",
-                str(value),
-                answers=[design_facts(value)],
-            )[0]
-            == 0
+        designed = step(
+            "design",
+            "--repo-root",
+            str(root),
+            "--value",
+            str(value),
+            answers=[design_facts(value, shared=shared)],
         )
+        assert designed[0] == 0, designed[1] + designed[2]
     for value, marker in ((1, "MARKER = 1\n"), (3, "MARKER = 2\n")):
         recorded = step(
             "oracle",

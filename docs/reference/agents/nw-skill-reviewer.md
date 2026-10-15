@@ -5,7 +5,7 @@ Use to review SKILL.md quality during DISTILL/DELIVER verification when delivera
 **Wave:** Other
 **Model:** haiku
 **Max turns:** 40
-**Tools:** Read, Glob, Grep
+**Tools:** Read, Glob, Grep, Bash
 
 ## Preloaded skills
 

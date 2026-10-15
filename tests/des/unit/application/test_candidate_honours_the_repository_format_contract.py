@@ -52,8 +52,8 @@ def test_callers_of_reports_the_real_call_site() -> None:
 '''
 
 FACTS = IntegrationFacts(
-    "carry the declared form into the candidate",
     ("the integrated commit is formatted as the repository declares",),
+    (None,),
     ("docs/authority.md#Value",),
 )
 

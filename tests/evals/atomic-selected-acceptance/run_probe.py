@@ -1063,6 +1063,8 @@ def build_fixture(case: dict, lane: Path, des_python: Path) -> dict:
             "--repo-root",
             str(repo),
         ]
+        if step["args"][0] == "oracle" and "--baseline" not in step["args"]:
+            argv += ["--baseline", _git(repo, "rev-parse", "HEAD")]
         entry["argv"] = [
             Path(argv[0]).name if i == 0 else a for i, a in enumerate(argv)
         ]

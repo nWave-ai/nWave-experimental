@@ -150,6 +150,25 @@ def project_markdown(
     in this repository to "what does an nWave document look like".  Emitting
     HTML here would be a second stylesheet and a second answer.
     """
+    from des.domain.design_document import build_fact_catalog
+    from des.ports.driven_ports.task_invocation_port import DesignFacts
+
+    designs = [
+        value.authority for value in stored.values if value.authority is not None
+    ]
+    if stored.shared_design is not None:
+        designs.insert(0, stored.shared_design.design)
+    if any(not isinstance(design, DesignFacts) for design in designs):
+        raise ValueError(
+            "DesignFactsPreNormalized: bound DESIGN cannot be consumed; "
+            "use des design --replace-current --input - for the same scope"
+        )
+    catalog = build_fact_catalog(
+        record for design in designs for record in design.facts
+    )
+    if isinstance(catalog, tuple):
+        raise ValueError("DesignInheritanceRefused: " + "\n".join(catalog))
+
     lines: list[str] = ["# Delivery state", "", "## Request", ""]
     lines += _fence(stored.request)
     lines += ["## Values", ""]
@@ -181,9 +200,9 @@ def project_markdown(
 
     handoff = accumulated(stored)
     lines += ["## Architect handoff", ""]
-    missing = summary(handoff)["missing_shared"]
+    missing = summary(handoff, catalog)["missing_shared"]
     if missing:
         lines += ["Unassessed shared sections: " + ", ".join(missing), ""]
-    lines += [render_markdown(handoff, architect_base_dir), ""]
+    lines += [render_markdown(handoff, architect_base_dir, catalog), ""]
     lines += _evidence_section(state)
     return "\n".join(lines)

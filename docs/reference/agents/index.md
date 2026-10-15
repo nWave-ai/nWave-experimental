@@ -25,7 +25,7 @@
 | [nw-diverger-reviewer](nw-diverger-reviewer.md) | Use as peer reviewer for nw-diverger outputs — validates JTBD rigor, research evidence quality, option structural diversity, taste application correctness, and recommendation coherence. Runs on Haiku for cost efficiency. | 2 |
 | [nw-documentarist](nw-documentarist.md) | Use for documentation quality enforcement using DIVIO/Diataxis principles. Classifies documentation type, validates against type-specific criteria, detects collapse patterns, and provides actionable improvement guidance. | 4 |
 | [nw-documentarist-reviewer](nw-documentarist-reviewer.md) | Use for reviewing documentarist assessments. Validates classification accuracy, validation completeness, collapse detection, and recommendation quality using Haiku model. | 3 |
-| [nw-functional-software-crafter](nw-functional-software-crafter.md) | Implements the functional change for one ready ordered batch. | 9 |
+| [nw-functional-software-crafter](nw-functional-software-crafter.md) | Implements the functional change for one ready ordered batch. | 6 |
 | [nw-nwave-buddy](nw-nwave-buddy.md) | Use for any nWave question — methodology, project navigation, command help, wave status, migration, and troubleshooting. The first agent to consult when unsure about anything in nWave. | 5 |
 | [nw-plugin-validator](nw-plugin-validator.md) | Use to validate Claude Code plugin structure and schema during DISTILL/DELIVER verification when deliverable_type is `plugin`. Validates plugin manifest, directory layout, hook/command/agent registration, and Claude Code plugin schema compliance. No existing agent knows the plugin schema. Runs on Haiku for cost efficiency. | 1 |
 | [nw-product-discoverer](nw-product-discoverer.md) | Conducts evidence-based product discovery through customer interviews, assumption testing, and opportunity validation. Use when validating problems exist, prioritizing opportunities, or confirming market viability before writing requirements. | 4 |
@@ -35,7 +35,7 @@
 | [nw-researcher](nw-researcher.md) | Use for evidence-driven research with source verification. Gathers knowledge from web and files, cross-references across multiple sources, and produces cited research documents. | 5 |
 | [nw-researcher-reviewer](nw-researcher-reviewer.md) | Use for review and critique tasks - Research quality and evidence review specialist. Runs on Haiku for cost efficiency. | 2 |
 | [nw-skill-reviewer](nw-skill-reviewer.md) | Use to review SKILL.md quality during DISTILL/DELIVER verification when deliverable_type is `plugin` or `skill`. Validates skill structure, scope discipline, frontmatter, and domain-knowledge quality. Thin reviewer — reuses nw-agent-builder skill assets. Runs on Haiku for cost efficiency. | 3 |
-| [nw-software-crafter](nw-software-crafter.md) | Implements the object-oriented or procedural change for one ready ordered batch. | 7 |
+| [nw-software-crafter](nw-software-crafter.md) | Implements the object-oriented or procedural change for one ready ordered batch. | 4 |
 | [nw-software-crafter-reviewer](nw-software-crafter-reviewer.md) | Independently reviews the whole candidate with captured native evidence. | 7 |
 | [nw-solution-architect](nw-solution-architect.md) | Returns one manifest outcome envelope for host-owned DESIGN construction. | 11 |
 | [nw-solution-architect-reviewer](nw-solution-architect-reviewer.md) | Reviews durable architecture decisions for evidence, reuse, boundaries, cross-layer algebra, residual stress behavior, test substrate, and absence of drift. | 8 |
@@ -62,7 +62,7 @@
 | [nw-diverger-reviewer](nw-diverger-reviewer.md) | Other | Use as peer reviewer for nw-diverger outputs — validates JTBD rigor, research evidence quality, option structural diversity, taste application correctness, and recommendation coherence. Runs on Haiku for cost efficiency. | 2 |
 | [nw-documentarist](nw-documentarist.md) | Other | Use for documentation quality enforcement using DIVIO/Diataxis principles. Classifies documentation type, validates against type-specific criteria, detects collapse patterns, and provides actionable improvement guidance. | 4 |
 | [nw-documentarist-reviewer](nw-documentarist-reviewer.md) | Other | Use for reviewing documentarist assessments. Validates classification accuracy, validation completeness, collapse detection, and recommendation quality using Haiku model. | 3 |
-| [nw-functional-software-crafter](nw-functional-software-crafter.md) | Other | Implements the functional change for one ready ordered batch. | 9 |
+| [nw-functional-software-crafter](nw-functional-software-crafter.md) | Other | Implements the functional change for one ready ordered batch. | 6 |
 | [nw-nwave-buddy](nw-nwave-buddy.md) | Other | Use for any nWave question — methodology, project navigation, command help, wave status, migration, and troubleshooting. The first agent to consult when unsure about anything in nWave. | 5 |
 | [nw-platform-architect](nw-platform-architect.md) | DESIGN | Use for DESIGN wave (infrastructure design) and DEVOPS wave (deployment execution, production readiness, stakeholder sign-off). Transforms architecture into deployable infrastructure, then coordinates production delivery and outcome measurement. | 11 |
 | [nw-platform-architect-reviewer](nw-platform-architect-reviewer.md) | DESIGN | Use for review and critique tasks - Platform design, CI/CD pipeline, infrastructure, observability, deployment readiness, and production handoff review specialist. Runs on Haiku for cost efficiency. | 4 |
@@ -74,7 +74,7 @@
 | [nw-researcher](nw-researcher.md) | Other | Use for evidence-driven research with source verification. Gathers knowledge from web and files, cross-references across multiple sources, and produces cited research documents. | 5 |
 | [nw-researcher-reviewer](nw-researcher-reviewer.md) | Other | Use for review and critique tasks - Research quality and evidence review specialist. Runs on Haiku for cost efficiency. | 2 |
 | [nw-skill-reviewer](nw-skill-reviewer.md) | Other | Use to review SKILL.md quality during DISTILL/DELIVER verification when deliverable_type is `plugin` or `skill`. Validates skill structure, scope discipline, frontmatter, and domain-knowledge quality. Thin reviewer — reuses nw-agent-builder skill assets. Runs on Haiku for cost efficiency. | 3 |
-| [nw-software-crafter](nw-software-crafter.md) | Other | Implements the object-oriented or procedural change for one ready ordered batch. | 7 |
+| [nw-software-crafter](nw-software-crafter.md) | Other | Implements the object-oriented or procedural change for one ready ordered batch. | 4 |
 | [nw-software-crafter-reviewer](nw-software-crafter-reviewer.md) | Other | Independently reviews the whole candidate with captured native evidence. | 7 |
 | [nw-solution-architect](nw-solution-architect.md) | Other | Returns one manifest outcome envelope for host-owned DESIGN construction. | 11 |
 | [nw-solution-architect-reviewer](nw-solution-architect-reviewer.md) | Other | Reviews durable architecture decisions for evidence, reuse, boundaries, cross-layer algebra, residual stress behavior, test substrate, and absence of drift. | 8 |

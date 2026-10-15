@@ -1,0 +1,1166 @@
+{
+  "schema_version": 2,
+  "purpose": {
+    "ref": "F00281"
+  },
+  "paradigm": "object_oriented",
+  "targets": [
+    {
+      "path": "nwave_ai/common/check_result.py",
+      "decision": "EXTEND",
+      "reason": {
+        "ref": "F00013"
+      }
+    },
+    {
+      "path": "nwave_ai/doctor/checks/version_sync.py",
+      "decision": "EXTEND",
+      "reason": {
+        "ref": "F00294"
+      }
+    },
+    {
+      "path": "nwave_ai/doctor/runner.py",
+      "decision": "EXTEND",
+      "reason": {
+        "ref": "F00015"
+      }
+    },
+    {
+      "path": "nwave_ai/doctor/formatter.py",
+      "decision": "EXTEND",
+      "reason": {
+        "ref": "F00016"
+      }
+    },
+    {
+      "path": "nwave_ai/cli.py",
+      "decision": "EXTEND",
+      "reason": {
+        "ref": "F00017"
+      }
+    }
+  ],
+  "public_oracle": {
+    "observation": {
+      "ref": "F00282"
+    },
+    "stimulus": {
+      "ref": "F00283"
+    },
+    "expected": {
+      "ref": "F00284"
+    },
+    "falsifier": {
+      "ref": "F00285"
+    }
+  },
+  "oracle": "tests/nwave_ai/test_unreadable_measurements.py::test_uncertainty_remains_visible_in_the_overall_outcome",
+  "acceptance_supports": [
+    "tests/nwave_ai/report_journey_inputs.py",
+    "tests/nwave_ai/test_truthful_comparisons.py",
+    "tests/nwave_ai/doctor/test_complete_observations.py",
+    "tests/nwave_ai/doctor/test_saved_readings.py",
+    "tests/nwave_ai/doctor/test_admissible_observations.py"
+  ],
+  "verification": [
+    [
+      "/home/parajao/Projects/nWave-dev/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "--override-ini",
+      "addopts=",
+      "tests/nwave_ai/test_unreadable_measurements.py::test_uncertainty_remains_visible_in_the_overall_outcome",
+      "tests/nwave_ai/test_truthful_comparisons.py",
+      "tests/nwave_ai/doctor/test_complete_observations.py",
+      "tests/nwave_ai/doctor/test_saved_readings.py",
+      "tests/nwave_ai/doctor/test_complete_observations.py::test_later_observations_survive_an_earlier_problem",
+      "tests/nwave_ai/doctor/test_admissible_observations.py::test_admission_and_refusal_are_reported_truthfully",
+      "tests/nwave_ai/doctor/test_complete_observations.py::test_added_observations_do_not_change_later_reports",
+      "tests/nwave_ai/doctor/test_admissible_observations.py::test_every_admission_outcome_is_reported_truthfully"
+    ]
+  ],
+  "oracle_verification_index": 0,
+  "prefactoring": {
+    "applicability": "not_applicable",
+    "reason": {
+      "ref": "F00089"
+    }
+  },
+  "constraints": [
+    {
+      "ref": "F00002"
+    },
+    {
+      "ref": "F00003"
+    },
+    {
+      "ref": "F00004"
+    },
+    {
+      "ref": "F00005"
+    },
+    {
+      "ref": "F00006"
+    },
+    {
+      "ref": "F00007"
+    },
+    {
+      "ref": "F00008"
+    },
+    {
+      "ref": "F00009"
+    },
+    {
+      "ref": "F00010"
+    },
+    {
+      "ref": "F00293"
+    },
+    {
+      "ref": "F00012"
+    },
+    {
+      "ref": "F00331"
+    }
+  ],
+  "decisions": [
+    {
+      "ref": "F00024"
+    },
+    {
+      "ref": "F00025"
+    },
+    {
+      "ref": "F00026"
+    },
+    {
+      "ref": "F00027"
+    },
+    {
+      "ref": "F00028"
+    },
+    {
+      "ref": "F00029"
+    },
+    {
+      "ref": "F00030"
+    },
+    {
+      "ref": "F00031"
+    },
+    {
+      "ref": "F00032"
+    },
+    {
+      "ref": "F00295"
+    },
+    {
+      "ref": "F00034"
+    },
+    {
+      "ref": "F00035"
+    },
+    {
+      "ref": "F00036"
+    },
+    {
+      "ref": "F00037"
+    },
+    {
+      "ref": "F00038"
+    },
+    {
+      "ref": "F00039"
+    },
+    {
+      "ref": "F00040"
+    },
+    {
+      "ref": "F00041"
+    },
+    {
+      "ref": "F00042"
+    },
+    {
+      "ref": "F00043"
+    },
+    {
+      "ref": "F00044"
+    },
+    {
+      "ref": "F00009"
+    },
+    {
+      "ref": "F00046"
+    },
+    {
+      "ref": "F00296"
+    },
+    {
+      "ref": "F00297"
+    },
+    {
+      "ref": "F00049"
+    },
+    {
+      "ref": "F00050"
+    },
+    {
+      "ref": "F00298"
+    },
+    {
+      "ref": "F00299"
+    },
+    {
+      "ref": "F00300"
+    },
+    {
+      "ref": "F00301"
+    },
+    {
+      "ref": "F00302"
+    },
+    {
+      "ref": "F00303"
+    },
+    {
+      "ref": "F00304"
+    },
+    {
+      "ref": "F00058"
+    },
+    {
+      "ref": "F00059"
+    },
+    {
+      "ref": "F00305"
+    },
+    {
+      "ref": "F00061"
+    },
+    {
+      "ref": "F00306"
+    },
+    {
+      "ref": "F00063"
+    },
+    {
+      "ref": "F00064"
+    },
+    {
+      "ref": "F00307"
+    },
+    {
+      "ref": "F00066"
+    },
+    {
+      "ref": "F00067"
+    },
+    {
+      "ref": "F00068"
+    },
+    {
+      "ref": "F00308"
+    },
+    {
+      "ref": "F00070"
+    },
+    {
+      "ref": "F00071"
+    },
+    {
+      "ref": "F00309"
+    },
+    {
+      "ref": "F00310"
+    },
+    {
+      "ref": "F00074"
+    },
+    {
+      "ref": "F00311"
+    },
+    {
+      "ref": "F00076"
+    },
+    {
+      "ref": "F00077"
+    },
+    {
+      "ref": "F00312"
+    },
+    {
+      "ref": "F00313"
+    },
+    {
+      "ref": "F00314"
+    },
+    {
+      "ref": "F00286"
+    },
+    {
+      "ref": "F00333"
+    },
+    {
+      "ref": "F00283"
+    },
+    {
+      "ref": "F00284"
+    },
+    {
+      "ref": "F00285"
+    }
+  ],
+  "reuse_analysis": {
+    "candidates": [
+      {
+        "symbol": "VersionSyncCheck.run",
+        "locator": "nwave_ai/doctor/checks/version_sync.py:100",
+        "decision": "EXTEND",
+        "reason": {
+          "ref": "F00078"
+        }
+      },
+      {
+        "symbol": "CheckResult",
+        "locator": "nwave_ai/common/check_result.py:10",
+        "decision": "EXTEND",
+        "reason": {
+          "ref": "F00079"
+        }
+      },
+      {
+        "symbol": "run_doctor",
+        "locator": "nwave_ai/doctor/runner.py:52",
+        "decision": "EXTEND",
+        "reason": {
+          "ref": "F00080"
+        }
+      },
+      {
+        "symbol": "render_human / render_json",
+        "locator": "nwave_ai/doctor/formatter.py:17",
+        "decision": "EXTEND",
+        "reason": {
+          "ref": "F00081"
+        }
+      },
+      {
+        "symbol": "_handle_doctor",
+        "locator": "nwave_ai/cli.py:856",
+        "decision": "EXTEND",
+        "reason": {
+          "ref": "F00082"
+        }
+      },
+      {
+        "symbol": "DoctorContext",
+        "locator": "nwave_ai/doctor/context.py:38",
+        "decision": "REUSE",
+        "reason": {
+          "ref": "F00083"
+        }
+      },
+      {
+        "symbol": "record_install_metadata",
+        "locator": "scripts/install/install_nwave.py:317",
+        "decision": "REUSE",
+        "reason": {
+          "ref": "F00084"
+        }
+      },
+      {
+        "symbol": "_invoke",
+        "locator": "tests/nwave_ai/test_cli_doctor.py:20",
+        "decision": "REUSE",
+        "reason": {
+          "ref": "F00085"
+        }
+      },
+      {
+        "symbol": "stage_healthy_install",
+        "locator": "tests/nwave_ai/test_doctor_e2e.py:43",
+        "decision": "REUSE",
+        "reason": {
+          "ref": "F00086"
+        }
+      },
+      {
+        "symbol": "doctor_reporting model",
+        "locator": "nwave_ai/doctor/checks/version_sync.py:100",
+        "decision": "CREATE_NEW",
+        "reason": {
+          "ref": "F00022"
+        }
+      },
+      {
+        "symbol": "_DiagnosticCheck -> DiagnosticCheck",
+        "locator": "nwave_ai/doctor/runner.py:30",
+        "decision": "EXTEND",
+        "reason": {
+          "ref": "F00087"
+        }
+      },
+      {
+        "symbol": "PythonVersionCheck.run",
+        "locator": "nwave_ai/doctor/checks/python_version.py:21",
+        "decision": "REUSE",
+        "reason": {
+          "ref": "F00088"
+        }
+      }
+    ]
+  },
+  "agreement_analysis": {
+    "applicability": "applicable",
+    "parties": []
+  },
+  "architectural_tests": {
+    "applicability": "applicable",
+    "obligations": []
+  },
+  "contract_tests": {
+    "applicability": "applicable",
+    "obligations": []
+  },
+  "boundaries": {
+    "applicability": "applicable",
+    "driving_port": {
+      "ref": "F00329"
+    },
+    "driven_ports": [
+      {
+        "ref": "F00255"
+      },
+      {
+        "ref": "F00256"
+      },
+      {
+        "ref": "F00257"
+      }
+    ],
+    "dependency_direction": {
+      "ref": "F00258"
+    },
+    "failures": [
+      {
+        "condition": {
+          "ref": "F00259"
+        },
+        "outcome": "Indeterminate",
+        "observation": {
+          "ref": "F00260"
+        }
+      },
+      {
+        "condition": {
+          "ref": "F00261"
+        },
+        "outcome": "Refusal",
+        "observation": {
+          "ref": "F00262"
+        }
+      },
+      {
+        "condition": {
+          "ref": "F00263"
+        },
+        "outcome": "Refusal",
+        "observation": {
+          "ref": "F00264"
+        }
+      },
+      {
+        "condition": {
+          "ref": "F00265"
+        },
+        "outcome": "Refusal",
+        "observation": {
+          "ref": "F00330"
+        }
+      },
+      {
+        "condition": {
+          "ref": "F00267"
+        },
+        "outcome": "Refusal",
+        "observation": {
+          "ref": "F00268"
+        }
+      }
+    ]
+  },
+  "adr": {
+    "applicability": "not_applicable",
+    "reason": {
+      "ref": "F00113"
+    }
+  },
+  "impact_closure": {
+    "applicability": "applicable",
+    "items": [
+      {
+        "kind": "public_interface",
+        "locator": "nwave_ai/common/check_result.py",
+        "decision": "CHANGED",
+        "reason": {
+          "ref": "F00013"
+        }
+      },
+      {
+        "kind": "runtime",
+        "locator": "nwave_ai/doctor/checks/version_sync.py",
+        "decision": "CHANGED",
+        "reason": {
+          "ref": "F00294"
+        }
+      },
+      {
+        "kind": "runtime",
+        "locator": "nwave_ai/doctor/runner.py",
+        "decision": "CHANGED",
+        "reason": {
+          "ref": "F00238"
+        }
+      },
+      {
+        "kind": "runtime",
+        "locator": "nwave_ai/doctor/formatter.py",
+        "decision": "CHANGED",
+        "reason": {
+          "ref": "F00016"
+        }
+      },
+      {
+        "kind": "public_interface",
+        "locator": "nwave_ai/cli.py",
+        "decision": "CHANGED",
+        "reason": {
+          "ref": "F00239"
+        }
+      },
+      {
+        "kind": "test",
+        "locator": "tests/nwave_ai/doctor/checks/test_version_sync.py",
+        "decision": "CHANGED",
+        "reason": {
+          "ref": "F00018"
+        }
+      },
+      {
+        "kind": "test",
+        "locator": "tests/nwave_ai/doctor/test_formatter.py",
+        "decision": "CHANGED",
+        "reason": {
+          "ref": "F00019"
+        }
+      },
+      {
+        "kind": "test",
+        "locator": "tests/nwave_ai/test_doctor_e2e.py",
+        "decision": "CHANGED",
+        "reason": {
+          "ref": "F00020"
+        }
+      },
+      {
+        "kind": "public_interface",
+        "locator": "README.md",
+        "decision": "CHANGED",
+        "reason": {
+          "ref": "F00021"
+        }
+      },
+      {
+        "kind": "runtime",
+        "locator": "docs/feature/doctor-version-sync/doctor_reporting.qnt",
+        "decision": "CHANGED",
+        "reason": {
+          "ref": "F00022"
+        }
+      },
+      {
+        "kind": "consumer",
+        "locator": "nwave_ai/doctor/checks/version_sync.py:100",
+        "decision": "MIGRATED",
+        "reason": {
+          "ref": "F00091"
+        }
+      },
+      {
+        "kind": "consumer",
+        "locator": "nwave_ai/doctor/runner.py:52",
+        "decision": "MIGRATED",
+        "reason": {
+          "ref": "F00094"
+        }
+      },
+      {
+        "kind": "consumer",
+        "locator": "nwave_ai/doctor/formatter.py:17",
+        "decision": "MIGRATED",
+        "reason": {
+          "ref": "F00095"
+        }
+      },
+      {
+        "kind": "consumer",
+        "locator": "nwave_ai/cli.py:856",
+        "decision": "MIGRATED",
+        "reason": {
+          "ref": "F00096"
+        }
+      },
+      {
+        "kind": "consumer",
+        "locator": "nwave_ai/status.py:52",
+        "decision": "UNCHANGED_COMPATIBLE",
+        "reason": {
+          "ref": "F00097"
+        }
+      },
+      {
+        "kind": "export",
+        "locator": "nwave_ai/doctor/__init__.py",
+        "decision": "UNCHANGED_COMPATIBLE",
+        "reason": {
+          "ref": "F00240"
+        }
+      },
+      {
+        "kind": "build_metadata",
+        "locator": "pyproject.toml",
+        "decision": "UNCHANGED_COMPATIBLE",
+        "reason": {
+          "ref": "F00241"
+        }
+      },
+      {
+        "kind": "lock",
+        "locator": "uv.lock",
+        "decision": "UNCHANGED_COMPATIBLE",
+        "reason": {
+          "ref": "F00242"
+        }
+      },
+      {
+        "kind": "runtime",
+        "locator": "scripts/install/preflight_checker.py",
+        "decision": "UNCHANGED_COMPATIBLE",
+        "reason": {
+          "ref": "F00243"
+        }
+      },
+      {
+        "kind": "runtime",
+        "locator": "scripts/validation/validate_installed_wheel.py",
+        "decision": "UNCHANGED_COMPATIBLE",
+        "reason": {
+          "ref": "F00244"
+        }
+      },
+      {
+        "kind": "runtime",
+        "locator": "src/des/cli/health_check.py",
+        "decision": "UNCHANGED_COMPATIBLE",
+        "reason": {
+          "ref": "F00245"
+        }
+      },
+      {
+        "kind": "runtime",
+        "locator": "scripts/install/install_nwave.py:317",
+        "decision": "UNCHANGED_COMPATIBLE",
+        "reason": {
+          "ref": "F00246"
+        }
+      },
+      {
+        "kind": "test",
+        "locator": "tests/nwave_ai/test_unreadable_measurements.py",
+        "decision": "CHANGED",
+        "reason": {
+          "ref": "F00247"
+        }
+      },
+      {
+        "kind": "fixture",
+        "locator": "tests/nwave_ai/report_journey_inputs.py",
+        "decision": "CHANGED",
+        "reason": {
+          "ref": "F00248"
+        }
+      },
+      {
+        "kind": "test",
+        "locator": "tests/nwave_ai/test_truthful_comparisons.py",
+        "decision": "CHANGED",
+        "reason": {
+          "ref": "F00249"
+        }
+      },
+      {
+        "kind": "test",
+        "locator": "tests/nwave_ai/doctor/test_complete_observations.py",
+        "decision": "CHANGED",
+        "reason": {
+          "ref": "F00249"
+        }
+      },
+      {
+        "kind": "test",
+        "locator": "tests/nwave_ai/doctor/test_saved_readings.py",
+        "decision": "CHANGED",
+        "reason": {
+          "ref": "F00249"
+        }
+      },
+      {
+        "kind": "runtime",
+        "locator": "docs/feature/doctor-version-sync/doctor_composition.qnt",
+        "decision": "CHANGED",
+        "reason": {
+          "ref": "F00250"
+        }
+      },
+      {
+        "kind": "runtime",
+        "locator": "nwave_ai/doctor/checks/python_version.py:21",
+        "decision": "UNCHANGED_COMPATIBLE",
+        "reason": {
+          "ref": "F00251"
+        }
+      },
+      {
+        "kind": "test",
+        "locator": "tests/nwave_ai/doctor/test_admissible_observations.py",
+        "decision": "CHANGED",
+        "reason": {
+          "ref": "F00327"
+        }
+      },
+      {
+        "kind": "runtime",
+        "locator": "nwave_ai/doctor/checks/version_sync.py:75",
+        "decision": "CHANGED",
+        "reason": {
+          "ref": "F00328"
+        }
+      },
+      {
+        "kind": "test",
+        "locator": "tests/nwave_ai/report_journey_inputs.py:1",
+        "decision": "MIGRATED",
+        "reason": {
+          "ref": "F00253"
+        }
+      }
+    ]
+  },
+  "architect_handoff": {
+    "sections": [
+      {
+        "kind": "closure",
+        "scope": "value:2",
+        "status": {
+          "tag": "applicable",
+          "payload": {
+            "closures": [
+              {
+                "subject": {
+                  "ref": "F00182"
+                },
+                "safety": {
+                  "tag": "claim",
+                  "statement": {
+                    "ref": "F00142"
+                  },
+                  "design": "PASS",
+                  "runtime": "DESIGNED_NOT_BUILT",
+                  "runtime_note": {
+                    "ref": "F00204"
+                  },
+                  "assumptions": [
+                    {
+                      "ref": "F00176"
+                    },
+                    {
+                      "ref": "F00177"
+                    },
+                    {
+                      "ref": "F00178"
+                    }
+                  ],
+                  "runs": [
+                    "verify-aggregate"
+                  ],
+                  "laws": [
+                    "law_aggregate"
+                  ],
+                  "basis": {
+                    "tag": "checked",
+                    "model_id": "doctor_reporting",
+                    "properties": [
+                      "aggregate_retains_unknown"
+                    ],
+                    "proof": "passed",
+                    "proof_note": {
+                      "ref": "F00205"
+                    }
+                  }
+                },
+                "inhabitation": {
+                  "tag": "claim",
+                  "statement": {
+                    "ref": "F00206"
+                  },
+                  "design": "PASS",
+                  "runtime": "DESIGNED_NOT_BUILT",
+                  "assumptions": [
+                    {
+                      "ref": "F00207"
+                    }
+                  ],
+                  "runs": [],
+                  "laws": [
+                    "law_aggregate"
+                  ],
+                  "basis": {
+                    "tag": "path",
+                    "admitted_input": {
+                      "ref": "F00208"
+                    },
+                    "producer": "nwave_ai/doctor/checks/version_sync.py::VersionSyncCheck.run",
+                    "consumer": "nwave_ai/doctor/runner.py::run_doctor",
+                    "public_observation": {
+                      "ref": "F00209"
+                    }
+                  }
+                },
+                "public_reachability": {
+                  "tag": "claim",
+                  "statement": {
+                    "ref": "F00210"
+                  },
+                  "design": "PASS",
+                  "runtime": "DESIGNED_NOT_BUILT",
+                  "assumptions": [
+                    {
+                      "ref": "F00211"
+                    }
+                  ],
+                  "runs": [],
+                  "laws": [
+                    "law_aggregate"
+                  ],
+                  "basis": {
+                    "tag": "path",
+                    "admitted_input": {
+                      "ref": "F00212"
+                    },
+                    "producer": "nwave_ai/cli.py::main",
+                    "consumer": "nwave_ai/cli.py::_handle_doctor",
+                    "public_observation": {
+                      "ref": "F00213"
+                    }
+                  }
+                },
+                "liveness": {
+                  "tag": "not_applicable",
+                  "reason": {
+                    "ref": "F00214"
+                  }
+                }
+              },
+              {
+                "subject": {
+                  "ref": "F00186"
+                },
+                "safety": {
+                  "tag": "claim",
+                  "statement": {
+                    "ref": "F00148"
+                  },
+                  "design": "PASS",
+                  "runtime": "DESIGNED_NOT_BUILT",
+                  "runtime_note": {
+                    "ref": "F00204"
+                  },
+                  "assumptions": [
+                    {
+                      "ref": "F00176"
+                    },
+                    {
+                      "ref": "F00177"
+                    },
+                    {
+                      "ref": "F00178"
+                    }
+                  ],
+                  "runs": [
+                    "verify-counts"
+                  ],
+                  "laws": [
+                    "law_counts"
+                  ],
+                  "basis": {
+                    "tag": "checked",
+                    "model_id": "doctor_reporting",
+                    "properties": [
+                      "counts_conserved"
+                    ],
+                    "proof": "passed",
+                    "proof_note": {
+                      "ref": "F00205"
+                    }
+                  }
+                },
+                "inhabitation": {
+                  "tag": "claim",
+                  "statement": {
+                    "ref": "F00206"
+                  },
+                  "design": "PASS",
+                  "runtime": "DESIGNED_NOT_BUILT",
+                  "assumptions": [
+                    {
+                      "ref": "F00207"
+                    }
+                  ],
+                  "runs": [],
+                  "laws": [
+                    "law_counts"
+                  ],
+                  "basis": {
+                    "tag": "path",
+                    "admitted_input": {
+                      "ref": "F00208"
+                    },
+                    "producer": "nwave_ai/doctor/checks/version_sync.py::VersionSyncCheck.run",
+                    "consumer": "nwave_ai/doctor/runner.py::run_doctor",
+                    "public_observation": {
+                      "ref": "F00209"
+                    }
+                  }
+                },
+                "public_reachability": {
+                  "tag": "claim",
+                  "statement": {
+                    "ref": "F00210"
+                  },
+                  "design": "PASS",
+                  "runtime": "DESIGNED_NOT_BUILT",
+                  "assumptions": [
+                    {
+                      "ref": "F00211"
+                    }
+                  ],
+                  "runs": [],
+                  "laws": [
+                    "law_counts"
+                  ],
+                  "basis": {
+                    "tag": "path",
+                    "admitted_input": {
+                      "ref": "F00212"
+                    },
+                    "producer": "nwave_ai/cli.py::main",
+                    "consumer": "nwave_ai/cli.py::_handle_doctor",
+                    "public_observation": {
+                      "ref": "F00213"
+                    }
+                  }
+                },
+                "liveness": {
+                  "tag": "not_applicable",
+                  "reason": {
+                    "ref": "F00214"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "inherits": [
+    {
+      "ref": "AR1"
+    },
+    {
+      "ref": "CT1"
+    },
+    {
+      "ref": "CT2"
+    },
+    {
+      "ref": "CT3"
+    },
+    {
+      "ref": "CT4"
+    },
+    {
+      "ref": "CT5"
+    },
+    {
+      "ref": "AP1"
+    },
+    {
+      "ref": "AP2"
+    },
+    {
+      "ref": "AP3"
+    },
+    {
+      "ref": "AP4"
+    },
+    {
+      "ref": "AP5"
+    },
+    {
+      "ref": "AP6"
+    },
+    {
+      "ref": "AP7"
+    },
+    {
+      "ref": "AP8"
+    },
+    {
+      "ref": "AP9"
+    },
+    {
+      "ref": "AP10"
+    },
+    {
+      "ref": "AP11"
+    },
+    {
+      "ref": "AP12"
+    },
+    {
+      "ref": "AP13"
+    },
+    {
+      "ref": "AP14"
+    },
+    {
+      "ref": "AP15"
+    },
+    {
+      "ref": "AP16"
+    },
+    {
+      "ref": "AP17"
+    },
+    {
+      "ref": "AP18"
+    },
+    {
+      "ref": "AP19"
+    },
+    {
+      "ref": "AP20"
+    },
+    {
+      "ref": "AP21"
+    },
+    {
+      "ref": "AP22"
+    },
+    {
+      "ref": "AP23"
+    },
+    {
+      "ref": "law_unknown"
+    },
+    {
+      "ref": "law_aggregate"
+    },
+    {
+      "ref": "law_mismatch"
+    },
+    {
+      "ref": "law_counts"
+    },
+    {
+      "ref": "carrier_roundtrip"
+    },
+    {
+      "ref": "law_version_identity"
+    },
+    {
+      "ref": "composition_law"
+    },
+    {
+      "ref": "constructor_verdict_law"
+    },
+    {
+      "ref": "fail_open_refuted"
+    },
+    {
+      "ref": "doctor_reporting"
+    },
+    {
+      "ref": "doctor_composition"
+    },
+    {
+      "ref": "F00180"
+    },
+    {
+      "ref": "F00182"
+    },
+    {
+      "ref": "F00184"
+    },
+    {
+      "ref": "F00186"
+    },
+    {
+      "ref": "F00194"
+    },
+    {
+      "ref": "ordinary_identity"
+    },
+    {
+      "ref": "successful_details"
+    },
+    {
+      "ref": "independent_status"
+    }
+  ],
+  "facts": [
+    {
+      "id": "F00281",
+      "text": "Retain the unknown comparison in complete report counts and command exit, including otherwise healthy and mixed-failure reports; inherits value 1. The invocation-local public composition seam lets future members be tested without replacing the runner or mutating its registry."
+    },
+    {
+      "id": "F00282",
+      "text": "Unknown stays visible in the summary, contributes no passed check, and prevents exit zero."
+    },
+    {
+      "id": "F00283",
+      "text": "Invoke the same real doctor path with the unreadable running version on the otherwise healthy real staged installation, then with one actual broken unrelated installation capability. Before that exact current scenario, perform the declared unasserted real public prior for this primary (known equal 514-character reading, default members, healthy JSON) in a different fresh real root. No finite assertion is made on the prior; inspect no pytest/session state."
+    },
+    {
+      "id": "F00284",
+      "text": "Otherwise healthy: unknown=1, failed=0, passed equals emitted population excluding version_sync, status could_not_verify, exit 1; mixed failure: failed precedence but unknown remains, buckets conserve total."
+    },
+    {
+      "id": "F00285",
+      "text": "All-pass count/exit, a dropped unknown bucket, inflated passed count or loss of the unknown when a known failure coexists."
+    },
+    {
+      "id": "F00286",
+      "text": "Retain the unknown comparison in complete report counts and command exit, including otherwise healthy and mixed-failure reports; inherits value 1."
+    },
+    {
+      "id": "F00333",
+      "text": "Public chain: Unknown stays visible in the summary, contributes no passed check, and prevents exit zero. Stimulus: Invoke the same real doctor path with the unreadable running version on the otherwise healthy real staged installation, then with one actual broken unrelated installation capability. Independent expected observation: Otherwise healthy: unknown=1, failed=0, passed equals emitted population excluding version_sync, status could_not_verify, exit 1; mixed failure: failed precedence but unknown remains, buckets conserve total. Falsifier: All-pass count/exit, a dropped unknown bucket, inflated passed count or loss of the unknown when a known failure coexists."
+    }
+  ]
+}

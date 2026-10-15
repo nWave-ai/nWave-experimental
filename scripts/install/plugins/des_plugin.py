@@ -11,6 +11,14 @@ from pathlib import Path
 from typing import Any
 
 from scripts.shared import hook_definitions as shared_hooks
+from scripts.shared.agent_catalog import (
+    build_ownership_map,
+    detect_command_skills,
+    is_public_agent,
+    load_private_skills,
+    load_public_agents,
+    scrub_removed_skill_references,
+)
 from scripts.shared.install_paths import (
     host_neutral_runtime_dir,
     record_active_runtime,
@@ -21,6 +29,9 @@ from scripts.shared.skill_distribution import (
     SCRIPTS_FAMILY_KEY,
     UTILITIES_FAMILY_KEY,
     FamilyRecord,
+    copy_skills_to_target,
+    enumerate_skills,
+    filter_public_skills,
     preserve_warning_message,
     read_family_record,
     sweep_retired_assets,
@@ -1016,9 +1027,77 @@ class DESPlugin(InstallationPlugin):
                 "HOW: check write permissions and free space on the Claude "
                 "config directory, then re-run the install."
             )
+        self._install_runtime_instructions(
+            context=context,
+            using_prebuilt=using_prebuilt,
+            target_root=target_root,
+        )
 
         context.logger.info(f"  📦 nWave runtime assets shipped to {target_root}")
         return target_root
+
+    def _install_runtime_instructions(
+        self, *, context: InstallContext, using_prebuilt: bool, target_root: Path
+    ) -> None:
+        """Publish canonical instructions, never host-transformed snapshots."""
+        if using_prebuilt and context.framework_source is not None:
+            source_root = context.framework_source
+            agents_source = source_root / "agents"
+            if not (source_root / "nWave").is_dir():
+                agents_source = agents_source / "nw"
+        else:
+            source_root = (
+                context.project_root / "nWave"
+                if context.project_root
+                else Path("nWave")
+            )
+            agents_source = source_root / "agents"
+        skills_source = source_root / "skills"
+        if not agents_source.is_dir() and not skills_source.is_dir():
+            context.logger.warning(
+                f"  ⚠️  N/A: no canonical instruction families at {source_root}; "
+                "runtime instructions not applicable to this source tier"
+            )
+            return
+        try:
+            public_agents = load_public_agents(source_root)
+            private_skills = load_private_skills(source_root)
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise RuntimeAssetShippingError(
+                f"WHAT: runtime instruction catalog unavailable at {source_root}. "
+                f"WHY: public membership could not be loaded: {exc}. "
+                "HOW: rebuild the source distribution with its framework-catalog.yaml "
+                "and re-run the installer."
+            ) from exc
+
+        agents_target = target_root / "agents"
+        skills_target = target_root / "skills"
+        for destination in (agents_target, skills_target):
+            if destination.exists():
+                _robust_rmtree(destination)
+            destination.mkdir(parents=True)
+        # Empty is a valid selection, not the helpers' include-all sentinel.
+        if not public_agents:
+            return
+
+        for source in sorted(agents_source.glob("nw-*.md")):
+            if is_public_agent(source.name, public_agents):
+                shutil.copy2(source, agents_target / source.name)
+        entries = enumerate_skills(skills_source) if skills_source.is_dir() else []
+        selected = filter_public_skills(
+            entries,
+            public_agents,
+            build_ownership_map(agents_source),
+            detect_command_skills(skills_source),
+            private_skills,
+        )
+        copy_skills_to_target(selected, skills_target)
+        removed_skills = {entry.name for entry in entries} - {
+            entry.name for entry in selected
+        }
+        scrub_removed_skill_references(
+            agents_target, target_root, removed_skills, public_agents
+        )
 
     @staticmethod
     def _describe_asset_channel(

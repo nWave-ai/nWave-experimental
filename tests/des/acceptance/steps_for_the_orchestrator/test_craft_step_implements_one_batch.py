@@ -174,59 +174,56 @@ def accepted_craft(body: str) -> list[dict]:
 def design_constructor_input(
     decisions: tuple[str, ...] = ("one opaque semantic decision",),
 ) -> str:
-    """The closed v1 manifest `des design --input -` binds without a turn."""
-    return json.dumps(
-        {
-            "schema_version": 1,
-            "authority": {"heading": "Value implemented behind its oracle"},
-            "architectural_tests": {
-                "applicability": "not_applicable",
-                "reason": "The fixture has no structural boundary change.",
-            },
-            "contract_tests": {
-                "applicability": "not_applicable",
-                "reason": "The fixture changes no shared contract.",
-            },
-            "purpose": "Implement the value behind its own oracle.",
-            "constraints": ["Keep the oracle immutable."],
-            "targets": [
-                {
-                    "path": TARGET,
-                    "decision": "CREATE_NEW",
-                    "reason": "No module owns the value yet.",
-                }
-            ],
-            "paradigm": "object_oriented",
-            "decisions": list(decisions),
-            "reuse_analysis": {"candidates": []},
-            "prefactoring": {
-                "applicability": "not_applicable",
-                "reason": "The target is new.",
-            },
-            "agreement_analysis": {
-                "applicability": "not_applicable",
-                "reason": "No shared schema is touched.",
-            },
-            "impact_closure": {
-                "applicability": "not_applicable",
-                "reason": "The fixture reaches no public surface, consumer or build metadata.",
-            },
-            "boundaries": {
-                "applicability": "not_applicable",
-                "reason": "No port or dependency boundary changes.",
-            },
-            "public_oracle": {
-                "observation": "The value module imports.",
-                "stimulus": "Run the acceptance oracle.",
-                "expected": "The oracle passes.",
-                "falsifier": "Any import failure.",
-            },
-            "oracle": ORACLE,
-            "acceptance_supports": [SUPPORT],
-            "verification": [[sys.executable, "-m", "pytest", ORACLE]],
-            "oracle_verification_index": 0,
-        }
-    )
+    """The closed schema-2 manifest `des design --input -` binds without a turn."""
+    facts = {
+        "architectural_tests": {
+            "applicability": "not_applicable",
+            "reason": "The fixture has no structural boundary change.",
+        },
+        "contract_tests": {
+            "applicability": "not_applicable",
+            "reason": "The fixture changes no shared contract.",
+        },
+        "purpose": "Implement the value behind its own oracle.",
+        "constraints": ["Keep the oracle immutable."],
+        "targets": [
+            {
+                "path": TARGET,
+                "decision": "CREATE_NEW",
+                "reason": "No module owns the value yet.",
+            }
+        ],
+        "paradigm": "object_oriented",
+        "decisions": list(decisions),
+        "reuse_analysis": {"candidates": []},
+        "prefactoring": {
+            "applicability": "not_applicable",
+            "reason": "The target is new.",
+        },
+        "agreement_analysis": {
+            "applicability": "not_applicable",
+            "reason": "No shared schema is touched.",
+        },
+        "impact_closure": {
+            "applicability": "not_applicable",
+            "reason": "The fixture reaches no public surface, consumer or build metadata.",
+        },
+        "boundaries": {
+            "applicability": "not_applicable",
+            "reason": "No port or dependency boundary changes.",
+        },
+        "public_oracle": {
+            "observation": "The value module imports.",
+            "stimulus": "Run the acceptance oracle.",
+            "expected": "The oracle passes.",
+            "falsifier": "Any import failure.",
+        },
+        "oracle": ORACLE,
+        "acceptance_supports": [SUPPORT],
+        "verification": [[sys.executable, "-m", "pytest", ORACLE]],
+        "oracle_verification_index": 0,
+    }
+    return json.dumps(design_manifest(facts, facts["purpose"], 1))
 
 
 def crafted_through_the_design_constructor(root: Path, step) -> None:

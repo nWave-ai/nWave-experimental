@@ -8,10 +8,10 @@ the convention is not a cosmetic blemish: it is a red build nothing local
 could have refused.
 
 The answer is construction, not late validation (GDP-0). Every element of the
-message is DERIVED from facts the runner already holds -- the Request text,
+message is DERIVED from facts the runner already holds -- the typed change intent,
 the admitted observations in their canonical order, the expected-old SHA, the
-bound authority locators and the paths the candidate tree actually changes --
-so no role is asked to author prose and no model decision enters a Git object
+bound authority locators and the paths the candidate tree actually changes.
+The Product Owner decides the intent; software never classifies prose
 (`boundary:software-measures-model-decides`).
 
 A fact's LENGTH is likewise the software's own doing: `authority typed:<path>
@@ -38,6 +38,8 @@ import configparser
 import re
 import textwrap
 from dataclasses import dataclass
+
+from des.domain.input_defects import Defects, InputDefects
 
 
 #: The types `.gitlint`'s `contrib-title-conventional-commits` admits. Restated
@@ -67,38 +69,11 @@ DEFAULT_CONVENTIONAL_TYPES = (
 )
 _CONVENTIONAL_RULE = "contrib-title-conventional-commits"
 
-#: The ONE documented type default. Whether a delta adds new observable
-#: behaviour or repairs existing behaviour is NOT derivable from anything the
-#: runner holds: `EXTEND`/`CREATE_NEW` is a designation about a FILE, not about
-#: behaviour (GDP-8), and pattern-matching the Request's prose for words like
-#: "fix" would put a model's phrasing in charge of a release number.
-#:
-#: So one default is chosen and stated. `feat` is that default for two reasons.
-#: First, it follows the runner's own invariant: a candidate exists only when
-#: the tree changed under a public oracle that the value made pass, which is
-#: new observable behaviour in the only sense the runner can measure -- an
-#: observation that is now executable and was not before, bugfix included.
-#: Second, the failure directions are not symmetric under this repository's
-#: release mapping (`feat` -> minor, `fix` -> patch). Shipping a repair as a
-#: minor bump is conservative and semver-legal; shipping a new capability as a
-#: patch tells consumers pinned to a patch range that nothing was added, which
-#: is a semver violation. `chore` would be worse still: it suppresses the
-#: release entirely and drops a delivered change out of the changelog silently.
-#: A human who knows the delta is a repair can reword before pushing; the
-#: runner must not guess in the direction that loses information.
-#:
-#: The CLEAN way out of this default, when it is wanted, is a TYPED fact from
-#: the Product Owner -- the role that already classifies a Request into its
-#: observable value projection, and the only one holding the repair-or-capacity
-#: distinction as knowledge rather than as phrasing. It would arrive through the
-#: PO's structured output and the persisted graph, exactly as `observation` and
-#: `dependencies` do, and reach this function as a field on `IntegrationFacts`.
-#: What must NEVER replace it is a pattern over the Request's or the
-#: observation's prose: that hands a release number to a model's wording, which
-#: is the boundary `boundary:software-measures-model-decides` forbids crossing.
-DEFAULT_TYPE = "feat"
+#: Absence of a recorded PO intent claims no release impact. The subject names
+#: the first admitted observation and the body explicitly marks the absence.
+UNRECORDED_TYPE = "chore"
 
-#: Used only when the Request's first line yields no usable subject at all.
+#: Used only when the supplied description yields no usable subject at all.
 FALLBACK_SUBJECT = "integrate the requested value"
 
 #: Below this many characters a scope is dropped rather than allowed to eat the
@@ -139,14 +114,18 @@ class MessageDefect:
 #: The declared-rule family's HOW.  It costs one edit to `.gitlint` and no
 #: paid turn: the Request is untouched, so `des dispatch` matches the stored
 #: handover byte for byte and the graph resumes where it stopped.
-_RULE_HOW = (
-    "make .gitlint admit what the runner composes -- add "
-    f"'{DEFAULT_TYPE}' to the types declared under [{_CONVENTIONAL_RULE}], "
-    "widen [title-match-regex] regex, or raise the declared line-length under "
-    "[title-max-length] / [body-max-line-length] -- then reissue the Request; "
-    "the Request is unchanged, so the stored graph resumes and no turn is "
-    "paid twice"
-)
+def _rule_how(subject: str) -> str:
+    token = _TYPE_TOKEN.match(subject)
+    composed_type = token.group(1) if token is not None else UNRECORDED_TYPE
+    return (
+        "make .gitlint admit what the runner composes -- add "
+        f"'{composed_type}' to the types declared under [{_CONVENTIONAL_RULE}], "
+        "widen [title-match-regex] regex, or raise the declared line-length under "
+        "[title-max-length] / [body-max-line-length] -- then reissue the Request; "
+        "the Request is unchanged, so the stored graph resumes and no turn is "
+        "paid twice"
+    )
+
 
 #: The composer family's HOW.  `compose_integration_message` establishes these
 #: properties unconditionally, so this branch is reachable only through a
@@ -161,13 +140,67 @@ _COMPOSER_HOW = (
 
 
 @dataclass(frozen=True, slots=True)
+class ChangeIntent:
+    """A PO-recorded conventional type and single-line change description."""
+
+    type: str
+    description: str
+
+    def __post_init__(self) -> None:
+        defects = Defects(InputDefects)
+        if (
+            not isinstance(self.type, str)
+            or self.type not in DEFAULT_CONVENTIONAL_TYPES
+        ):
+            defects.add("type must be one of " + ", ".join(DEFAULT_CONVENTIONAL_TYPES))
+        if (
+            not isinstance(self.description, str)
+            or not self.description
+            or not self.description[0].isalpha()
+            or self.description.splitlines() != [self.description]
+        ):
+            defects.add("description must be one non-empty line starting with a letter")
+        defects.close()
+
+    @classmethod
+    def from_payload(cls, raw: object, name: str) -> ChangeIntent:
+        """Decode the closed optional member at either untrusted byte boundary."""
+        if not isinstance(raw, dict):
+            raise InputDefects(f"{name} must be an object containing type, description")
+        defects = Defects(InputDefects)
+        for key in sorted(set(raw) - {"type", "description"}):
+            defects.add(f"{name}.{key} is unexpected")
+        for key in ("type", "description"):
+            if key not in raw:
+                defects.add(f"{name}.{key} is missing")
+        try:
+            intent = cls(raw.get("type"), raw.get("description"))
+        except InputDefects as error:
+            for defect in error.defects:
+                field = defect.split(" ", 1)[0]
+                if field in raw:
+                    defects.add(f"{name}.{defect}")
+            defects.close()
+            raise
+        defects.close()
+        return intent
+
+
+@dataclass(frozen=True, slots=True)
 class IntegrationFacts:
     """The runner-held facts the integrated commit's message is built from."""
 
-    request: str
     observations: tuple[str, ...]
+    changes: tuple[ChangeIntent | None, ...]
     authorities: tuple[str, ...]
     handover_sha256: str | None = None
+
+    def __post_init__(self) -> None:
+        if len(self.changes) != len(self.observations):
+            raise ValueError(
+                "changes must contain one intent or None per observation; "
+                "supply both tuples in the same canonical order"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,7 +286,7 @@ class CommitMessageRule:
             return MessageDefect(
                 f"the subject is {len(subject)} characters, over the declared "
                 f"limit of {self.title_max_length}",
-                _RULE_HOW,
+                _rule_how(subject),
             )
         try:
             matched = re.search(self.title_pattern, subject) is not None
@@ -262,7 +295,7 @@ class CommitMessageRule:
         if not matched:
             return MessageDefect(
                 f"the subject {subject!r} does not match the declared title rule",
-                _RULE_HOW,
+                _rule_how(subject),
             )
         token = _TYPE_TOKEN.match(subject)
         if self.conventional_types and (
@@ -271,7 +304,7 @@ class CommitMessageRule:
             return MessageDefect(
                 f"the subject's type is not one of the types this repository "
                 f"declares ({', '.join(self.conventional_types)})",
-                _RULE_HOW,
+                _rule_how(subject),
             )
         if subject != subject.strip():
             return MessageDefect(
@@ -294,7 +327,7 @@ class CommitMessageRule:
                 return MessageDefect(
                     f"this body line is {len(line)} characters, over the declared "
                     f"limit of {self.body_max_line_length}: {line}",
-                    _RULE_HOW,
+                    _rule_how(subject),
                 )
             if line != line.rstrip():
                 return MessageDefect(
@@ -390,9 +423,11 @@ def _body_block(entries: list[str], width: int) -> str:
     )
 
 
-def _subject_text(request: str, budget: int) -> str:
-    """The Request's first line, reduced to one conforming subject."""
-    first = next((line.strip() for line in request.splitlines() if line.strip()), "")
+def _subject_text(description: str, budget: int) -> str:
+    """The recorded description or first observation, reduced to a subject."""
+    first = next(
+        (line.strip() for line in description.splitlines() if line.strip()), ""
+    )
     collapsed = " ".join(first.split())
     # The declared title rule requires the subject to START with a letter.
     while collapsed and not collapsed[0].isalpha():
@@ -400,7 +435,7 @@ def _subject_text(request: str, budget: int) -> str:
     if collapsed:
         head = collapsed.split(" ", 1)[0]
         # Lowercase to match this repository's subject case, but never flatten
-        # an acronym the Request itself capitalised (API, DES, CI).
+        # an acronym the supplied description capitalised (API, DES, CI).
         if not (len(head) > 1 and head.isupper()):
             collapsed = collapsed[0].lower() + collapsed[1:]
     if len(collapsed) > budget:
@@ -439,24 +474,29 @@ def compose_integration_message(
     length, can make this message non-conforming.
     """
     scope = derive_scope(changed_paths)
-    prefix = f"{DEFAULT_TYPE}({scope}): " if scope else f"{DEFAULT_TYPE}: "
+    intent = next((change for change in facts.changes if change is not None), None)
+    kind = intent.type if intent is not None else UNRECORDED_TYPE
+    description = (
+        intent.description if intent is not None else next(iter(facts.observations), "")
+    )
+    prefix = f"{kind}({scope}): " if scope else f"{kind}: "
     if rule.title_max_length - len(prefix) < _MINIMUM_SUBJECT_BUDGET:
-        prefix = f"{DEFAULT_TYPE}: "
+        prefix = f"{kind}: "
     # A degenerate declared title length would otherwise make the budget
     # negative, and a negative slice cuts from the END instead of yielding an
-    # empty subject -- silently keeping the tail of a Request as the subject.
+    # empty subject -- silently keeping the tail of a description as the subject.
     budget = max(0, rule.title_max_length - len(prefix))
-    text = _subject_text(facts.request, budget)
+    text = _subject_text(description, budget)
     subject = prefix + text
     paragraphs = []
     for observation in facts.observations:
         collapsed = " ".join(observation.split())
         if not collapsed:
             continue
-        # A single-value Request states its observation in the Request line, so
-        # the body would repeat the subject word for word.  Dropping the
-        # duplicate is not only tidier: it removes a whole family of lines that
-        # could overflow the declared body width, shrinking what the check below
+        # An observation identical to the description would repeat the subject.
+        # Dropping the duplicate is not only tidier: it removes a whole family
+        # of lines that could overflow the declared body width, shrinking what
+        # the check below
         # can ever reach (GDP-0).  A TRUNCATED subject lost information the
         # observation still carries, so those never compare equal and it stays.
         if collapsed.lower() == text.lower():
@@ -481,5 +521,7 @@ def compose_integration_message(
     )
     if facts.handover_sha256 is not None:
         identity.append(f"handover-sha256 {facts.handover_sha256}")
+    if any(change is None for change in facts.changes):
+        identity.append("change-intent unrecorded")
     paragraphs.append(_body_block(identity, rule.body_max_line_length))
     return subject + "\n\n" + "\n\n".join(paragraphs)

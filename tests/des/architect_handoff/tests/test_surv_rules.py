@@ -22,6 +22,7 @@ from tests.des.architect_handoff.tests.test_g10 import (
     closure,
     decode,
     defects,
+    fixture_catalog,
     fresh_copy,
     law,
     model_,
@@ -43,7 +44,7 @@ def of(ds, rule: str) -> list:
 
 
 def check(doc: dict, d: str | None, mode: str = "auto", targets=V9_TARGETS):
-    return RU.check(decode(doc), targets, mode, d)
+    return RU.check(decode(doc), targets, mode, d, fixture_catalog(doc))
 
 
 def receipts_in(scope: str, *runs: dict) -> dict:
@@ -126,8 +127,16 @@ class OrderOfDefects(unittest.TestCase):
                 flipped = dict(reversed(list(h.items())))
                 self.assertEqual(list(reversed(list(h))), list(flipped))
                 self.assertEqual(
-                    RU.check(h, V9_TARGETS, kw.get("mode", "auto"), d),
-                    RU.check(flipped, V9_TARGETS, kw.get("mode", "auto"), d),
+                    RU.check(
+                        h, V9_TARGETS, kw.get("mode", "auto"), d, fixture_catalog(doc)
+                    ),
+                    RU.check(
+                        flipped,
+                        V9_TARGETS,
+                        kw.get("mode", "auto"),
+                        d,
+                        fixture_catalog(doc),
+                    ),
                     rid,
                 )
 

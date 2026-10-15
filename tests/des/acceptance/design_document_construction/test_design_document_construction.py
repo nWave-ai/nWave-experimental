@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 from tests.common.in_process_cli import run_cli_in_process
 from tests.common.state_delta import assert_state_delta, set_to, unchanged
+from tests.des._helpers.host_facts import design_manifest
 from tests.des.acceptance import fake_provider
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     PACKAGE_PARENT,
@@ -39,9 +40,8 @@ REPOSITORY_DESTINATION = Path("docs/product/architecture/brief.md")
 HANDOVER = Path(".nwave/des/handover.json")
 
 
-MANIFEST = {
-    "schema_version": 1,
-    "authority": {"heading": "Widget color"},
+WIDGET_INPUT = {
+    "schema_version": 2,
     "architectural_tests": {
         "applicability": "not_applicable",
         "reason": "The fixture has no structural boundary change.",
@@ -99,6 +99,7 @@ MANIFEST = {
     "verification": [["pytest", "-q", "tests/test_widget.py"]],
     "oracle_verification_index": 0,
 }
+MANIFEST = design_manifest(WIDGET_INPUT, WIDGET_INPUT["purpose"], 1)
 
 # Constructor-produced bytes are setup for publication/CAS tests, not a prose snapshot oracle.
 EXPECTED_SECTION = DesignDocument.from_json(json.dumps(MANIFEST)).markdown()
@@ -106,7 +107,7 @@ EXPECTED_SECTION = DesignDocument.from_json(json.dumps(MANIFEST)).markdown()
 EXPECTED_FACTS = json.loads(
     DesignDocument.from_json(json.dumps(MANIFEST)).facts_json(
         DesignDocument.from_json(json.dumps(MANIFEST)).facts_at(
-            "docs/product/architecture/brief.md#Widget color"
+            "docs/product/architecture/brief.md#Value 1"
         )
     )
 )
@@ -129,10 +130,22 @@ APPLICABLE_ACCEPTANCE_SUPPORTS = [
     "tests/des/acceptance/steps_for_the_orchestrator/conftest.py"
 ]
 
-EXPECTED_APPLICABLE_FACTS = {
-    **EXPECTED_FACTS,
-    "acceptance_supports": APPLICABLE_ACCEPTANCE_SUPPORTS,
-}
+APPLICABLE_MANIFEST = design_manifest(
+    {
+        **WIDGET_INPUT,
+        "boundaries": APPLICABLE_BOUNDARIES,
+        "acceptance_supports": APPLICABLE_ACCEPTANCE_SUPPORTS,
+    },
+    WIDGET_INPUT["purpose"],
+    1,
+)
+EXPECTED_APPLICABLE_FACTS = json.loads(
+    DesignDocument.from_json(json.dumps(APPLICABLE_MANIFEST)).facts_json(
+        DesignDocument.from_json(json.dumps(APPLICABLE_MANIFEST)).facts_at(
+            "docs/product/architecture/brief.md#Value 1"
+        )
+    )
+)
 
 UNRELATED_AUTHORITY_PREFIX = (
     b"# Architecture authority\n\n"
@@ -148,11 +161,20 @@ UNRELATED_AUTHORITY_SUFFIX = (
 
 
 def _terminal(stdout: str, stderr: str) -> dict[str, str]:
+    """Observe complete terminal fields, including accumulated WHY entries."""
     rows: dict[str, str] = {}
+    active = None
     for line in (stdout + "\n" + stderr).splitlines():
         label, separator, value = line.partition(": ")
-        if separator:
+        if (
+            separator
+            and re.fullmatch(r"[A-Z][A-Z0-9-]*", label)
+            and (active != "WHY" or label == "HOW")
+        ):
             rows.setdefault(label, value)
+            active = label
+        elif active == "WHY" and line:
+            rows[active] += "\n" + line
     return rows
 
 
@@ -171,7 +193,11 @@ def design_repository(tmp_path: Path) -> tuple[Path, dict[str, str]]:
             {"documents": {"design": {"destination": str(REPOSITORY_DESTINATION)}}}
         )
     )
-    return root, {**os.environ, "HOME": str(home)}
+    return root, {
+        **os.environ,
+        "HOME": str(home),
+        "NWAVE_AGENTS_HOME": str(home),
+    }
 
 
 def _bootstrap_value(
@@ -202,7 +228,11 @@ def _bootstrap_value(
         ["po", "--repo-root", str(root), *scope_flags, "--input", "-"],
         cwd=root,
         env=hermetic_environment(
-            provider_environment | {"HOME": environment["HOME"]},
+            provider_environment
+            | {
+                "HOME": environment["HOME"],
+                "NWAVE_AGENTS_HOME": environment["NWAVE_AGENTS_HOME"],
+            },
             tmp_path / "claude-config",
         ),
         stdin_text=json.dumps(
@@ -275,7 +305,7 @@ def _assert_refusal_without_projection_mutation(
     root: Path,
     environment: dict[str, str],
     manifest: dict,
-) -> None:
+) -> dict[str, str]:
     """The public construction boundary rejects before either durable projection."""
     authority = root / REPOSITORY_DESTINATION
     authority_before = authority.read_bytes() if authority.exists() else None
@@ -286,7 +316,7 @@ def _assert_refusal_without_projection_mutation(
     code, out, err = _design(root, environment, manifest)
     rows = _terminal(out, err)
 
-    assert code != 0 and rows.get("DELIVERY-OUTCOME") == "Refusal", (
+    assert code == 1 and rows.get("DELIVERY-OUTCOME") == "Refusal", (
         "a value outside closed v1 input construction must refuse at the public "
         f"terminal (stdout={out!r}, stderr={err!r})"
     )
@@ -302,6 +332,7 @@ def _assert_refusal_without_projection_mutation(
         "a construction refusal must leave the existing handover byte-identical; "
         "facts bind only after a whole valid manifest exists"
     )
+    return rows
 
 
 def test_design_document_is_the_configured_authority_and_matching_bound_facts(
@@ -325,7 +356,7 @@ def test_design_document_is_the_configured_authority_and_matching_bound_facts(
         "the terminal must classify the completed two-projection construction as "
         f"Success, not {rows.get('DELIVERY-OUTCOME')!r}"
     )
-    assert rows.get("SCHEMA-VERSION") == "1"
+    assert rows.get("SCHEMA-VERSION") == "2"
     assert not (root / GLOBAL_DESTINATION).exists(), (
         "repository documents.design.destination must override global configuration; "
         "the global authority was written despite the repository declaration"
@@ -363,9 +394,7 @@ def test_design_document_projects_applicable_boundaries_and_acceptance_supports(
     """Applicable semantic boundaries remain readable in the human authority."""
     root, environment = design_repository
     _bootstrap_value(root, environment, tmp_path)
-    manifest = json.loads(json.dumps(MANIFEST))
-    manifest["boundaries"] = APPLICABLE_BOUNDARIES
-    manifest["acceptance_supports"] = APPLICABLE_ACCEPTANCE_SUPPORTS
+    manifest = json.loads(json.dumps(APPLICABLE_MANIFEST))
 
     code, out, err = _design(root, environment, manifest)
     rows = _terminal(out, err)
@@ -450,7 +479,7 @@ def test_identical_normalized_input_preserves_owned_section_and_all_observations
     assert (root / HANDOVER).read_bytes() == handover_after_first, (
         "the idempotent retry must leave the bound handover bytes unchanged"
     )
-    expected_locator = f"{REPOSITORY_DESTINATION}#Widget color"
+    expected_locator = f"{REPOSITORY_DESTINATION}#Value 1"
     expected_digest = hashlib.sha256(authority_after_first).hexdigest()
     for rows in (first_rows, second_rows):
         assert rows.get("DELIVERY-OUTCOME") == "Success", (
@@ -467,7 +496,7 @@ def test_identical_normalized_input_preserves_owned_section_and_all_observations
         assert rows.get("DESIGN-FACTS") == json.dumps(
             EXPECTED_FACTS, ensure_ascii=False, separators=(",", ":")
         ), "each invocation must publish the same canonical bound facts"
-        assert rows.get("SCHEMA-VERSION") == "1"
+        assert rows.get("SCHEMA-VERSION") == "2"
     assert {
         label: second_rows.get(label)
         for label in ("DOCUMENT", "DOCUMENT-SHA256", "DESIGN-FACTS")
@@ -498,13 +527,22 @@ def test_replace_current_rebinds_only_the_selected_section_and_craft_reads_v2(
     handover_v1 = (root / HANDOVER).read_bytes()
     unrelated_v1 = json.loads(handover_v1)["values"][1]
 
-    corrected = json.loads(json.dumps(MANIFEST))
-    corrected["purpose"] = "Expose the corrected selected widget color."
-    corrected["decisions"] = ["Keep corrected color validation at Widget construction."]
-    expected_v2_facts = {
-        **EXPECTED_FACTS,
-        "decisions": ["Keep corrected color validation at Widget construction."],
-    }
+    corrected = design_manifest(
+        {
+            **WIDGET_INPUT,
+            "purpose": "Expose the corrected selected widget color.",
+            "decisions": ["Keep corrected color validation at Widget construction."],
+        },
+        WIDGET_INPUT["purpose"],
+        1,
+    )
+    expected_v2_facts = json.loads(
+        DesignDocument.from_json(json.dumps(corrected)).facts_json(
+            DesignDocument.from_json(json.dumps(corrected)).facts_at(
+                f"{REPOSITORY_DESTINATION}#Value 1"
+            )
+        )
+    )
 
     refused_code, refused_out, refused_err = _design(root, environment, corrected)
     refused = _terminal(refused_out, refused_err)
@@ -517,15 +555,12 @@ def test_replace_current_rebinds_only_the_selected_section_and_craft_reads_v2(
     authority_v2 = authority.read_bytes()
     handover_v2 = (root / HANDOVER).read_bytes()
     assert code == 0 and rows.get("DELIVERY-OUTCOME") == "Success", out + err
-    assert rows.get("SCHEMA-VERSION") == "1"
+    assert rows.get("SCHEMA-VERSION") == "2"
     assert json.loads(rows["DESIGN-FACTS"]) == expected_v2_facts
     assert authority_v2.startswith(UNRELATED_AUTHORITY_PREFIX)
     assert authority_v2.endswith(UNRELATED_AUTHORITY_SUFFIX)
     assert authority_v2 != authority_v1
-    assert json.loads(handover_v2)["values"][0]["authority"] == {
-        **expected_v2_facts,
-        "public_oracle": corrected["public_oracle"],
-    }
+    assert json.loads(handover_v2)["values"][0]["authority"] == expected_v2_facts
     assert json.loads(handover_v2)["values"][1] == unrelated_v1
 
     retry_code, retry_out, retry_err = _design(
@@ -544,40 +579,25 @@ def test_replace_current_rebinds_only_the_selected_section_and_craft_reads_v2(
     }
 
 
-def test_explicit_legacy_rendering_migration_binds_only_an_exact_historical_section(
+def test_removed_legacy_rendering_option_refuses_without_mutation(
     design_repository: tuple[Path, dict[str, str]], tmp_path: Path
 ) -> None:
-    """A renderer-only upgrade restores an interrupted tracked value deterministically."""
+    """The old formatter is not an alternate producer or recovery path."""
     root, environment = design_repository
     _bootstrap_value(root, environment, tmp_path)
-    document = DesignDocument.from_json(json.dumps(MANIFEST))
     authority = _track_authority(
         root,
         UNRELATED_AUTHORITY_PREFIX
-        + document.legacy_markdown_v1().encode()
+        + b"## Widget color\n\nFrozen historical formatter output.\n"
         + UNRELATED_AUTHORITY_SUFFIX,
     )
     before = authority.read_bytes()
     handover_before = (root / HANDOVER).read_bytes()
-
-    refused_code, refused_out, refused_err = _design(root, environment, MANIFEST)
-    assert refused_code != 0 and _terminal(refused_out, refused_err).get("WHAT") == (
-        "DesignAuthorityDrift"
-    )
+    code, out, err = _design(root, environment, MANIFEST, migrate_legacy_rendering=True)
+    assert code != 0 and "unrecognized arguments" in out + err
+    assert "--migrate-legacy-rendering" in out + err
     assert authority.read_bytes() == before
     assert (root / HANDOVER).read_bytes() == handover_before
-
-    code, out, err = _design(root, environment, MANIFEST, migrate_legacy_rendering=True)
-    rows = _terminal(out, err)
-    assert code == 0 and rows.get("DELIVERY-OUTCOME") == "Success", out + err
-    assert document.markdown().encode() in authority.read_bytes()
-    assert document.legacy_markdown_v1().encode() not in authority.read_bytes()
-    assert authority.read_bytes().startswith(UNRELATED_AUTHORITY_PREFIX)
-    assert authority.read_bytes().endswith(UNRELATED_AUTHORITY_SUFFIX)
-    assert json.loads((root / HANDOVER).read_text())["values"][0]["authority"] == {
-        **EXPECTED_FACTS,
-        "public_oracle": MANIFEST["public_oracle"],
-    }
 
 
 def test_explicit_unbound_recovery_replaces_only_the_named_tracked_section(
@@ -589,7 +609,7 @@ def test_explicit_unbound_recovery_replaces_only_the_named_tracked_section(
     authority = _track_authority(
         root,
         UNRELATED_AUTHORITY_PREFIX
-        + b"## Widget color\n\nPartial historical authority.\n"
+        + b"## Value 1\n\nPartial historical authority.\n"
         + UNRELATED_AUTHORITY_SUFFIX,
     )
     before = authority.read_bytes()
@@ -609,10 +629,10 @@ def test_explicit_unbound_recovery_replaces_only_the_named_tracked_section(
     assert authority.read_bytes().endswith(UNRELATED_AUTHORITY_SUFFIX)
     assert EXPECTED_SECTION.encode() in authority.read_bytes()
     assert b"Partial historical authority." not in authority.read_bytes()
-    assert json.loads((root / HANDOVER).read_text())["values"][0]["authority"] == {
-        **EXPECTED_FACTS,
-        "public_oracle": MANIFEST["public_oracle"],
-    }
+    assert (
+        json.loads((root / HANDOVER).read_text())["values"][0]["authority"]
+        == EXPECTED_FACTS
+    )
 
 
 def test_replace_current_directory_sync_failure_reports_whole_authority_as_indeterminate(
@@ -624,8 +644,11 @@ def test_replace_current_directory_sync_failure_reports_whole_authority_as_indet
     authority = _track_authority(root, UNRELATED_AUTHORITY_PREFIX)
     assert _design(root, environment, MANIFEST)[0] == 0
     handover_before = (root / HANDOVER).read_bytes()
-    corrected = json.loads(json.dumps(MANIFEST))
-    corrected["purpose"] = "Expose a corrected selected widget color."
+    corrected = design_manifest(
+        {**WIDGET_INPUT, "purpose": "Expose a corrected selected widget color."},
+        WIDGET_INPUT["purpose"],
+        1,
+    )
 
     monkeypatch.setattr(
         "des.application.handover._fsync_directory",
@@ -663,10 +686,14 @@ def test_conflicting_bound_design_facts_refuse_before_authority_or_handover_muta
     )
     authority_before = authority.read_bytes()
     handover_before = (root / HANDOVER).read_bytes()
-    conflicting_manifest = json.loads(json.dumps(MANIFEST))
-    conflicting_manifest["decisions"] = [
-        "Keep color validation at the command boundary instead."
-    ]
+    conflicting_manifest = design_manifest(
+        {
+            **WIDGET_INPUT,
+            "decisions": ["Keep color validation at the command boundary instead."],
+        },
+        WIDGET_INPUT["purpose"],
+        1,
+    )
 
     code, out, err = _design(root, environment, conflicting_manifest)
     rows = _terminal(out, err)
@@ -688,7 +715,7 @@ def test_conflicting_bound_design_facts_refuse_before_authority_or_handover_muta
     )
 
 
-@pytest.mark.parametrize("removed_member", ["obligations", "public_oracle"])
+@pytest.mark.parametrize("removed_member", ["constraints", "public_oracle"])
 def test_legacy_six_field_facts_are_repaired_by_the_same_closed_input(
     design_repository: tuple[Path, dict[str, str]], tmp_path: Path, removed_member: str
 ) -> None:
@@ -701,13 +728,59 @@ def test_legacy_six_field_facts_are_repaired_by_the_same_closed_input(
     authority_before = authority.read_bytes()
 
     legacy_payload = json.loads((root / HANDOVER).read_text())
-    del legacy_payload["values"][0]["authority"][removed_member]
+    legacy_authority = {
+        name: json.loads(json.dumps(WIDGET_INPUT[name]))
+        for name in (
+            "targets",
+            "paradigm",
+            "decisions",
+            "oracle",
+            "acceptance_supports",
+            "verification",
+            "oracle_verification_index",
+            "public_oracle",
+        )
+    }
+    legacy_authority["targets"] = [
+        {"path": row["path"], "decision": row["decision"]}
+        for row in legacy_authority["targets"]
+    ]
+    legacy_authority["obligations"] = WIDGET_INPUT["constraints"]
+    legacy_authority["authority_locator"] = f"{REPOSITORY_DESTINATION}#Value 1"
+    legacy_authority.pop(
+        "obligations" if removed_member == "constraints" else removed_member
+    )
+    legacy_payload["values"][0]["authority"] = legacy_authority
     legacy_raw = json.dumps(
         legacy_payload, ensure_ascii=False, separators=(",", ":")
     ).encode()
     (root / HANDOVER).write_bytes(legacy_raw)
+    refused_code, refused_out, refused_err = run_cli_in_process(
+        [
+            "handoff",
+            "prompt",
+            "--repo-root",
+            str(root),
+            "--role",
+            "nw-software-crafter",
+            "--value",
+            "1",
+            "--root-context",
+            "README.md",
+        ],
+        cwd=root,
+        env=environment,
+        catch_all=True,
+    )
+    assert refused_code != 0
+    assert "DesignFactsPreNormalized" in refused_out + refused_err
+    assert "--replace-current" in refused_out + refused_err
+    assert (root / HANDOVER).read_bytes() == legacy_raw
+    assert authority.read_bytes() == authority_before
 
-    repair_code, repair_out, repair_err = _design(root, environment, MANIFEST)
+    repair_code, repair_out, repair_err = _design(
+        root, environment, MANIFEST, replace_current=True
+    )
     assert repair_code == 0, repair_out + repair_err
     repaired_raw = (root / HANDOVER).read_bytes()
     repaired = json.loads(repaired_raw)
@@ -716,9 +789,9 @@ def test_legacy_six_field_facts_are_repaired_by_the_same_closed_input(
         "from the historical facts carrier"
     )
     assert repaired_raw != legacy_raw
-    if removed_member == "obligations":
+    if removed_member == "constraints":
         assert (
-            repaired["values"][0]["authority"]["obligations"] == MANIFEST["constraints"]
+            repaired["values"][0]["authority"]["constraints"] == MANIFEST["constraints"]
         )
         assert repaired["values"][0]["authority"]["decisions"] == MANIFEST["decisions"]
     elif removed_member == "public_oracle":
@@ -741,14 +814,21 @@ def test_changed_heading_refuses_without_guessing_a_new_section_identity(
     handover_before = (root / HANDOVER).read_bytes()
 
     next_manifest = json.loads(json.dumps(MANIFEST))
-    next_manifest["authority"]["heading"] = "Widget color accessibility"
-    next_manifest["decisions"] = ["Keep color validation at the command boundary."]
+    next_manifest["authority"] = {"heading": "Widget color accessibility"}
+    next_manifest["decisions"] = [{"ref": "V1-heading-decision"}]
+    next_manifest["facts"].append(
+        {
+            "id": "V1-heading-decision",
+            "text": "Keep color validation at the command boundary.",
+        }
+    )
     next_code, next_out, next_err = _design(
         root, environment, next_manifest, replace_current=True
     )
     rows = _terminal(next_out, next_err)
 
-    assert next_code != 0 and rows.get("WHAT") == "DesignAuthorityIdentityMismatch"
+    assert next_code != 0 and rows.get("WHAT") == "InvalidDesignDocument"
+    assert "DesignKeyNotInGrammar" in next_out + next_err
     assert authority.read_bytes() == authority_before
     assert (root / HANDOVER).read_bytes() == handover_before
 
@@ -800,7 +880,11 @@ def test_existing_unix_socket_design_destination_refuses_without_projection_muta
                 {"documents": {"design": {"destination": str(REPOSITORY_DESTINATION)}}}
             )
         )
-        environment = {**os.environ, "HOME": str(home)}
+        environment = {
+            **os.environ,
+            "HOME": str(home),
+            "NWAVE_AGENTS_HOME": str(home),
+        }
         _bootstrap_value(root, environment, tmp_path)
         authority = root / REPOSITORY_DESTINATION
         authority.parent.mkdir(parents=True)
@@ -862,12 +946,12 @@ def _replace(manifest: dict, location: tuple[str | int, ...], value: object) -> 
     [
         ("boolean schema version", ("schema_version",), True),
         ("floating-point schema version", ("schema_version",), 1.0),
-        ("Markdown-prefixed heading", ("authority", "heading"), "# Widget color"),
-        ("multiline heading", ("authority", "heading"), "Widget\ncolor"),
+        ("Markdown-prefixed heading", ("authority",), {"heading": "# Widget color"}),
+        ("multiline heading", ("authority",), {"heading": "Widget\ncolor"}),
         ("trimmed-empty purpose", ("purpose",), " \t "),
-        ("duplicate constraints", ("constraints",), ["same", "same"]),
+        ("duplicate constraints", ("constraints",), [MANIFEST["constraints"][0]] * 2),
         ("duplicate targets", ("targets",), [MANIFEST["targets"][0]] * 2),
-        ("duplicate decisions", ("decisions",), ["same", "same"]),
+        ("duplicate decisions", ("decisions",), [MANIFEST["decisions"][0]] * 2),
         (
             "duplicate reuse candidates",
             ("reuse_analysis", "candidates"),
@@ -929,7 +1013,12 @@ def test_closed_v1_construction_refuses_invalid_text_collections_and_locators(
     manifest = json.loads(json.dumps(MANIFEST))
     _replace(manifest, location, value)
 
-    _assert_refusal_without_projection_mutation(root, environment, manifest)
+    rows = _assert_refusal_without_projection_mutation(root, environment, manifest)
+    if case in ("duplicate constraints", "duplicate decisions"):
+        assert rows["WHAT"] == "InvalidDesignDocument"
+        assert "DesignListEntryRepeated" in rows["WHY"]
+        assert f"manifest.{location[0]}" in rows["WHY"]
+        assert value[0]["ref"] in rows["WHY"]
 
 
 def test_public_construction_refuses_a_new_target_required_as_acceptance_support(
@@ -940,7 +1029,11 @@ def test_public_construction_refuses_a_new_target_required_as_acceptance_support
     _bootstrap_value(root, environment, tmp_path)
     manifest = json.loads(json.dumps(MANIFEST))
     manifest["targets"] = [
-        {"path": "tests/design_support.py", "decision": "CREATE_NEW"}
+        {
+            "path": "tests/design_support.py",
+            "decision": "CREATE_NEW",
+            "reason": MANIFEST["targets"][0]["reason"],
+        }
     ]
     manifest["acceptance_supports"] = ["tests/design_support.py"]
 
@@ -970,11 +1063,21 @@ def test_public_design_refusal_carries_every_independent_manifest_defect(
         "one public refusal must name both independent defects so the architect "
         f"corrects them in one submission; WHY was {why!r}"
     )
-    assert single_rows.get("WHY") and single_rows["WHY"] in why, (
-        "each defect inside a joint refusal keeps its single-defect statement"
+    assert "UNRUN: bound-state reference checks (manifest did not decode)" in why
+    single_entries = [
+        entry
+        for entry in single_rows.get("WHY", "").splitlines()
+        if not re.fullmatch(r"\d+ diagnostic entries:", entry)
+    ]
+    assert single_entries and all(entry in why for entry in single_entries), (
+        "each defect and UNRUN discriminator keeps its single-defect statement"
     )
     how, single_how = rows.get("HOW", ""), single_rows.get("HOW", "")
-    assert single_how and how != single_how and how.endswith(single_how), (
+    assert (
+        single_how
+        and "fix every numbered defect in WHY" in how
+        and how.endswith(single_how)
+    ), (
         "a joint refusal asks for every listed defect, then keeps the grammar HOW; "
         f"HOW was {how!r}"
     )
@@ -1009,7 +1112,7 @@ def test_applicable_boundaries_reject_duplicate_required_entries(
 ) -> None:
     root, environment = design_repository
     _bootstrap_value(root, environment, tmp_path)
-    manifest = json.loads(json.dumps(MANIFEST))
+    manifest = json.loads(json.dumps(WIDGET_INPUT))
     manifest["boundaries"] = {
         "applicability": "applicable",
         "driving_port": "des design",
@@ -1024,29 +1127,24 @@ def test_applicable_boundaries_reject_duplicate_required_entries(
         ],
     }
     manifest["boundaries"][field] = value
+    manifest = design_manifest(manifest, WIDGET_INPUT["purpose"], 1)
 
-    _assert_refusal_without_projection_mutation(root, environment, manifest)
+    rows = _assert_refusal_without_projection_mutation(root, environment, manifest)
+    if field == "driven_ports":
+        assert rows["WHAT"] == "InvalidDesignDocument"
+        assert "DesignListEntryRepeated" in rows["WHY"]
+        assert "manifest.boundaries.driven_ports" in rows["WHY"]
+        assert manifest["boundaries"]["driven_ports"][0]["ref"] in rows["WHY"]
 
 
-def test_trimmed_heading_normalizes_to_the_public_document_locator(
+def test_author_heading_is_refused_instead_of_becoming_document_identity(
     design_repository: tuple[Path, dict[str, str]], tmp_path: Path
 ) -> None:
     root, environment = design_repository
     _bootstrap_value(root, environment, tmp_path)
     manifest = json.loads(json.dumps(MANIFEST))
-    manifest["authority"]["heading"] = "  Widget color  "
-
-    code, out, err = _design(root, environment, manifest)
-    rows = _terminal(out, err)
-
-    assert code == 0 and rows.get("DELIVERY-OUTCOME") == "Success", (
-        "a heading with surrounding whitespace must normalize as closed v1 text, "
-        f"not be treated as a distinct authority (stdout={out!r}, stderr={err!r})"
-    )
-    assert rows.get("DOCUMENT") == f"{REPOSITORY_DESTINATION}#Widget color", (
-        "the public locator must use the trimmed heading so retries and H2 ownership "
-        "refer to one normalized section"
-    )
+    manifest["authority"] = {"heading": "  Widget color  "}
+    _assert_refusal_without_projection_mutation(root, environment, manifest)
 
 
 @pytest.mark.parametrize(
@@ -1055,7 +1153,7 @@ def test_trimmed_heading_normalizes_to_the_public_document_locator(
         (
             "not-applicable prefactoring",
             {"applicability": "not_applicable", "reason": "No safe move is needed."},
-            MANIFEST["boundaries"],
+            WIDGET_INPUT["boundaries"],
         ),
         (
             "applicable prefactoring and boundaries",
@@ -1094,9 +1192,11 @@ def test_closed_v1_optional_prefactoring_and_boundaries_forms_are_constructible(
 ) -> None:
     root, environment = design_repository
     _bootstrap_value(root, environment, tmp_path)
-    manifest = json.loads(json.dumps(MANIFEST))
-    manifest["prefactoring"] = prefactoring
-    manifest["boundaries"] = boundaries
+    manifest = design_manifest(
+        {**WIDGET_INPUT, "prefactoring": prefactoring, "boundaries": boundaries},
+        WIDGET_INPUT["purpose"],
+        1,
+    )
 
     code, out, err = _design(root, environment, manifest)
     rows = _terminal(out, err)
@@ -1187,7 +1287,7 @@ def test_applicable_agreement_analysis_renders_every_declared_party(
     """Each declared producer/consumer pair is readable in the rendered authority."""
     root, environment = design_repository
     _bootstrap_value(root, environment, tmp_path)
-    manifest = json.loads(json.dumps(MANIFEST))
+    manifest = json.loads(json.dumps(WIDGET_INPUT))
     manifest["agreement_analysis"] = APPLICABLE_AGREEMENT_ANALYSIS
     manifest["impact_closure"] = {
         "applicability": "applicable",
@@ -1206,6 +1306,7 @@ def test_applicable_agreement_analysis_renders_every_declared_party(
             },
         ],
     }
+    manifest = design_manifest(manifest, WIDGET_INPUT["purpose"], 1)
 
     code, out, err = _design(root, environment, manifest)
     rows = _terminal(out, err)
@@ -1274,18 +1375,38 @@ def test_applicable_agreement_analysis_rejects_malformed_parties(
 ) -> None:
     root, environment = design_repository
     _bootstrap_value(root, environment, tmp_path)
-    manifest = json.loads(json.dumps(MANIFEST))
+    manifest = json.loads(json.dumps(WIDGET_INPUT))
     manifest["agreement_analysis"] = agreement_analysis
+    manifest = design_manifest(manifest, WIDGET_INPUT["purpose"], 1)
+    if case == "duplicate declared parties":
+        manifest["agreement_analysis"]["parties"] = [
+            manifest["agreement_analysis"]["parties"][0]
+        ] * 2
 
     _assert_refusal_without_projection_mutation(root, environment, manifest)
 
 
 def test_default_repository_relative_design_destination_is_used_without_config(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = base_repository(tmp_path / "repository")
     home = tmp_path / "home"
-    environment = {**os.environ, "HOME": str(home)}
+    home.mkdir()
+    inherited_agents_home = tmp_path / "inherited-agents-home"
+    (inherited_agents_home / ".nwave").mkdir(parents=True)
+    (inherited_agents_home / ".nwave" / "config.json").write_text(
+        json.dumps({"documents": {"design": {"destination": str(GLOBAL_DESTINATION)}}})
+    )
+    # This inherited tier is capable of redirecting DESIGN when intentionally
+    # selected, as the separate selected-global scenario observes. The default
+    # fixture must explicitly select its empty isolated tier instead.
+    monkeypatch.setenv("NWAVE_AGENTS_HOME", str(inherited_agents_home))
+    environment = {
+        **os.environ,
+        "HOME": str(home),
+        "NWAVE_AGENTS_HOME": str(home),
+    }
     _bootstrap_value(root, environment, tmp_path)
 
     code, out, err = _design(root, environment, MANIFEST)
@@ -1298,6 +1419,13 @@ def test_default_repository_relative_design_destination_is_used_without_config(
     assert (root / REPOSITORY_DESTINATION).exists(), (
         "the default documents.design.destination must be the repository-relative "
         "docs/product/architecture/brief.md authority"
+    )
+    assert not (root / GLOBAL_DESTINATION).exists(), (
+        "WHAT: an inherited agents-home selector redirected the default fixture. "
+        "WHY: the no-global-config observation explicitly selects its isolated "
+        "empty home, not the capable foreign configuration. "
+        "HOW: retain the fixture's explicit NWAVE_AGENTS_HOME alongside HOME; "
+        "keep intentional selected-global behavior in its separate scenario."
     )
 
 
@@ -1489,7 +1617,7 @@ def test_only_a_complete_h2_line_owns_a_section(
     _bootstrap_value(root, environment, tmp_path)
     prose_with_heading_bytes = (
         b"# Architecture authority\n\n"
-        b"This prose quotes ## Widget color but owns no DESIGN section.\n\n"
+        b"This prose quotes ## Value 1 but owns no DESIGN section.\n\n"
     )
     authority = _track_authority(root, prose_with_heading_bytes)
 
@@ -1641,7 +1769,7 @@ def test_design_inserts_a_separator_before_an_owned_section(
     rows = _terminal(out, err)
     authority_on_disk = authority.read_bytes()
     state = _design_state(root, environment)
-    expected_locator = f"{REPOSITORY_DESTINATION}#Widget color"
+    expected_locator = f"{REPOSITORY_DESTINATION}#Value 1"
 
     assert code == 0 and rows.get("DELIVERY-OUTCOME") == "Success", out + err
     assert authority_on_disk == (
@@ -1653,54 +1781,36 @@ def test_design_inserts_a_separator_before_an_owned_section(
     assert (root / HANDOVER).read_bytes() != handover_before
 
 
-#: The typed facts ONE architect turn returns, in the exact provider-neutral
-#: shape `nw-solution-architect` answers under.  `authority_locator` is already
-#: part of that declared payload; the value below names the section the role
-#: says its record is about, which is the section the step must publish.
-ROLE_TURN_FACTS = {
-    "targets": [{"path": "src/widget.py", "decision": "EXTEND"}],
-    "paradigm": "object_oriented",
-    "decisions": ["Keep color validation at Widget construction."],
-    "oracle": "tests/test_widget.py::test_selected_color",
-    "acceptance_supports": [],
-    "verification": [["pytest", "-q", "tests/test_widget.py"]],
-    "oracle_verification_index": 0,
-    "authority_locator": f"{REPOSITORY_DESTINATION}#Widget color",
-    "architectural_tests": {
-        "applicability": "not_applicable",
-        "reason": "The fixture has no structural boundary change.",
-    },
-    "contract_tests": {
-        "applicability": "not_applicable",
-        "reason": "The fixture changes no shared contract.",
-    },
-    "prefactoring": {
-        "applicability": "not_applicable",
-        "reason": "The fixture requires no preservation move.",
-    },
-    "agreement_analysis": {
-        "applicability": "not_applicable",
-        "reason": "The fixture has no affected agreement.",
-    },
-}
-
-ROLE_TURN_FINDING = (
-    "the previously bound facts named no architecture authority section, so "
-    "re-author them for this value"
-)
-
-
 # --- shared feature DESIGN: one section per Request beside the value sections ---
 
-SHARED_MANIFEST = {
-    **json.loads(json.dumps(MANIFEST)),
-    "authority": {"heading": "Shared feature DESIGN constructor"},
+SHARED_INPUT = {
+    **json.loads(json.dumps(WIDGET_INPUT)),
     "purpose": "Persist the design shared by every value of one Request once.",
     "constraints": ["Value sections carry only deltas."],
     "oracle": "tests/test_shared.py::test_shared_design",
     "verification": [["pytest", "-q", "tests/test_shared.py"]],
 }
-SHARED_HEADING = SHARED_MANIFEST["authority"]["heading"]
+# Shared facts are distinct current declarations, not copies of value facts.
+SHARED_INPUT["decisions"] = ["Keep shared validation at its existing owner."]
+SHARED_INPUT["targets"][0]["reason"] = "The shared fixture names its existing owner."
+SHARED_INPUT["reuse_analysis"]["candidates"][0]["reason"] = (
+    "Consult the shared existing owner."
+)
+for name in (
+    "architectural_tests",
+    "contract_tests",
+    "prefactoring",
+    "agreement_analysis",
+    "impact_closure",
+    "boundaries",
+):
+    SHARED_INPUT[name]["reason"] = "Shared fixture: " + SHARED_INPUT[name]["reason"]
+SHARED_INPUT["public_oracle"] = {
+    name: "Shared fixture: " + text
+    for name, text in SHARED_INPUT["public_oracle"].items()
+}
+SHARED_MANIFEST = design_manifest(SHARED_INPUT, SHARED_INPUT["purpose"], 0)
+SHARED_HEADING = "Shared design"
 FEATURE_FLAGS = ("--feature", "shared-widget")
 
 
@@ -1767,7 +1877,7 @@ def test_shared_feature_design_is_constructed_once_and_its_change_is_visible(
     assert document_path is not None and document_path.exists(), (
         "value 1's bound locator must name the scope-resolved document"
     )
-    value_section = _section(document_path.read_text(), "Widget color")
+    value_section = _section(document_path.read_text(), "Value 1")
     raw_before = (root / HANDOVER).read_bytes()
 
     code, out, err = _shared(root, environment, SHARED_MANIFEST)
@@ -1785,13 +1895,13 @@ def test_shared_feature_design_is_constructed_once_and_its_change_is_visible(
     assert (
         "Persist the design shared by every value of one Request once."
         in (shared_section)
-        and "- Value sections carry only deltas." in shared_section
+        and "Value sections carry only deltas." in shared_section
     ), "the generated shared section must render the manifest fields"
     assert (
         rows.get("SECTION-SHA256")
         == hashlib.sha256(shared_section.encode()).hexdigest()
     ), "SECTION-SHA256 must digest the section bytes in the document"
-    assert _section(document, "Widget color") == value_section, (
+    assert _section(document, "Value 1") == value_section, (
         "the value section must be preserved byte-for-byte beside the shared one"
     )
     bound = json.loads((root / HANDOVER).read_text())
@@ -1807,8 +1917,14 @@ def test_shared_feature_design_is_constructed_once_and_its_change_is_visible(
     assert _bytes_of(root) == settled, "an identical rebind must change no byte"
 
     # divergent without explicit replacement refuses
-    changed = json.loads(json.dumps(SHARED_MANIFEST))
-    changed["constraints"] = ["Value sections carry only deltas.", "Changed."]
+    changed = design_manifest(
+        {
+            **SHARED_INPUT,
+            "constraints": ["Value sections carry only deltas.", "Changed."],
+        },
+        SHARED_INPUT["purpose"],
+        0,
+    )
     code, out, err = _shared(root, environment, changed)
     assert code != 0 and _terminal(out, err).get("WHAT") == "DesignAuthorityDrift"
     assert _bytes_of(root) == settled
@@ -1823,8 +1939,8 @@ def test_shared_feature_design_is_constructed_once_and_its_change_is_visible(
         "a semantic change must change handover bytes so old evidence is historical"
     )
     new_document = document_path.read_text()
-    assert "- Changed." in _section(new_document, SHARED_HEADING)
-    assert _section(new_document, "Widget color") == value_section
+    assert "Changed." in _section(new_document, SHARED_HEADING)
+    assert _section(new_document, "Value 1") == value_section
 
 
 @pytest.mark.parametrize(
@@ -1859,21 +1975,17 @@ def test_shared_and_value_headings_can_never_collide_in_either_direction(
     root, environment = _feature_repository(design_repository, tmp_path)
     before = _bytes_of(root)
     owned = json.loads(json.dumps(SHARED_MANIFEST))
-    owned["authority"]["heading"] = "Widget color"
+    owned["authority"] = {"heading": "Value 1"}
     code, out, err = _shared(root, environment, owned)
-    assert (
-        code != 0 and _terminal(out, err).get("WHAT") == "DesignAuthorityHeadingOwned"
-    )
+    assert code != 0 and _terminal(out, err).get("WHAT") == "InvalidDesignDocument"
     assert _bytes_of(root) == before
 
     assert _shared(root, environment, SHARED_MANIFEST)[0] == 0
     bound = _bytes_of(root)
     stolen = json.loads(json.dumps(MANIFEST))
-    stolen["authority"]["heading"] = SHARED_HEADING
+    stolen["authority"] = {"heading": SHARED_HEADING}
     code, out, err = _design(root, environment, stolen, value=1, replace_current=True)
-    assert (
-        code != 0 and _terminal(out, err).get("WHAT") == "DesignAuthorityHeadingOwned"
-    )
+    assert code != 0 and _terminal(out, err).get("WHAT") == "InvalidDesignDocument"
     assert _bytes_of(root) == bound
 
 
@@ -1911,11 +2023,25 @@ def test_shared_design_on_scopeless_legacy_handover_never_falls_back_to_project(
 
 # --- shared binding: boundary controls (preservation, malformed, legacy, currentness) ---
 
-SECOND_MANIFEST = {
-    **json.loads(json.dumps(MANIFEST)),
-    "authority": {"heading": "Widget size"},
-    "purpose": "Expose the selected widget size.",
+SIZE_INPUT = json.loads(json.dumps(WIDGET_INPUT))
+SIZE_INPUT["purpose"] = "Expose the selected widget size."
+SIZE_INPUT["constraints"] = ["Preserve existing size callers."]
+SIZE_INPUT["decisions"] = ["Keep size validation at Widget construction."]
+SIZE_INPUT["targets"][0]["reason"] = "Widget already owns size."
+SIZE_INPUT["reuse_analysis"]["candidates"][0]["reason"] = "Existing size owner."
+for name in (
+    "architectural_tests",
+    "contract_tests",
+    "prefactoring",
+    "agreement_analysis",
+    "impact_closure",
+    "boundaries",
+):
+    SIZE_INPUT[name]["reason"] = "Size fixture: " + SIZE_INPUT[name]["reason"]
+SIZE_INPUT["public_oracle"] = {
+    name: "Size fixture: " + text for name, text in SIZE_INPUT["public_oracle"].items()
 }
+SECOND_MANIFEST = design_manifest(SIZE_INPUT, SIZE_INPUT["purpose"], 2)
 
 
 def _shared_binding(root: Path) -> object:
@@ -2276,8 +2402,14 @@ def test_previous_proof_is_historical_after_shared_change_and_current_after_iden
         "an identical shared rebind must leave the proof current"
     )
 
-    changed = json.loads(json.dumps(SHARED_MANIFEST))
-    changed["constraints"] = ["Value sections carry only deltas.", "Changed."]
+    changed = design_manifest(
+        {
+            **SHARED_INPUT,
+            "constraints": ["Value sections carry only deltas.", "Changed."],
+        },
+        SHARED_INPUT["purpose"],
+        0,
+    )
     code, out, err = _shared(root, environment, changed, "--replace-current")
     assert code == 0 and _terminal(out, err).get("SHARED") == "replaced", out + err
     assert state()["CANDIDATE"] == f"{candidate} bytes moved", (
@@ -2301,7 +2433,11 @@ def _provider_watched(root: Path, environment: dict[str, str], tmp_path: Path):
         package_parent=PACKAGE_PARENT,
     )
     watched = hermetic_environment(
-        provider_environment | {"HOME": environment["HOME"]},
+        provider_environment
+        | {
+            "HOME": environment["HOME"],
+            "NWAVE_AGENTS_HOME": environment["NWAVE_AGENTS_HOME"],
+        },
         tmp_path / "watch-claude-config",
     )
     return watched, turns
@@ -2386,11 +2522,11 @@ def test_replace_current_without_a_binding_or_on_another_heading_preserves_bytes
     assert _shared(root, environment, SHARED_MANIFEST)[0] == 0
     bound = _bytes_of(root)
     other = json.loads(json.dumps(SHARED_MANIFEST))
-    other["authority"]["heading"] = "Another shared heading"
+    other["authority"] = {"heading": "Another shared heading"}
     for extra in (("--replace-current",), ()):
         code, out, err = _shared(root, environment, other, *extra)
         assert code != 0 and (
-            _terminal(out, err).get("WHAT") == "DesignAuthorityIdentityMismatch"
+            _terminal(out, err).get("WHAT") == "InvalidDesignDocument"
         ), f"a different shared heading must refuse {extra} (out={out!r}, err={err!r})"
         assert _bytes_of(root) == bound, "a wrong-heading call must change no byte"
 
@@ -2400,8 +2536,14 @@ def test_shared_construction_buys_no_provider_turn(
 ) -> None:
     root, environment = _feature_repository(design_repository, tmp_path)
     watched, turns = _provider_watched(root, environment, tmp_path)
-    changed = json.loads(json.dumps(SHARED_MANIFEST))
-    changed["constraints"] = ["Value sections carry only deltas.", "Changed."]
+    changed = design_manifest(
+        {
+            **SHARED_INPUT,
+            "constraints": ["Value sections carry only deltas.", "Changed."],
+        },
+        SHARED_INPUT["purpose"],
+        0,
+    )
     for manifest, extra in (
         (SHARED_MANIFEST, ()),
         (SHARED_MANIFEST, ()),

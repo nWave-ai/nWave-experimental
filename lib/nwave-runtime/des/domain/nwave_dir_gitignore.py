@@ -39,6 +39,11 @@ def nested_gitignore_content() -> str:
     return _CONTENT
 
 
+def runtime_gitignore_content() -> bytes:
+    """Canonical runtime-only ignore bytes; project configuration lives outside."""
+    return f"{_MARKER}\n*\n".encode()
+
+
 def ensure_nwave_gitignore(path: Path) -> None:
     """Ensure a .gitignore exists in the .nwave/ ancestor of ``path``.
 

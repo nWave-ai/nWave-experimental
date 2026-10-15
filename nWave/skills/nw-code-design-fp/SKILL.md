@@ -32,6 +32,27 @@ no dedicated FP-idiom skill: load this catalog and `nw-fp-domain-modeling` alone
 (both are language-agnostic) rather than silently substituting a listed
 language's skill — the wrong language's idioms are worse than none.
 
+## Functional Core
+
+Inside domain and application code:
+
+- **Pure core, effects at the edge** — domain functions take values and return
+  values; I/O, time, randomness and persistence stay in a thin shell that calls
+  the core. No mutation and no shared state in the core.
+- **Total functions** — every domain outcome is a case of the return type
+  (see Railway, rule 5); no exception or null for a domain outcome.
+- **Composition** — small single-purpose functions composed through pipelines
+  and the railway; dependencies as leading parameters (see Dependencies).
+- **Laws** — when the design declares an algebra, preserve each law; use
+  `nw-fp-algebra-driven-design` to implement it, never to invent a new one.
+
+**Refactoring order within each delta, verified once with it** — first readability (names, dead code,
+magic values), then complexity and duplication, then move each decision into
+the type or function that owns its data, then replace primitives and flags with
+domain types and choice types, then replace conditionals on data with pattern
+matching over a sum type, then extract the effects to the shell. Behaviour and
+declared laws stay unchanged.
+
 ## Algebra-Driven Design
 
 Discover the API before implementing by specifying the rules (equations)
@@ -90,13 +111,15 @@ the type level. Every rule encoded in a type needs no unit test.
    Address AND OrderLines).
 2. **OR (choice types)** — value is ONE OF alternatives (ProductCode = Widget OR
    Gizmo). Compose recursively to express any domain structure.
-3. **Domain precision** — distinguish concepts when confusion or an invalid
-   state is an observed risk. Prefer native records/unions/opaque or zero-cost
-   types; raw primitives at a documented sufficient boundary are not forbidden.
-4. **Smart constructors** — use validation at the actual invariant boundary
-   when raw construction could violate it. Reuse the existing owner; do not
-   require a wrapper, repeated checks or allocation merely to follow a template.
-   A native representation may already make the invalid state unconstructible.
+3. **Domain precision** — a domain concept gets its own type (record, choice
+   type, opaque or newtype-style wrapper), never a raw primitive, string or bare
+   collection inside the core. Prefer zero-cost native forms where the language
+   offers them; raw primitives belong only at the adapters.
+4. **Smart constructors — parse, don't validate** — raw input becomes a domain
+   type once, at the boundary, through a constructor that returns a result; the
+   core never re-checks it. Reuse the existing owner of an invariant; a native
+   representation that already makes the invalid state unconstructible needs no
+   extra wrapper.
 
 ### Make illegal states unrepresentable
 
@@ -137,7 +160,7 @@ types, exhaustiveness warnings reveal unhandled cases. New states (e.g.
 ### Decision tree — how to model a concept?
 
 ```
-Simple value with real validation risk? → Native precise type; smart constructor only if needed
+Simple value with a domain meaning?   → Its own type; smart constructor at the boundary
 One of several alternatives?         → Choice Type (sum)
 Groups several values?               → Record Type (product)
 Distinct lifecycle stages?           → State Machine with Types

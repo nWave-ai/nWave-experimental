@@ -13,7 +13,8 @@ this twice cannot integrate twice.
 IT BUYS NO TURN.  Integration is enactment, and Section 4b keeps enactment in
 the software whole.  The handover is closed here, with the turn records
 released: a graph outliving its own integrated candidate would make the next
-`des state` name work that is already in the destination.
+`des state` name work that is already in this destination worktree. Integration
+inside a linked lane still owes the explicit lane-to-principal integration.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from pathlib import Path
 
 from des.application.delivery_steps import DeliverySteps
 from des.cli._repo_root_arg import add_repo_root_argument
+from des.cli.lane import LaneSteps, LinkedLane, Unobservable, lane_integrate_invocation
 from des.cli.step_next import after_step, moves_after_refusal
 from des.cli.step_terminal import (
     NOTHING_OWED,
@@ -31,14 +33,6 @@ from des.cli.step_terminal import (
     refuse,
     resolved_root,
     succeed,
-)
-
-
-#: One direction, because this step buys no turn: there is never a role's
-#: answer for its refusal to point at, and the shared terminal says so itself.
-INTEGRATED = (
-    "the candidate is the destination, the owned index is reconciled and the "
-    "graph is closed -- this Request is done"
 )
 
 
@@ -68,10 +62,29 @@ def main(argv: list[str] | None = None) -> int:
             diagnostic=outcome.diagnostic,
             role=outcome.role,
         )
-    return succeed(
-        list(outcome.facts),
-        after_step(root) if _still_owed(root) else NOTHING_OWED,
-    )
+    facts = list(outcome.facts)
+    identity = LaneSteps().lane_identity(root)
+    if isinstance(identity, LinkedLane):
+        facts.extend(
+            (
+                f"DESTINATION-WORKTREE: {identity.worktree}",
+                f"DESTINATION-BRANCH: {identity.branch}",
+                f"PRINCIPAL-WORKTREE: {identity.principal_worktree}",
+                f"PRINCIPAL-HEAD: {identity.principal_head}",
+            )
+        )
+        return succeed(
+            facts,
+            lane_integrate_invocation(identity.principal_worktree, identity.worktree),
+        )
+    if isinstance(identity, Unobservable):
+        facts.append(f"LANE-IDENTITY: unknown: {identity.why}")
+        return succeed(
+            facts,
+            f"inspect Git worktree registration for {root}; "
+            "the remaining lane integration step is unknown",
+        )
+    return succeed(facts, after_step(root) if _still_owed(root) else NOTHING_OWED)
 
 
 def _still_owed(root: Path) -> bool:

@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[4]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from des.adapters.driven.config.workspace_paths import resolve_workspace_paths
 from tests.common.in_process_cli import run_cli_in_process
 from tests.des._helpers.host_facts import supplied_arguments
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
@@ -73,6 +74,7 @@ class NativeOracleJourney:
     def __init__(self, workspace: Path, *, subprocess_port: bool = False):
         self.workspace = workspace
         self.root = base_repository(workspace / "root")
+        self.baseline = git(self.root, "rev-parse", "HEAD")
         self.subprocess_port = subprocess_port
         node = shutil.which("node")
         require(
@@ -242,6 +244,13 @@ class NativeOracleJourney:
         argv: list[str] | None = None,
         companion_files: dict[str, str] | None = None,
     ) -> MeasuredOutcome:
+        # The deleted-candidate assertion below belongs to this declared COLD
+        # fixture; configured-reuse workspaces have a different lifetime.
+        require(
+            resolve_workspace_paths(self.root).outputs is None,
+            "native observation fixture unexpectedly declares reusable outputs",
+            "leave verification.reuse.outputs undeclared for the cold-cleanup observation",
+        )
         oracle = ORACLE
         source = (
             "native_assertion_failure.test.mjs"
@@ -297,7 +306,17 @@ class NativeOracleJourney:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
         code, out, err = self.invoke(
-            ["oracle", "--repo-root", str(self.root), "--value", "1", "--input", "-"],
+            [
+                "oracle",
+                "--repo-root",
+                str(self.root),
+                "--value",
+                "1",
+                "--baseline",
+                self.baseline,
+                "--input",
+                "-",
+            ],
             stdin=json.dumps(
                 {
                     "structured_output": {
@@ -309,6 +328,12 @@ class NativeOracleJourney:
         )
         print(out, end="")
         print(err, end="", file=sys.stderr)
+        require(
+            block(out, err).get("ORACLE-BASELINE")
+            == f"{self.baseline} source=explicit",
+            f"native measurement lacks the explicit original-source provenance: {out}{err}",
+            "accept --baseline and report the full resolved source measured in isolation",
+        )
         # The producer record is read from DES-retained actual process evidence,
         # never by re-reading the fixture body or constructing its expected output.
         records = []
@@ -341,10 +366,18 @@ class NativeOracleJourney:
             f"native process did not complete: {execution}",
             "retain measured completion rather than trusting a printed record",
         )
+        registered = [
+            line.removeprefix("worktree ")
+            for line in git(self.root, "worktree", "list", "--porcelain").splitlines()
+            if line.startswith("worktree ")
+        ]
         require(
-            execution.get("cwd") == str(self.root),
-            f"native execution ran outside its declared target: {execution}",
-            "execute the vector from the bound target checkout",
+            bool(execution.get("cwd"))
+            and Path(execution["cwd"]) != self.root
+            and not Path(execution["cwd"]).exists()
+            and registered == [str(self.root)],
+            f"baseline execution was not isolated and cleaned: {execution}; worktrees={registered}",
+            "measure inside the disposable original-source checkout and release it without moving the subject",
         )
         histories = []
         for ref in git(
@@ -365,6 +398,16 @@ class NativeOracleJourney:
             "append exactly once for this isolated one-invocation population",
         )
         witness = histories[0]
+        require(
+            witness.get("baseline")
+            == {
+                "sha": self.baseline,
+                "tree": git(self.root, "rev-parse", f"{self.baseline}^{{tree}}"),
+                "source": "explicit",
+            },
+            f"retained native witness does not bind the measured original source: {witness}",
+            "record the actual explicit baseline SHA and tree alongside unchanged native verdict evidence",
+        )
         require(
             all(
                 witness.get(key)
@@ -453,10 +496,30 @@ class NativeOracleJourney:
                 "measure native evidence without JUnit instrumentation",
             )
         else:
+            declared = [
+                str(PYTHON),
+                "-m",
+                "pytest",
+                "tests/acceptance/test_native_value.py",
+                "-q",
+                "--junitxml=actual-report.xml",
+            ]
             require(
-                (self.root / "actual-report.xml").is_file(),
-                "actual report-backed assertion report is missing",
-                "preserve fresh native runner report capture",
+                row["axis"] == "junit-report"
+                and row["counts"] == [1, 0, 1]
+                and row["completed"] is True
+                and row["argv"] == declared
+                and bool(row["native_evidence_locator"])
+                and result.execution["incomplete"] is False
+                and result.execution["argv"] == declared,
+                f"fresh report-backed assertion evidence is incomplete: {row}; execution={result.execution}",
+                "retain this completed report-generating invocation, its fresh JUnit axis and one-test/zero-error/one-failure counts before cold cleanup",
+            )
+            require(
+                not (self.root / "actual-report.xml").exists()
+                and not list(self.root.rglob("*.xml")),
+                "isolated native reporting left XML in the host workspace",
+                "keep report generation inside the cold checkout and retain evidence only through the existing DES-owned record",
             )
 
     @staticmethod

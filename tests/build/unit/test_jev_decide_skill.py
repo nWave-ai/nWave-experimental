@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import subprocess
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -128,6 +130,23 @@ def test_mixed_batch_keeps_authored_request_and_raw_response(tmp_path, wire, cap
     assert wire["requests"] == [path.read_bytes()]
     assert output.read_bytes() == wire["body"]
     assert "local-test-key" not in output.read_text() + capsys.readouterr().out
+
+
+def test_stdio_exchange_needs_no_files(tmp_path, wire):
+    """A role without file-write permission sends the request on stdin, reads stdout."""
+    authored = json.dumps(_request(), indent=3).encode()
+    completed = subprocess.run(
+        [sys.executable, str(_SCRIPT), "--request", "-", "--output", "-"]
+        + ["--endpoint", wire["endpoint"]],
+        input=authored,
+        capture_output=True,
+        cwd=tmp_path,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert wire["requests"] == [authored]
+    assert completed.stdout == wire["body"]
+    assert list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.parametrize(

@@ -19,7 +19,7 @@ def _misalign(subject: _Subject, expected: str) -> None:
     code, out, err = _call(
         subject.root,
         "design",
-        json.dumps(_value_manifest(expected=expected)),
+        json.dumps(_value_manifest(expected=expected, shared=subject.shared)),
         value=1,
         replace_current=True,
     )

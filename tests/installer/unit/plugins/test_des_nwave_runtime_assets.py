@@ -161,3 +161,352 @@ def test_public_wheel_data_tier_installs_without_a_development_checkout(
 
     assert result.success is True, result.message
     assert (claude_dir / "data" / "orchestrator-affordance.yaml").is_file()
+
+
+def _runtime_message(what: str, how: str) -> str:
+    return (
+        f"WHAT: {what}. WHY: runtime role families must be public-only in every "
+        f"channel, independently of host dev_mode. HOW: {how}."
+    )
+
+
+def _family_snapshot(root: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and "__pycache__" not in path.parts
+    }
+
+
+def _synthetic_runtime_tier(base: Path, channel: str, selection: str):
+    """Synthetic private sentinels avoid freezing any real private source."""
+    import logging
+
+    import yaml
+
+    project = base / "source"
+    framework = project / "nWave" if channel == "checkout" else base / channel
+    tier = framework / "nWave" if channel == "wheel" else framework
+    agents = framework / "agents" / "nw" if channel == "dist" else framework / "agents"
+    skills = framework / "skills"
+    agents.mkdir(parents=True)
+    skills.mkdir(parents=True)
+    (tier / "data").mkdir(parents=True)
+    (tier / "data" / "probe.json").write_text("{}\n")
+    (framework / "templates").mkdir(parents=True)
+    (framework / "templates" / "probe.tmpl").write_text("public template\n")
+    catalog = {
+        "agents": (
+            {}
+            if selection == "empty"
+            else {
+                "public-probe": {"public": selection == "public"},
+                "PRIVATE-runtime-probe": {"public": False},
+            }
+        ),
+        "skills": {"nw-PRIVATE-runtime-skill": {"public": False}},
+    }
+    (tier / "framework-catalog.yaml").write_text(yaml.safe_dump(catalog))
+    # Family catalog lookup uses the canonical framework tier, even when the
+    # wheel runtime's data/hooks reside under its nested nWave child.
+    if tier != framework:
+        (framework / "framework-catalog.yaml").write_text(yaml.safe_dump(catalog))
+        (tier / "hooks").mkdir()
+        (tier / "hooks" / "old-hook.py").write_text("# wheel hooks\n")
+    for name, owned_skills in (
+        ("nw-public-probe", ["nw-public-probe-skill", "nw-PRIVATE-runtime-skill"]),
+        ("nw-PRIVATE-runtime-probe", ["nw-PRIVATE-runtime-skill"]),
+        ("nw-uncatalogued-probe", ["nw-uncatalogued-probe-skill"]),
+    ):
+        metadata = {
+            "name": name,
+            "description": "synthetic role",
+            "skills": owned_skills,
+        }
+        (agents / f"{name}.md").write_text(
+            "---\n"
+            + yaml.safe_dump(metadata, sort_keys=False)
+            + "---\nPublic probe body.\n"
+        )
+    for name in (
+        "nw-public-probe-skill",
+        "nw-PRIVATE-runtime-skill",
+        "nw-uncatalogued-probe-skill",
+        "nw-command-probe",
+    ):
+        directory = skills / name
+        directory.mkdir()
+        metadata = {
+            "name": name,
+            "description": "synthetic skill",
+            "user-invocable": False,
+        }
+        if name != "nw-command-probe":
+            metadata["disable-model-invocation"] = True
+        (directory / "SKILL.md").write_text(
+            "---\n" + yaml.safe_dump(metadata) + "---\nPublic probe knowledge.\n"
+        )
+    module = (
+        project / "src" / "des"
+        if channel == "checkout"
+        else framework / "lib" / "python" / "des"
+    )
+    module.mkdir(parents=True)
+    (module / "__init__.py").write_text('"""Synthetic copy-boundary input."""\n')
+    home = base / "home"
+    home.mkdir()
+    context = InstallContext(
+        claude_dir=home / ".claude",
+        scripts_dir=project / "scripts",
+        templates_dir=framework / "templates",
+        logger=logging.getLogger("runtime-public-family-observation"),
+        project_root=project if channel == "checkout" else None,
+        framework_source=framework,
+    )
+    return context, framework, tier, agents, skills, home
+
+
+def _expected_public_families(tier: Path, agents: Path, skills: Path):
+    from scripts.shared.agent_catalog import (
+        build_ownership_map,
+        detect_command_skills,
+        is_public_agent,
+        load_private_skills,
+        load_public_agents,
+    )
+    from scripts.shared.skill_distribution import enumerate_skills, filter_public_skills
+
+    public = load_public_agents(tier)
+    if not public:
+        return set(), set()
+    return (
+        {
+            path.name
+            for path in agents.glob("*.md")
+            if is_public_agent(path.name, public)
+        },
+        {
+            entry.name
+            for entry in filter_public_skills(
+                enumerate_skills(skills),
+                public,
+                build_ownership_map(agents),
+                detect_command_skills(skills),
+                load_private_skills(tier),
+            )
+        },
+    )
+
+
+def _assert_public_runtime_families(root: Path, expected):
+    import yaml
+
+    expected_agents, expected_skills = expected
+    actual_agents = {path.name for path in (root / "agents").glob("*.md")}
+    actual_skills = (
+        {path.name for path in (root / "skills").iterdir() if path.is_dir()}
+        if (root / "skills").is_dir()
+        else set()
+    )
+    assert (actual_agents, actual_skills) == expected, _runtime_message(
+        f"emitted agent/skill populations differ: actual={(actual_agents, actual_skills)}, "
+        f"expected={(expected_agents, expected_skills)}",
+        "copy only the explicitly catalog-selected canonical source families; "
+        "treat an empty public set as empty at the emitter, not at include-all helpers",
+    )
+    for name in actual_agents:
+        text = (root / "agents" / name).read_text()
+        frontmatter = yaml.safe_load(text.split("---", 2)[1])
+        assert "nw-PRIVATE-runtime-skill" not in frontmatter.get("skills", []), (
+            _runtime_message(
+                f"{name} still declares a removed private skill",
+                "scrub removed skill references only in the runtime destination copy",
+            )
+        )
+    if expected_agents:
+        assert (root / "agents" / "nw-public-probe.md").is_file(), _runtime_message(
+            "the public role was not shipped",
+            "do not obtain privacy by dropping the public family",
+        )
+
+
+def test_runtime_family_emission_is_public_and_source_preserving_in_each_channel(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Closed channel/visibility controls use the real filesystem emitter."""
+    import itertools
+
+    cases = itertools.product(
+        ("checkout", "wheel", "dist"),
+        (False, True),
+        ("public", "empty", "private-only"),
+    )
+    for channel, dev_mode, selection in cases:
+        case = tmp_path / f"{channel}-{dev_mode}-{selection}"
+        case.mkdir()
+        context, framework, tier, agents, skills, home = _synthetic_runtime_tier(
+            case, channel, selection
+        )
+        context.dev_mode = dev_mode
+        expected = _expected_public_families(tier, agents, skills)
+        before = _family_snapshot(framework)
+        with monkeypatch.context() as environment:
+            environment.setenv("HOME", str(home))
+            environment.setenv("NWAVE_AGENTS_HOME", str(home))
+            context.target_platforms = {"omp"}
+            shipped = DESPlugin()._install_nwave_runtime_assets(
+                context=context, using_prebuilt=channel != "checkout"
+            )
+        assert shipped == home / ".nwave" / "nWave", _runtime_message(
+            f"{channel} emitter did not return its observed runtime root: {shipped}",
+            "emit the admitted tier beside the host-neutral des package",
+        )
+        _assert_public_runtime_families(shipped, expected)
+        assert _family_snapshot(framework) == before, _runtime_message(
+            f"{channel} source tier changed after runtime emission",
+            "apply filtering and reference scrubbing to the destination only",
+        )
+
+
+def test_mixed_target_mirrors_the_same_public_runtime_families(
+    tmp_path: Path, monkeypatch
+) -> None:
+    for dev_mode in (False, True):
+        case = tmp_path / str(dev_mode)
+        case.mkdir()
+        context, framework, tier, agents, skills, home = _synthetic_runtime_tier(
+            case, "checkout", "public"
+        )
+        context.dev_mode = dev_mode
+        context.target_platforms = {"claude_code", "codex", "omp"}
+        before = _family_snapshot(framework)
+        expected = _expected_public_families(tier, agents, skills)
+        with monkeypatch.context() as environment:
+            environment.setenv("HOME", str(home))
+            environment.setenv("NWAVE_AGENTS_HOME", str(home))
+            result = DESPlugin()._install_des_module(context)
+        assert result.success, _runtime_message(
+            f"mixed runtime install refused: {result.message}",
+            "retain the real module install and its runtime asset mirror",
+        )
+        primary = home / ".claude" / "lib" / "nWave"
+        mirror = home / ".nwave" / "nWave"
+        _assert_public_runtime_families(primary, expected)
+        _assert_public_runtime_families(mirror, expected)
+        assert _family_snapshot(primary) == _family_snapshot(mirror), _runtime_message(
+            "mixed target runtime asset bytes differ between primary and mirror",
+            "mirror the already-filtered runtime asset tree without widening visibility",
+        )
+        assert _family_snapshot(framework) == before, _runtime_message(
+            "mixed install scrubbed or rewrote its source role families",
+            "never mutate the source tier while preparing runtime copies",
+        )
+
+
+def test_empty_public_catalog_is_not_an_unavailable_catalog(
+    tmp_path: Path, monkeypatch, caplog
+) -> None:
+    import logging
+    import re
+
+    import pytest
+
+    from scripts.shared.agent_catalog import CatalogParseError, load_public_agents
+
+    context, framework, tier, _, _, home = _synthetic_runtime_tier(
+        tmp_path, "checkout", "empty"
+    )
+    context.target_platforms = {"omp"}
+    catalog = tier / "framework-catalog.yaml"
+    legal_bytes = catalog.read_bytes()
+    installer = DESPlugin()
+    installed_root = home / ".nwave" / "nWave"
+    with monkeypatch.context() as environment:
+        environment.setenv("HOME", str(home))
+        environment.setenv("NWAVE_AGENTS_HOME", str(home))
+        assert load_public_agents(tier) == set(), _runtime_message(
+            "valid empty public catalog was not observed as empty",
+            "retain strict catalog loading and handle its valid empty result at the emitter",
+        )
+        before = _family_snapshot(framework)
+        legal = installer._install_des_module(context)
+        assert legal.success and installed_root.is_dir(), _runtime_message(
+            f"capable legal-empty module installer refused: {legal.message}",
+            "establish the admitted control through the same module-install "
+            "surface used by unavailable and unparseable catalog observations",
+        )
+        _assert_public_runtime_families(installed_root, (set(), set()))
+        assert _family_snapshot(framework) == before, _runtime_message(
+            "legal-empty module install changed its source tier",
+            "filter only the runtime destination copy",
+        )
+
+        try:
+            catalog.unlink()
+            before_missing = _family_snapshot(framework)
+            caplog.clear()
+            with caplog.at_level(logging.WARNING, logger=context.logger.name):
+                unavailable = installer._install_des_module(context)
+            warnings = [
+                record.getMessage()
+                for record in caplog.records
+                if record.name == context.logger.name
+                and record.levelno >= logging.WARNING
+            ]
+            catalog_unavailable = any(
+                str(tier) in warning
+                and catalog.name in warning
+                and "N/A" in warning
+                and "not" in warning.lower()
+                and "tier" in warning.lower()
+                for warning in warnings
+            )
+            assert unavailable.success and catalog_unavailable, _runtime_message(
+                "missing catalog did not produce the existing source-tier "
+                "unavailability diagnostic on the capable module-install surface",
+                "retain the warning naming this tier and framework-catalog.yaml "
+                "as unavailable/not applicable; do not accept unrelated warnings",
+            )
+            _assert_public_runtime_families(installed_root, (set(), set()))
+            assert _family_snapshot(framework) == before_missing, _runtime_message(
+                "unavailable-catalog module install changed the source tier",
+                "observe missing input without repairing or rewriting source files",
+            )
+
+            catalog.write_text("agents: [unterminated")
+            # Establish the specific malformed-input cause independently at
+            # the existing strict catalog port, not from any installer error.
+            with pytest.raises(CatalogParseError) as parse_failure:
+                load_public_agents(tier)
+            assert str(catalog) in str(parse_failure.value), _runtime_message(
+                "strict catalog parse failure does not identify the challenged file",
+                "preserve the concrete catalog locator in the existing diagnostic",
+            )
+            before_broken = _family_snapshot(framework)
+            caplog.clear()
+            broken = installer._install_des_module(context)
+            catalog_parse_failure = (
+                not broken.success
+                and str(catalog) in broken.message
+                and bool(
+                    re.search(
+                        r"\b(?:parse|parsing|yaml|CatalogParseError)\b",
+                        broken.message,
+                        re.IGNORECASE,
+                    )
+                )
+            )
+            assert catalog_parse_failure, _runtime_message(
+                "malformed catalog did not produce a failure naming the exact "
+                "catalog file and its parse/YAML cause",
+                "propagate the strict catalog-observation cause through the "
+                "same previously capable module installer; an unrelated "
+                "nonempty refusal message is not this observation",
+            )
+            _assert_public_runtime_families(installed_root, (set(), set()))
+            assert _family_snapshot(framework) == before_broken, _runtime_message(
+                "malformed-catalog module install changed the source tier",
+                "leave malformed source input untouched on refusal",
+            )
+        finally:
+            catalog.write_bytes(legal_bytes)

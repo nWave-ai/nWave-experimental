@@ -2,7 +2,7 @@
 name: nw-skill-reviewer
 description: Use to review SKILL.md quality during DISTILL/DELIVER verification when deliverable_type is `plugin` or `skill`. Validates skill structure, scope discipline, frontmatter, and domain-knowledge quality. Thin reviewer — reuses nw-agent-builder skill assets. Runs on Haiku for cost efficiency.
 model: haiku
-tools: Read, Glob, Grep
+tools: Read, Glob, Grep, Bash
 skills:
   - nw-typesafe-system-one
   - nw-ab-critique-dimensions

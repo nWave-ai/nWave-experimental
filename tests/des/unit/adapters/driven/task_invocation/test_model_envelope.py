@@ -276,7 +276,10 @@ def test_architect_schema_admits_locator_shaped_manifest() -> None:
     ("mutation", "expected_path"),
     [
         ({"decisions": []}, ("manifest", "decisions")),
-        ({"decisions": ["a", ""]}, ("manifest", "decisions", 1)),
+        (
+            {"decisions": [{"ref": "Valid"}, {"ref": ""}]},
+            ("manifest", "decisions", 1, "ref"),
+        ),
         ({"oracle": "../escape.py"}, ("manifest", "oracle")),
         ({"verification": []}, ("manifest", "verification")),
         ({"verification": [[]]}, ("manifest", "verification", 0)),
@@ -1043,9 +1046,12 @@ def _accepted_architect_answer() -> dict:
 def test_codex_preserves_optional_absence_without_inventing_null(present: bool) -> None:
     answer = _accepted_architect_answer()
     if present:
+        answer["manifest"]["facts"].append(
+            {"id": "OptionalAdr", "text": "No architectural decision record changes."}
+        )
         answer["manifest"]["adr"] = {
             "applicability": "not_applicable",
-            "reason": "No architectural decision record changes.",
+            "reason": {"ref": "OptionalAdr"},
         }
     jsonschema.Draft202012Validator(_architect_schema()).validate(answer)
     schema = codex_schema_for("nw-solution-architect")
@@ -1053,8 +1059,8 @@ def test_codex_preserves_optional_absence_without_inventing_null(present: bool) 
     decoded = _extract_envelope("nw-solution-architect", answer)
     assert decoded.outcome is ModelOutcome.Accepted
     assert (
-        DesignDocument.from_json(json.dumps(answer["manifest"])).purpose
-        == answer["manifest"]["purpose"]
+        DesignDocument.from_json(json.dumps(answer["manifest"])).facts.purpose.ref
+        == answer["manifest"]["purpose"]["ref"]
     )
     answer["manifest"]["adr"] = None
     with pytest.raises(jsonschema.ValidationError):
@@ -1083,18 +1089,20 @@ def test_an_impact_closure_leaving_a_declared_consumer_undisposed_is_malformed()
         "applicability": "applicable",
         "parties": [
             {
+                "id": "AgreementProducer",
                 "contract": "Reservation wire format",
                 "role": "producer",
                 "locator": "lib/reservations.ml:1",
                 "decision": "MIGRATED",
-                "reason": "Writes the format.",
+                "reason": {"ref": "WritesFormat"},
             },
             {
+                "id": "AgreementConsumer",
                 "contract": "Reservation wire format",
                 "role": "consumer",
                 "locator": "bin/main.ml:1",
                 "decision": "UNCHANGED_COMPATIBLE",
-                "reason": "Reads the same tagged format.",
+                "reason": {"ref": "ReadsFormat"},
             },
         ],
     }
@@ -1105,11 +1113,18 @@ def test_an_impact_closure_leaving_a_declared_consumer_undisposed_is_malformed()
                 "kind": "runtime",
                 "locator": target["path"],
                 "decision": "CHANGED",
-                "reason": "The target changes.",
+                "reason": {"ref": "TargetChanges"},
             }
             for target in facts["targets"]
         ],
     }
+    facts["facts"].extend(
+        [
+            {"id": "WritesFormat", "text": "Writes the format."},
+            {"id": "ReadsFormat", "text": "Reads the same tagged format."},
+            {"id": "TargetChanges", "text": "The target changes."},
+        ]
+    )
 
     with pytest.raises(MalformedModelEnvelope, match=r"bin/main\.ml:1"):
         _extract_envelope("nw-solution-architect", answer)

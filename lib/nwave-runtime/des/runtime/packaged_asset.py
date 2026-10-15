@@ -132,13 +132,22 @@ def resolve_packaged_asset(
 
     ``installed`` lets a caller name the exact "installed" candidate directly
     (e.g. a module-level default the caller already resolves and wants tests
-    to be able to redirect) instead of re-deriving it from
-    ``installed_package_root() / relative``. Defaults to that derivation when
-    omitted -- every existing caller is unaffected.
+    to be able to redirect) instead of deriving the nearest containing ancestor.
+    Ancestors lacking the requested asset do not mask a complete outer tier.
     """
-    installed_path = (
-        installed if installed is not None else installed_package_root() / relative
-    )
+    installed_path = installed
+    if installed_path is None:
+        import des
+
+        package_dir = Path(next(iter(des.__path__))).resolve()
+        installed_path = next(
+            (
+                candidate / relative
+                for candidate in package_dir.parents
+                if (candidate / relative).exists()
+            ),
+            installed_package_root() / relative,
+        )
     checkout = find_developer_checkout(start)
     repo = (checkout / relative) if checkout is not None else None
 

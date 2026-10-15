@@ -5,7 +5,7 @@ Independently approves or finds defects in the consolidated public oracle.
 **Wave:** Other
 **Model:** claude-opus-5
 **Max turns:** 40
-**Tools:** Read, StructuredOutput
+**Tools:** Read, Bash, StructuredOutput
 
 ## Preloaded skills
 

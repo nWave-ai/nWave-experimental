@@ -34,29 +34,146 @@ from . import g10_types as T
 from .g10_defect import SKIPPED_AFTER_DECODE, Defect, report
 
 
-def load_files(paths: t.Sequence[str]) -> tuple[T.Handoff | None, list[Defect]]:
-    """Read, decode and merge the files (the architect's sidecar and the receipts the tool wrote)."""
+def load_context(paths: t.Sequence[str], base_dir: str | None = None):
+    """Load typed sections and their explicitly digest-bound manifest catalog."""
+    from des.domain.design_document import build_fact_catalog, fact_references
+    from des.ports.driven_ports.task_invocation_port import FactRecord
+
     ds: list[Defect] = []
     parts: list[T.Handoff] = []
+    records = []
+    has_catalog = False
+    catalog_sources: set[tuple[Path, str]] = set()
+    root = (
+        Path(base_dir).resolve()
+        if base_dir
+        else Path(paths[0]).absolute().parent
+        if paths
+        else Path.cwd()
+    )
     for path in paths:
         doc, bad = C.load_json(path)
-        ds += bad
+        ds.extend(bad)
         if bad:
             continue
-        ds += C.resolve_authoring(doc, str(Path(os.path.abspath(path)).parent))  # noqa: PTH100 - keep caller's lexical path, not a symlink target
+        if isinstance(doc, dict) and "catalog" in doc:
+            has_catalog = True
+            locators = doc["catalog"]
+            if not isinstance(locators, list):
+                ds.append(
+                    Defect(
+                        "DesignKeyNotInGrammar",
+                        path,
+                        "catalog is not a locator array",
+                        "detached context names exact manifest bytes",
+                        "provide [{path, sha256}]",
+                    )
+                )
+                continue
+            for locator in locators:
+                try:
+                    if (
+                        not isinstance(locator, dict)
+                        or set(locator) != {"path", "sha256"}
+                        or not T.valid("RelPath", locator["path"])
+                        or not T.valid("Sha", locator["sha256"])
+                    ):
+                        raise ValueError(
+                            "catalog locator must be exactly {path, sha256}"
+                        )
+                    source = (root / locator["path"]).resolve()
+                    identity = (source, locator["sha256"])
+                    if identity in catalog_sources:
+                        continue
+                    raw = source.read_bytes()
+                    if T.sha256_bytes(raw) != locator["sha256"]:
+                        raise ValueError(f"catalog digest mismatch: {source}")
+                    manifest = json.loads(
+                        raw,
+                        object_pairs_hook=C._no_duplicates,
+                        parse_constant=C._no_constant,
+                    )
+                    if (
+                        not isinstance(manifest, dict)
+                        or manifest.get("schema_version") != 2
+                        or not isinstance(manifest.get("facts"), list)
+                    ):
+                        raise ValueError(
+                            "catalog source must be a schema-2 DESIGN manifest"
+                        )
+                    for fact in manifest["facts"]:
+                        if not isinstance(fact, dict) or set(fact) != {"id", "text"}:
+                            raise ValueError("catalog fact must be exactly {id, text}")
+                        reference = C.dec(
+                            T.FactRef,
+                            {"ref": fact["id"]},
+                            str(source) + ".facts.id",
+                            ds,
+                        )
+                        text = C.dec(str, fact["text"], str(source) + ".facts.text", ds)
+                        if reference is not C.BAD and text is not C.BAD:
+                            records.append(FactRecord(id=reference.ref, text=text))
+                    catalog_sources.add(identity)
+                except (OSError, ValueError, TypeError, KeyError) as exc:
+                    ds.append(
+                        Defect(
+                            "G12",
+                            path,
+                            str(exc),
+                            "detached context must identify valid manifest definitions",
+                            "provide current schema-2 manifest files and their exact digests",
+                        )
+                    )
+            doc = {key: val for key, val in doc.items() if key != "catalog"}
         h, more = C.decode_handoff(doc)
-        ds += more
+        ds.extend(more)
         if h is not None:
             parts.append(h)
-    if ds:
-        return None, ds
+    catalog = build_fact_catalog(records) if has_catalog else None
+    if isinstance(catalog, tuple):
+        ds.extend(
+            Defect(
+                token.split()[0],
+                "catalog",
+                token,
+                "catalog definitions must be unique and valid",
+                "correct the schema-2 manifest definitions",
+            )
+            for token in catalog
+        )
+        catalog = None
     merged: T.Handoff = {}
     try:
-        for p in parts:
-            merged = C.merge(merged, p)
+        for part in parts:
+            merged = C.merge(merged, part)
     except C.MergeConflict as exc:
-        return None, [exc.defect]
-    return merged, []
+        ds.append(exc.defect)
+    try:
+        merged = C.merge(merged, RUN._load(str(root / "g10.receipts.json")))
+    except RUN.RunError as exc:
+        ds.append(exc.defect)
+    except C.MergeConflict as exc:
+        ds.append(exc.defect)
+    if catalog is not None:
+        for reference in fact_references(merged):
+            try:
+                catalog.resolve(reference)
+            except KeyError:
+                ds.append(
+                    Defect(
+                        "DesignFactUnresolved",
+                        reference.ref,
+                        "missing fact definition",
+                        "the typed handoff cites a fact absent from its detached catalog",
+                        "add the referenced definition to a digest-bound schema-2 manifest",
+                    )
+                )
+    return (None if ds else merged), catalog, ds
+
+
+def load_files(paths: t.Sequence[str]) -> tuple[T.Handoff | None, list[Defect]]:
+    handoff, _catalog, defects = load_context(paths)
+    return handoff, defects
 
 
 class Usage(Exception):
@@ -87,7 +204,7 @@ def _loaded(args: argparse.Namespace) -> T.Handoff | None:
     """The merged handoff, or None after printing why it cannot be read (the command then exits 1)."""
     if hasattr(args, "handoff"):
         return args.handoff
-    h, ds = load_files(args.files)
+    h, args.catalog, ds = load_context(args.files, _base_dir(args))
     if h is None:
         print(report(ds, SKIPPED_AFTER_DECODE))
     return h
@@ -97,12 +214,19 @@ def cmd_check(args: argparse.Namespace) -> int:
     h = _loaded(args)
     if h is None:
         return 1
-    ds, skipped = RU.check(h, _targets(args), args.mode, _base_dir(args))
+    ds, skipped = RU.check(
+        h, _targets(args), args.mode, _base_dir(args), getattr(args, "catalog", None)
+    )
     out = report(ds, "; ".join(skipped) or None)
-    runs = P.summary(h)["runs"]
+    runs = [
+        run
+        for (kind, _), entry in h.items()
+        if kind == "receipts" and isinstance(entry.status, T.Applicable)
+        for run in entry.status.payload.runs
+    ]
     print(
         out
-        + f"\nReceipts: {runs['kept_output']} with a kept output (sha256 checked by R6), {runs['claim']} claims without output."
+        + f"\nReceipts: {sum(bool(run.artifacts) for run in runs)} with kept output, {sum(not run.artifacts for run in runs)} claims without output."
     )
     return 1 if ds else (3 if skipped else 0)
 
@@ -111,8 +235,13 @@ def cmd_render(args: argparse.Namespace) -> int:
     h = _loaded(args)
     if h is None:
         return 1
+    if getattr(args, "catalog", None) is None:
+        from .g10_render import CATALOG_UNAVAILABLE
+
+        print(CATALOG_UNAVAILABLE)
+        return 1
     if args.html:
-        page = P.render_html(h, _base_dir(args))
+        page = P.render_html(h, _base_dir(args), args.catalog)
         try:
             with open(args.html, "w", encoding="utf-8") as fh:
                 fh.write(page)
@@ -133,7 +262,7 @@ def cmd_render(args: argparse.Namespace) -> int:
             return 1
         print(f"wrote {args.html}")
     else:
-        print(P.render_markdown(h, _base_dir(args)))
+        print(P.render_markdown(h, _base_dir(args), args.catalog))
     return 0
 
 
@@ -141,13 +270,23 @@ def cmd_summary(args: argparse.Namespace) -> int:
     h = _loaded(args)
     if h is None:
         return 1
-    print(json.dumps(P.summary(h), indent=1, sort_keys=True))
+    if getattr(args, "catalog", None) is None:
+        from .g10_render import CATALOG_UNAVAILABLE
+
+        print(CATALOG_UNAVAILABLE)
+        return 1
+    print(json.dumps(P.summary(h, args.catalog), indent=1, sort_keys=True))
     return 0
 
 
 def cmd_prompt(args: argparse.Namespace) -> int:
     h = _loaded(args)
     if h is None:
+        return 1
+    if getattr(args, "catalog", None) is None:
+        from .g10_render import CATALOG_UNAVAILABLE
+
+        print(CATALOG_UNAVAILABLE)
         return 1
     try:
         tpl = ""
@@ -183,6 +322,7 @@ def cmd_prompt(args: argparse.Namespace) -> int:
                 value=args.value,
                 targets=_targets(args),
                 base_dir=_base_dir(args),
+                catalog=args.catalog,
             )
         )
     except P.ProjectionError as exc:

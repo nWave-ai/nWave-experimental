@@ -31,10 +31,19 @@ missing capability. Never substitute a generic worker or grant extra tools.
 |---|---|---|
 | Product decomposition | `nw-product-owner` | `des po --repo-root ROOT --feature ID --input -` accepts the complete DISCUSS v2 manifest |
 | Solution architecture | `nw-solution-architect` | `des design --repo-root ROOT --value N --input -` accepts the complete DESIGN manifest |
-| Acceptance oracle | `nw-acceptance-designer` | Host authors the oracle; `des oracle --repo-root ROOT --value N --input -` measures and records it |
+| Acceptance oracle | `nw-acceptance-designer` | Host authors the oracle; first `des oracle --repo-root ROOT --value N --baseline REV --input -` measures current oracle/support bytes against the original source commit and records it |
 | Implementation | `nw-software-crafter` / `nw-functional-software-crafter` | Host authors the change; `des craft --repo-root ROOT --value N --input -` measures GREEN and records it against the current oracle |
 | Candidate review / EXAMINE | `nw-software-crafter-reviewer` / `nw-user-examiner` | `des prepare-role`, native role invocation, then `des record-role-result` |
 | Operational facts | `nw-platform-architect` | `des devops ... --input -` constructs the supplied facts |
+
+For the architect, the acceptance designer and the crafter, the role's task is
+the canonical prompt DES renders from the bound facts, its handoff and its
+tests: run `des handoff --repo-root ROOT prompt --role ROLE [--value N]
+--root-context FILE` (the crafter's form is `--role nw-software-crafter` or
+`--role nw-functional-software-crafter` with `--value N`, the one the bound
+paradigm requires: `functional` selects the functional crafter) and pass its stdout
+verbatim as the role's task. Put your own context in FILE; never compose a
+replacement prompt.
 
 ### Selected independent operational review
 
@@ -49,6 +58,26 @@ Craft additionally requires `"blocked_by":null` for accepted results; a
 nonaccepted result names `product`, `design`, or `oracle`. These envelopes
 record host work; they do not author files or replace actual RED/GREEN.
 
+Choose the original pre-implementation commit for `--baseline REV`, not HEAD
+when HEAD already includes the fix. Measurement uses the existing disposable
+candidate checkout and preserves the working tree and index. The single
+resolver selects explicit baseline, then a Request base when supplied, then the
+recorded witness baseline. Request base production/wiring is not yet implemented
+here. Later corrections can omit the flag and reuse the recorded source; a
+differing explicit baseline wins and is recorded. `ORACLE-BASELINE` reports the
+resolved SHA and source. With no source, `OracleBaselineMissing` refuses with
+WHAT/WHY/HOW; supply `--baseline <original source commit>` rather than guessing HEAD.
+
+Baseline Python measurements require an armed interpreter-start receipt before
+admitting any verdict. Missing or refused isolation evidence is
+`OracleProbeUnavailable` (Indeterminate), never RED/GREEN; use a Python
+invocation that loads site and honours PYTHONPATH, without `-I`, `-E` or `-S`.
+Declared dependencies in shared `.venv` remain available. The guard is not a
+filesystem sandbox or complete hostile-loader certification: a Python descendant
+that suppresses startup or erases its environment is not detected when its
+parent invocation supplies admissible receipts or is non-Python. The acceptance
+designer owns that unknown and should declare the Python oracle directly.
+
 For an applicable bound prefactoring decision, the host records actual native
 preservation runs with `des craft --repo-root ROOT --value N
 --prefactoring-phase before-move` and, after only the declared movement,
@@ -56,6 +85,8 @@ preservation runs with `des craft --repo-root ROOT --value N
 without `--input`; they neither invoke the crafter nor replace the ordinary
 feature RED/GREEN record. The advisory `NEXT` names the owed phase before
 `des oracle` and a phase refusal retries as that phase; DES executes neither.
+For the first oracle measurement, supply `--baseline <original source commit>`;
+subsequent corrections reuse its recorded baseline unless explicitly overridden.
 Keep the intermediate production and unchanged
 oracle/support/runtime identities required by `nw-code-craftsmanship`.
 
@@ -191,9 +222,12 @@ close the authorized Request; continue until real obligations and integration
 are current, stopping for a genuine human checkpoint/choice, not a recoverable
 mechanical fact.
 
-Agree commit/staging/install lifecycle before craft, retain actual before/after
-revisions, and preserve candidate snapshots/evidence when disposable execution
-workspaces are removed. Owned source/test/support/authority edits after VERIFY
+Agree commit/staging/install lifecycle before craft. Commits carry only owned
+source/test/support/authority: never stage, force-add or per-step WIP-commit
+`.nwave/des/**`. Retain runtime state in the lane worktree, not Git history;
+leave historical runtime commits untouched. Retain actual before/after revisions
+and preserve candidate snapshots/evidence when disposable execution workspaces
+are removed. Owned source/test/support/authority edits after VERIFY
 need a new candidate/current independent review; never restamp an old approval.
 Archived graphs remain historical, not automatically reactivated. Destination CAS,
 foreign bytes and staging are preserved; no reset recipe or cleanup of user WIP.

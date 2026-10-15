@@ -762,9 +762,25 @@ def decode_model_run(  # noqa: PLR0913 - see the note above
     )
     if semantic_role_id == _SOLUTION_ARCHITECT:
         optional.add("manifest")
-    if not set(structured) <= expected | optional or not expected <= set(structured):
+    supplied = set(structured)
+    unexpected = tuple(sorted(supplied - (expected | optional)))
+    missing = tuple(sorted(expected - supplied))
+    if unexpected or missing:
+        repairs = []
+        if unexpected:
+            repairs.append("remove the unexpected fields " + ", ".join(unexpected))
+        if missing:
+            repairs.append("supply the missing fields " + ", ".join(missing))
+        repairs.append("then resubmit the complete structured_output")
         raise MalformedModelEnvelope(
-            "ModelOutcomeMalformed: structured output has unexpected fields"
+            "ModelOutcomeMalformed: structured output has unexpected fields "
+            f"[{', '.join(unexpected) or 'none'}] and missing fields "
+            f"[{', '.join(missing) or 'none'}]; this envelope requires "
+            f"[{', '.join(sorted(expected))}] and admits optionally "
+            f"[{', '.join(sorted(optional)) or 'none'}]",
+            unexpected=unexpected,
+            missing=missing,
+            how="; ".join(repairs),
         )
     try:
         outcome = ModelOutcome(structured["outcome"])

@@ -49,8 +49,8 @@ claim `INDETERMINATE`, not PASS on substitute evidence.
 3. **Run** — execute available Agda. For Quint, first execute `quint typecheck`,
    then `quint run` for exploration (no backend) and `quint verify` with the
    selected backend for model checking. Use the serial bound-growth and
-   liveness protocols below. Retain complete model/proof text and execution
-   evidence under Delivery and provenance.
+   liveness protocols below. Retain complete external model/proof files and
+   driven execution evidence under Delivery and evidence locators.
    A passing simulation is not a completed formal
    verification. Both `quint verify` backends first start a local Apalache
    server, and TLC itself opens a local socket; when the sandbox refuses it,
@@ -67,10 +67,11 @@ claim `INDETERMINATE`, not PASS on substitute evidence.
    For TLA, execute declared temporal properties with necessary fairness;
    create/reuse a `.tla` model and `.cfg`
    configuration and actually pass both files to TLC. Record literal argv, exit
-   status and result. Deliver every selected model/proof through the semantic
-   constructor input with its repository-relative destination; a disposable
-   checker copy is not the delivered model. Run checkers on a copy outside the
-   repository so generated outputs (`.agdai`, `_build`, `_apalache-out`) stay out.
+   status and result in the driven evidence store. Deliver every selected
+   model/proof as an external source file cited by `Model.source: {path, sha256}`;
+   never embed its bytes in constructor input. A disposable checker copy is
+   not the delivered model. Run checkers on an outside-repository copy so
+   generated outputs (`.agdai`, `_build`, `_apalache-out`) stay out.
    Create probe files only where your capability surface grants it; otherwise give your host
    their exact text, path and checker argv to write and execute, and record the
    returned receipts. Label hand enumeration, scripts and prose separately;
@@ -115,8 +116,8 @@ claim `INDETERMINATE`, not PASS on substitute evidence.
    Do not ask the human yourself, auto-download a backend, install without
    authorization, silently downgrade to native tests, claim PASS or fake a run.
    Only a recorded human waiver permits continuation without that proof.
-   Record the human's explicit decision, affected claims and waiver reason in
-   `decisions`; the waived proof stays `INDETERMINATE`, never PASS.
+   Keep the explicit waiver evidence external; reference only its current
+   affected claim and reason through FactRefs. The proof stays `INDETERMINATE`.
    A refusal to install is not itself a waiver. An unknown platform/package
    manager requires a bounded host observation, not an invented install command.
    Provide only the dependencies actually needed by the selected claims.
@@ -179,14 +180,21 @@ axis stays `BLOCKED`; retain runtime and proof results independently.
 Finite-state checking proves neither unbounded runtime scheduling nor elapsed
 time; name those remaining obligations and owners.
 
-## Delivery and provenance
+## Delivery and evidence locators
 
-Supply semantic evidence to the existing DESIGN constructor, never write a
-durable authority or invent a receipt command. Retain:
+The normalized DESIGN manifest carries current claim FactRefs, source locators
+and run ids only. Keep complete model/proof files at their intended committed
+repository-relative paths and cite `Model.source: {path, sha256}`. The host owns
+authority publication. Record actual checker/probe executions only with
+`des handoff run` and `des handoff record` in the driven receipt store; use their
+public help for exact argv. Never invent a receipt command or submit a receipts
+section, inline model text, history/provenance/supersession narration or receipt
+prose inside facts/decisions. Independent review and EXAMINE judge author-text
+compliance; there is no semantic classifier or substring gate.
 
-| Evidence | Required content |
+| Evidence | Required external content |
 |---|---|
-| Model/proof and temporal slice | Complete unedited text with all line breaks; artifact language, sha256 and intended repository-relative committed path |
+| Model/proof and temporal slice | Complete unedited file with line breaks; language, sha256 and committed source path |
 | Checker run | Actual argv, tool version, backend/configuration, properties, bounds or seed, exit, result and raw outputs/traces |
 | Mutant | Exact changed behavior, model identity, property it falsifies and its counterexample/rejection receipt |
 | Refinement | Each action/step's file, symbol and mechanism making it atomic, or the real seam splitting it; unmapped steps explicitly model-only |
@@ -198,6 +206,16 @@ Keep observed process facts separate from declared checks and interpretation.
 Replay evidence retains its original revision; it is not a newly observed run.
 When no callable capability can execute or persist the required evidence,
 return that bounded limitation to the host and leave the claim `INDETERMINATE`.
+
+For native `des handoff check`, `render`, `summary` and `prompt`, use the bound
+graph's FactCatalog. Detached FILE input must explicitly cite schema-2 DESIGN
+manifest files as `catalog: [{path, sha256}]`; digests and merged definitions
+must agree. Do not inline a replacement catalog into producer
+`--architect-handoff FILE` input: its context is the constructing manifest plus
+bound shared facts. Missing detached context refuses render/summary/prompt with
+`ArchitectHandoffCatalogUnavailable`; check runs structural rules while
+text/reference/template/trace-dependent rules remain UNRUN. Neither missing
+context nor an unresolved FactRef is a passing formal check.
 
 
 ## Non-functional requirements and human review

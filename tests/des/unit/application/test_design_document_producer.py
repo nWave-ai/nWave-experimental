@@ -11,58 +11,70 @@ from des.application.design_document_producer import (
 )
 from des.application.handover import Blocked, replace_exact_bytes
 from des.domain.design_document import DesignDocument
+from des.ports.driven_ports.task_invocation_port import FactRecord
+from tests.des._helpers.host_facts import design_manifest
 
 
 def _document() -> DesignDocument:
     return DesignDocument.from_json(
         json.dumps(
-            {
-                "schema_version": 1,
-                "authority": {"heading": "Widget"},
-                "architectural_tests": {
-                    "applicability": "not_applicable",
-                    "reason": "The fixture has no structural boundary change.",
-                },
-                "contract_tests": {
-                    "applicability": "not_applicable",
-                    "reason": "The fixture changes no shared contract.",
-                },
-                "purpose": "Expose Widget.",
-                "constraints": ["Preserve callers."],
-                "targets": [
-                    {"path": "src/widget.py", "decision": "EXTEND", "reason": "Owner."}
-                ],
-                "paradigm": "object_oriented",
-                "decisions": ["Keep ownership."],
-                "reuse_analysis": {"candidates": []},
-                "impact_closure": {
-                    "applicability": "not_applicable",
-                    "reason": "The fixture reaches no public surface, consumer or build metadata.",
-                },
-                "prefactoring": {
-                    "applicability": "applicable",
-                    "existing_oracle": "tests/test_widget.py",
-                    "move": "Extract lookup.",
-                    "preserved_observation": "Widget remains visible.",
-                    "verification": [["pytest", "-q", "tests/test_widget.py"]],
+            design_manifest(
+                {
+                    "schema_version": 2,
+                    "architectural_tests": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture has no structural boundary change.",
+                    },
+                    "contract_tests": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture changes no shared contract.",
+                    },
+                    "purpose": "Expose Widget.",
+                    "constraints": ["Preserve callers."],
+                    "targets": [
+                        {
+                            "path": "src/widget.py",
+                            "decision": "EXTEND",
+                            "reason": "Owner.",
+                        }
+                    ],
+                    "paradigm": "object_oriented",
+                    "decisions": ["Keep ownership."],
+                    "reuse_analysis": {"candidates": []},
+                    "impact_closure": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                    },
+                    "prefactoring": {
+                        "applicability": "applicable",
+                        "existing_oracle": "tests/test_widget.py",
+                        "move": "Extract lookup.",
+                        "preserved_observation": "Widget remains visible.",
+                        "verification": [["pytest", "-q", "tests/test_widget.py"]],
+                        "acceptance_supports": [],
+                    },
+                    "agreement_analysis": {
+                        "applicability": "not_applicable",
+                        "reason": "No shared contract is touched.",
+                    },
+                    "boundaries": {
+                        "applicability": "not_applicable",
+                        "reason": "None.",
+                    },
+                    "public_oracle": {
+                        "observation": "Widget is visible.",
+                        "stimulus": "Run widget.",
+                        "expected": "Widget prints.",
+                        "falsifier": "Widget does not print.",
+                    },
+                    "oracle": "tests/test_widget.py::test_widget",
                     "acceptance_supports": [],
+                    "verification": [["pytest", "-q"]],
+                    "oracle_verification_index": 0,
                 },
-                "agreement_analysis": {
-                    "applicability": "not_applicable",
-                    "reason": "No shared contract is touched.",
-                },
-                "boundaries": {"applicability": "not_applicable", "reason": "None."},
-                "public_oracle": {
-                    "observation": "Widget is visible.",
-                    "stimulus": "Run widget.",
-                    "expected": "Widget prints.",
-                    "falsifier": "Widget does not print.",
-                },
-                "oracle": "tests/test_widget.py::test_widget",
-                "acceptance_supports": [],
-                "verification": [["pytest", "-q"]],
-                "oracle_verification_index": 0,
-            }
+                "Expose Widget.",
+                1,
+            )
         )
     )
 
@@ -138,7 +150,18 @@ def test_directory_sync_failure_reports_indeterminate_after_whole_authority_repl
     destination.parent.mkdir()
     original = _document()
     destination.write_bytes(original.markdown().encode())
-    updated = replace(original, purpose="Expose corrected Widget.")
+    updated = replace(
+        original,
+        facts=replace(
+            original.facts,
+            facts=tuple(
+                FactRecord(record.id, "Expose corrected Widget.")
+                if record.id == original.facts.purpose.ref
+                else record
+                for record in original.facts.facts
+            ),
+        ),
+    )
 
     monkeypatch.setattr(
         "des.application.design_document_producer._tracked", lambda _root, _path: True
@@ -155,7 +178,7 @@ def test_directory_sync_failure_reports_indeterminate_after_whole_authority_repl
         "docs/authority.md",
         updated,
         widenings=DesignPublicationWidenings(replace_current=True),
-        binding=DesignAuthorityBinding(authority_locator="docs/authority.md#Widget"),
+        binding=DesignAuthorityBinding(authority_locator="docs/authority.md#Value 1"),
     )
 
     assert isinstance(result, Blocked)
@@ -184,7 +207,7 @@ def test_unterminated_prefix_gains_a_separator_before_the_owned_heading(
     result = publish_design_document(tmp_path, "docs/authority.md", document)
 
     assert not isinstance(result, Blocked)
-    assert result.locator == "docs/authority.md#Widget"
+    assert result.locator == "docs/authority.md#Value 1"
     assert destination.read_bytes() == (
         b"# Authority\n\nUnterminated human line.\n\n" + document.markdown().encode()
     ), (
@@ -193,28 +216,32 @@ def test_unterminated_prefix_gains_a_separator_before_the_owned_heading(
     )
 
 
-def test_legacy_rendering_migration_refuses_a_section_that_is_not_byte_identical(
-    tmp_path: Path, monkeypatch
+def test_retired_legacy_rendering_option_preserves_unbound_authority(
+    tmp_path: Path, capsys
 ) -> None:
-    """An explicit renderer migration is not a general unbound replacement."""
-    document = _document()
-    original = document.legacy_markdown_v1().replace(
-        "Expose Widget.", "Altered Widget."
-    )
+    """The removed producer mode cannot rewrite any existing authority bytes."""
+    from des.cli.design import main
+
+    original = "## Widget\n\nAltered Widget.\n"
     destination = _seed(tmp_path, original.encode())
-    monkeypatch.setattr(
-        "des.application.design_document_producer._tracked", lambda _root, _path: True
-    )
+    import pytest
 
-    result = publish_design_document(
-        tmp_path,
-        "docs/authority.md",
-        document,
-        widenings=DesignPublicationWidenings(migrate_legacy_rendering=True),
+    with pytest.raises(SystemExit) as refused:
+        main(
+            [
+                "--repo-root",
+                str(tmp_path),
+                "--value",
+                "1",
+                "--input",
+                "-",
+                "--migrate-legacy-rendering",
+            ]
+        )
+    assert refused.value.code == 2
+    assert (
+        "unrecognized arguments: --migrate-legacy-rendering" in capsys.readouterr().err
     )
-
-    assert isinstance(result, Blocked)
-    assert result.what == "DesignAuthorityDrift" and result.refusal
     assert destination.read_text() == original
 
 
@@ -275,7 +302,7 @@ def test_digest_measures_the_bytes_on_disk_rather_than_the_rendered_buffer(
         "DOCUMENT-SHA256 must measure the file a consumer will read, never "
         "restate the buffer this step intended to write"
     )
-    assert result.locator == "docs/authority.md#Widget"
+    assert result.locator == "docs/authority.md#Value 1"
     assert result.authority_persisted, (
         "authority_persisted still means 'this invocation changed the file'"
     )

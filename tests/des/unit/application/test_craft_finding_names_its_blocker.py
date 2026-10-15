@@ -43,7 +43,7 @@ import json
 import os
 import subprocess
 import sys
-from dataclasses import asdict, replace
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -54,17 +54,15 @@ from des.cli.role_artifacts import prepare as prepare_role
 from des.cli.role_artifacts import record as record_role_result
 from des.ports.driven_ports.task_invocation_port import (
     CraftBlocker,
-    DesignFacts,
-    DesignTarget,
     ModelOutcome,
     ModelRun,
-    NotApplicable,
     ProductValue,
-    ReuseAnalysis,
     TaskInvocationPort,
 )
-from tests.des._helpers.host_facts import design_manifest
 from tests.des._helpers.step_stimulus import crafted, through_oracle
+from tests.des.unit.application.test_authored_oracle_is_executed_red import (
+    oracle_manifest,
+)
 
 
 # A real-length observation: the runner refuses a value under the measured
@@ -85,28 +83,14 @@ FINDING = (
 )
 
 
-def _facts(*, extra: tuple[str, ...] = ()) -> DesignFacts:
-    return DesignFacts(
+def _facts(*, extra: tuple[str, ...] = ()) -> dict:
+    """Keep the producer manifest intact until the real DESIGN binding."""
+    return oracle_manifest(
+        f"one observable value: {OBSERVATION}",
         targets=(
-            DesignTarget(PRODUCTION, "CREATE_NEW"),
-            DesignTarget(ORACLE, "CREATE_NEW"),
-            *(DesignTarget(path, "EXTEND") for path in extra),
-        ),
-        paradigm="object_oriented",
-        decisions=(f"one observable value: {OBSERVATION}",),
-        oracle=ORACLE,
-        acceptance_supports=(),
-        verification=(("python", "-m", "pytest", ORACLE, "-q"),),
-        oracle_verification_index=0,
-        architectural_tests=NotApplicable(
-            "The fixture has no structural boundary change."
-        ),
-        contract_tests=NotApplicable("The fixture changes no shared contract."),
-        prefactoring=NotApplicable("The fixture requires no preservation move."),
-        agreement_analysis=NotApplicable("The fixture has no affected agreement."),
-        reuse_analysis=ReuseAnalysis(()),
-        impact_closure=NotApplicable(
-            "The fixture reaches no public surface, consumer or build metadata."
+            (PRODUCTION, "CREATE_NEW"),
+            (ORACLE, "CREATE_NEW"),
+            *((path, "EXTEND") for path in extra),
         ),
     )
 
@@ -166,7 +150,7 @@ class ScriptedPort(TaskInvocationPort):
         root: Path,
         crafts: list[ModelRun],
         *,
-        corrected: DesignFacts | None = None,
+        corrected: dict | None = None,
         judgements: list[ModelRun] | None = None,
     ) -> None:
         self.root = root
@@ -251,24 +235,41 @@ def subject(tmp_path: Path) -> Path:
     return root
 
 
+@pytest.fixture
+def genesis(subject: Path) -> str:
+    """Name the fixture's base before any test-body delivery or edit."""
+    return subprocess.run(
+        ["git", "-C", str(subject), "rev-parse", "--verify", "HEAD^{commit}"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
 REQUEST = "deliver one value"
 
 
-def one_craft_turn(subject: Path, port: ScriptedPort) -> DeliveryOutcome | tuple:
+def one_craft_turn(
+    subject: Path,
+    port: ScriptedPort,
+    *,
+    baseline: str,
+) -> DeliveryOutcome | tuple:
     """`po`, `design`, `oracle`, then ONE `craft` -- each invoked by this test."""
     runner, stored, design = through_oracle(
-        port, subject, REQUEST, design_manifest(asdict(_facts()), OBSERVATION, 1)
+        port, subject, REQUEST, _facts(), baseline=baseline
     )
     return crafted(runner, port, subject, stored, design)
 
 
 def test_a_failed_standalone_verify_retains_native_evidence_after_candidate_cleanup(
     subject: Path,
+    genesis: str,
 ) -> None:
     """The terminal locator outlives the temporary candidate it observed."""
     port = ScriptedPort(subject, [_accepted()])
     runner, stored, design = through_oracle(
-        port, subject, REQUEST, design_manifest(asdict(_facts()), OBSERVATION, 1)
+        port, subject, REQUEST, _facts(), baseline=genesis
     )
     assert not isinstance(
         crafted(runner, port, subject, stored, design), DeliveryOutcome
@@ -309,11 +310,11 @@ def test_a_failed_standalone_verify_retains_native_evidence_after_candidate_clea
     "phase", ("native", "interrupt", "radius", "retention", "checkout")
 )
 def test_candidate_worktree_is_removed_when_native_execution_raises(
-    subject: Path, monkeypatch: pytest.MonkeyPatch, phase: str
+    subject: Path, genesis: str, monkeypatch: pytest.MonkeyPatch, phase: str
 ) -> None:
     port = ScriptedPort(subject, [_accepted()])
     runner, stored, design = through_oracle(
-        port, subject, REQUEST, design_manifest(asdict(_facts()), OBSERVATION, 1)
+        port, subject, REQUEST, _facts(), baseline=genesis
     )
     assert not isinstance(
         crafted(runner, port, subject, stored, design), DeliveryOutcome
@@ -362,11 +363,11 @@ def test_candidate_worktree_is_removed_when_native_execution_raises(
 
 
 def test_cleanup_failure_names_its_owned_path_and_keeps_native_receipts(
-    subject: Path, monkeypatch: pytest.MonkeyPatch
+    subject: Path, genesis: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     port = ScriptedPort(subject, [_accepted()])
     runner, stored, design = through_oracle(
-        port, subject, REQUEST, design_manifest(asdict(_facts()), OBSERVATION, 1)
+        port, subject, REQUEST, _facts(), baseline=genesis
     )
     assert not isinstance(
         crafted(runner, port, subject, stored, design), DeliveryOutcome
@@ -427,6 +428,7 @@ def test_unavailable_candidate_removes_only_its_empty_owned_allocation(
 
 def test_verification_record_becomes_historical_when_a_declared_target_changes(
     subject: Path,
+    genesis: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A target edit after verify cannot reuse its old native measurement."""
@@ -436,7 +438,7 @@ def test_verification_record_becomes_historical_when_a_declared_target_changes(
     monkeypatch.setenv("PATH", f"{executable.parent}:{os.environ['PATH']}")
     port = ScriptedPort(subject, [_accepted()])
     runner, stored, design = through_oracle(
-        port, subject, REQUEST, design_manifest(asdict(_facts()), OBSERVATION, 1)
+        port, subject, REQUEST, _facts(), baseline=genesis
     )
     assert not isinstance(
         crafted(runner, port, subject, stored, design), DeliveryOutcome
@@ -476,8 +478,9 @@ def test_verification_record_becomes_historical_when_a_declared_target_changes(
         ("launch", "VerificationExecutableAbsent", ""),
     ],
 )
-def test_an_incomplete_declared_native_command_retains_prior_evidence_after_cleanup(
+def test_an_incomplete_declared_native_command_retains_prior_evidence_after_cleanup(  # noqa: PLR0913, PLR0917 - pytest fixture context plus explicit native-failure case fields
     subject: Path,
+    genesis: str,
     monkeypatch: pytest.MonkeyPatch,
     failure: str,
     what: str,
@@ -487,7 +490,7 @@ def test_an_incomplete_declared_native_command_retains_prior_evidence_after_clea
     monkeypatch.setenv("NATIVE_EVIDENCE_SECRET", "must-not-be-recorded")
     port = ScriptedPort(subject, [_accepted()])
     runner, stored, design = through_oracle(
-        port, subject, REQUEST, design_manifest(asdict(_facts()), OBSERVATION, 1)
+        port, subject, REQUEST, _facts(), baseline=genesis
     )
     assert not isinstance(
         crafted(runner, port, subject, stored, design), DeliveryOutcome
@@ -570,6 +573,7 @@ def test_an_incomplete_declared_native_command_retains_prior_evidence_after_clea
 )
 def test_native_success_evidence_survives_a_later_host_recorded_role_failure(
     subject: Path,
+    genesis: str,
     monkeypatch: pytest.MonkeyPatch,
     role: str,
     outcome: str,
@@ -577,7 +581,7 @@ def test_native_success_evidence_survives_a_later_host_recorded_role_failure(
     """A separately recorded role result cannot discard native evidence."""
     port = ScriptedPort(subject, [_accepted()])
     runner, stored, design = through_oracle(
-        port, subject, REQUEST, design_manifest(asdict(_facts()), OBSERVATION, 1)
+        port, subject, REQUEST, _facts(), baseline=genesis
     )
     assert not isinstance(
         crafted(runner, port, subject, stored, design), DeliveryOutcome

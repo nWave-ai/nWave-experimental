@@ -18,7 +18,11 @@ Choose the explicit persisted scope. Applicable typed constructors write
 DISCUSS, DESIGN, DEVOPS and DISTILL authorities; roles supply semantic facts,
 not handwritten authority Markdown. Keep the defect and regression obligation
 on the same public observation. The native acceptance designer authors the
-oracle, then `des oracle --value N --input -` measures RED. The native crafter
+oracle, then first `des oracle --value N --baseline <original pre-fix commit> --input -`
+measures current oracle/support bytes as RED in the existing disposable checkout.
+Do not use HEAD if the fix is already committed. Later corrections reuse the
+recorded baseline without the flag; no source yields `OracleBaselineMissing`
+with WHAT/WHY/HOW, never workspace measurement. The native crafter
 implements the fix, then `des craft --value N --input -` measures GREEN.
 
 The LLM evaluates advisory `NEXT`; DES neither chooses a route nor launches

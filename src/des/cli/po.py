@@ -45,6 +45,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--value", type=int, help="selected value; --charter only")
     parser.add_argument("--replace-current", action="store_true")
     parser.add_argument(
+        "--expected-authority-sha256",
+        default=None,
+        help="current DISCUSS DOCUMENT-SHA256; requires --replace-current",
+    )
+    parser.add_argument(
         "--input",
         help="DISCUSS manifest on stdin (-); for --charter, JSON file or - containing value facts and structured_output",
     )
@@ -71,6 +76,7 @@ def main(argv: list[str] | None = None) -> int:
         feature=selected_scope(args),
         project=args.project,
         replace_current=args.replace_current,
+        expected_authority_sha256=args.expected_authority_sha256,
     )
     if not outcome.succeeded:
         return refuse(

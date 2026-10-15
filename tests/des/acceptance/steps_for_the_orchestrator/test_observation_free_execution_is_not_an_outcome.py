@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import sys
 import tempfile
-import xml.etree.ElementTree as ET
 from enum import Enum
 from pathlib import Path
 
@@ -181,19 +180,18 @@ class ObservationJourney:
                 f"bridge did not observe genuine empty discovery: {result.execution}",
                 "map only pytest's measured no-tests exit5 to bridge exit0",
             )
-            report = ET.parse(native.root / "actual-report.xml")
-            suites = list(report.iter("testsuite"))
             require(
-                bool(suites)
-                and all(
-                    int(suite.attrib["tests"]) == 0
-                    and int(suite.attrib.get("errors", "0")) == 0
-                    and int(suite.attrib.get("failures", "0")) == 0
-                    for suite in suites
-                )
-                and not list(report.iter("testcase")),
-                f"actual fresh report was not empty: {ET.tostring(report.getroot())!r}",
-                "retain the authentic report from empty native discovery",
+                row["counts"] == [0, 0, 0]
+                and str(row["axis"]).startswith("junit-report")
+                and row["completed"] is True
+                and "--junitxml=actual-report.xml" in row["argv"],
+                f"retained fresh empty-discovery report observation is wrong: {row}",
+                "retain the completed explicit-report invocation's genuine zero-test/zero-error/zero-failure JUnit observation",
+            )
+            require(
+                not (native.root / "actual-report.xml").exists(),
+                "empty-discovery reporting created a report in the host workspace",
+                "generate the fresh report only in the isolated checkout and retain its observed counts before cleanup",
             )
         else:
             require(

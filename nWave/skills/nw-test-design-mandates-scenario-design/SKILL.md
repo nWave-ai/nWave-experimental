@@ -95,10 +95,22 @@ Test file and function names describe the feature/business value under test, not
 
 ## Mandate 3: User Journey Completeness
 
-Tests validate complete user journeys with business value, not isolated technical operations.
+User-journey tests validate complete journeys with business value, not isolated technical operations; focused contract/property tests protect a named observable contract at its declared boundary.
 
 ### Complete Journey Structure
-Every scenario includes: **User trigger** (Given/When) | **Business logic** (When - system processes rules) | **Observable outcome** (Then - user sees result) | **Business value** (Then - value delivered)
+Each scenario body visibly composes typed business-language Given steps, exactly one When, then Then steps for user journeys, or Arrange steps, exactly one Act, then Assert steps for focused contract/property tests. Given/When (or Arrange/Act) steps drive the public driving port; Then/Assert steps own business-named assertions and WHAT/WHY/HOW failure messages internally. Gherkin files are optional; these phases remain visible in the native test framework. No business logic, branching or looping in scenario bodies; no helper owns a whole scenario or branches on scenario kind. Parameterize only data variants of the SAME scenario with the same expected outcome shape; keep identical stimulus/assertion pairs once and reuse domain steps instead of copying the same literals across scenarios.
+
+Each test creates a fresh typed scenario-scoped context for its reusable steps; never share static/global step objects or inherit another scenario's state.
+
+Language-agnostic step composition:
+
+```text
+scenario incomplete fleet cannot become ready:
+  given captain Marco has created a room
+  when captain Marco declares ready with an incomplete fleet
+  then ready is refused because the fleet is incomplete
+  and the room is unchanged
+```
 
 ### Correct Example
 
@@ -208,7 +220,7 @@ These three pillars are the lens used during writing and review. They sit above 
 
 ### Pillar 1 — Domain language with specific actions
 
-Scenarios speak the domain, not incidental code. A domain expert can read stimulus/outcome without implementation. Reuse business-named project helpers and isolate parsing/subprocess/timeout mechanics where useful; no forced DSL. Technical terms belong in the scenario only when they are actual public protocol/domain promises, not private plumbing. Assert outcome/state/types/required fields rather than incidental exact representation.
+Scenarios speak the domain, not incidental code. A domain expert can read stimulus/outcome without implementation. Reuse business-named domain steps and isolate parsing/subprocess/timeout mechanics behind them; the visible GWT/AAA step DSL requires no particular framework. Technical terms belong in the scenario only when they are actual public protocol/domain promises, not private plumbing. Assert outcome/state/types/required fields rather than incidental exact representation.
 
 ### Pillar 2 — Chained narrative
 
@@ -216,7 +228,7 @@ Within a story line, scenarios read as a sequence of state transitions: **the `G
 
 ### Pillar 3 — App as in production
 
-Drive the SUT through production composition and the selected public port. Give each driven port its Architecture of Reference treatment under `nw-distill-port-treatment-policy`: focused acceptance scenarios use an in-memory fake for driven-internal storage and a capturing fake for driven-external dependencies; real driven-internal adapters belong to the feature's walking skeleton and declared adapter integration observations. Production composition does not mean production I/O in every scenario. Do not rebuild the business rule inside fixtures. State-machine properties may reuse a law-preserving native in-memory composition with an explicit preservation map; a particular composition class or DSL is not required. Keep an identifiable feature E2E and distinct real storage/crash/race/protocol observations when promised.
+Drive the SUT through production composition and the selected public port. Give each driven port its Architecture of Reference treatment under `nw-distill-port-treatment-policy`: focused acceptance scenarios use an in-memory fake for driven-internal storage and a capturing fake for driven-external dependencies; real driven-internal adapters belong to the feature's walking skeleton and declared adapter integration observations. Production composition does not mean production I/O in every scenario. Do not rebuild the business rule inside fixtures. State-machine properties may reuse a law-preserving native in-memory composition with an explicit preservation map; no particular composition class or DSL framework is required, but visible GWT/AAA domain steps are. Keep an identifiable feature E2E and distinct real storage/crash/race/protocol observations when promised.
 
 ## Mandate 16: Algebraic Analysis Before the Scenario
 

@@ -290,16 +290,15 @@ test_implementation_strategy:
           ["Business value impact", "Risk reduction", "Learning opportunity"]
         deliverable: "Single selected E2E test scenario"
 
-      - step: "Implement Through Outside-In TDD"
-        description: "Complete E2E scenario using double-loop TDD approach"
+      - step: "Implement Through the Acceptance Oracle"
+        description: "Complete the E2E scenario with the acceptance test as the specification"
         process:
           [
             "Write failing E2E test",
-            "Step down to unit tests",
-            "Implement production code",
-            "Return to E2E validation",
+            "Implement production code in coherent deltas",
+            "Verify each delta once with the failing oracle tests and the touched-file selection",
           ]
-        deliverable: "Working E2E test with supporting unit tests"
+        deliverable: "Working E2E test without added unit tests"
 
       - step: "Validate Production Integration"
         description: "Ensure E2E test calls production services and validates real behavior"

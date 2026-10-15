@@ -53,7 +53,14 @@ def root(tmp_path: Path) -> Path:
     (root / "preserve.sh").write_text(
         'case "$(cat product.txt)" in before|after) exit 0;; *) exit 1;; esac\n'
     )
-    (root / "oracle.sh").write_text('test "$(cat product.txt)" = feature\n')
+    (root / "oracle.sh").write_text(
+        'test "$(cat product.txt)" = feature\n'
+        "status=$?\n"
+        "printf 'DES-ORACLE-OBSERVATION: "
+        '{"version":1,"observed":1,"assertions_failed":%s,"setup_failed":0}\\n'
+        '\' "$status"\n'
+        'exit "$status"\n'
+    )
     _git(root, "add", ".")
     _git(root, "commit", "-qm", "Existing native implementation and witness")
     return root
@@ -161,6 +168,7 @@ def test_next_walks_before_move_then_after_move_then_oracle_and_refusal_retries_
     root: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _delivery_with_applicable_prefactoring(root)
+    baseline = _git(root, "rev-parse", "HEAD")
     state = read_state(root)
     assert state.values[0].prefactoring_phase == "before-move"
     assert canonical_next(state, root) == _form(root, "before-move")
@@ -192,7 +200,7 @@ def test_next_walks_before_move_then_after_move_then_oracle_and_refusal_retries_
     assert read_state(root).values[0].prefactoring_phase is None
 
     # Following that NEXT no longer reaches the unrecorded-preservation refusal.
-    oracle = DeliverySteps().oracle(root, 1, ORACLE_ACCEPTED)
+    oracle = DeliverySteps().oracle(root, 1, ORACLE_ACCEPTED, baseline=baseline)
     assert (
         oracle.failure is None
         or oracle.failure.what != "PrefactoringPreservationUnrecorded"
@@ -202,6 +210,7 @@ def test_next_walks_before_move_then_after_move_then_oracle_and_refusal_retries_
 def test_a_superseded_oracle_record_does_not_make_a_newly_owed_preservation_too_late(
     root: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    baseline = _git(root, "rev-parse", "HEAD")
     outcome = DeliverySteps().discuss_document(
         root,
         json.dumps(product_manifest("Deliver the answer.", [OBSERVATION])),
@@ -211,7 +220,7 @@ def test_a_superseded_oracle_record_does_not_make_a_newly_owed_preservation_too_
     assert outcome.disposition is Disposition.Success, outcome
     _design(root, NOT_APPLICABLE)
     _distill(root)
-    recorded = DeliverySteps().oracle(root, 1, ORACLE_ACCEPTED)
+    recorded = DeliverySteps().oracle(root, 1, ORACLE_ACCEPTED, baseline=baseline)
     assert recorded.disposition is Disposition.Success, recorded
     assert read_state(root).values[0].oracle == "recorded"
 
@@ -234,6 +243,6 @@ def test_a_superseded_oracle_record_does_not_make_a_newly_owed_preservation_too_
     code, rows = _craft_phase(root, capsys, "after-move-before-behavior")
     assert code == 0, rows
     assert rows["NEXT"] == [f"des oracle --repo-root {root} --value 1 --input -"]
-    reoracle = DeliverySteps().oracle(root, 1, ORACLE_ACCEPTED)
+    reoracle = DeliverySteps().oracle(root, 1, ORACLE_ACCEPTED, baseline=baseline)
     assert reoracle.disposition is Disposition.Success, reoracle
     assert read_state(root).values[0].oracle == "recorded"

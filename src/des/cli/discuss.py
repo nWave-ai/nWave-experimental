@@ -44,6 +44,11 @@ def main(argv: list[str] | None = None) -> int:
         help="print the full input schema and a minimal copyable example, then exit",
     )
     parser.add_argument("--replace-current", action="store_true")
+    parser.add_argument(
+        "--expected-authority-sha256",
+        default=None,
+        help="current DISCUSS DOCUMENT-SHA256; requires --replace-current",
+    )
     add_document_scope_arguments(
         parser,
         required="--describe-input" not in (sys.argv[1:] if argv is None else argv),
@@ -102,6 +107,7 @@ def main(argv: list[str] | None = None) -> int:
         root,
         raw,
         replace_current=args.replace_current,
+        expected_authority_sha256=args.expected_authority_sha256,
         feature=selected_scope(args),
         project=args.project,
     )

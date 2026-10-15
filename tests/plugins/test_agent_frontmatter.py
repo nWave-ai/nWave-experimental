@@ -197,14 +197,18 @@ class TestAgentFrontmatterAcceptance:
             # DES owns architecture-document writes; the architect has no Edit.
             # Write is restricted to external formal model/proof source files
             # cited by Model.source, not authority, handover or oracle files.
-            # The acceptance reviewer reads installed framework guidance only.
+            # The acceptance reviewer reads installed framework guidance only;
+            # its Bash runs only the Jev client of nw-typesafe-system-one.
             # The examiner receives its knowledge preloaded and declares no Read.
             (
                 "nw-solution-architect",
                 ["Bash", "Glob", "Grep", "Read", "StructuredOutput", "Write"],
             ),
             ("nw-product-owner", ["Read", "StructuredOutput"]),
-            ("nw-acceptance-designer-reviewer", ["Read", "StructuredOutput"]),
+            (
+                "nw-acceptance-designer-reviewer",
+                ["Bash", "Read", "StructuredOutput"],
+            ),
             ("nw-user-examiner", ["StructuredOutput"]),
         ],
     )

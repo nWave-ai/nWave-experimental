@@ -13,7 +13,8 @@ from hypothesis import strategies as st
 
 from des.domain.integration_commit_message import (
     DEFAULT_CONVENTIONAL_TYPES,
-    DEFAULT_TYPE,
+    UNRECORDED_TYPE,
+    ChangeIntent,
     CommitMessageRule,
     IntegrationFacts,
     compose_integration_message,
@@ -72,10 +73,20 @@ def gitlint_executable():
     return resolved
 
 
-def facts(request="Deliver the requested value", observations=None, authorities=None):
+def facts(
+    description="Deliver the requested value", observations=None, authorities=None
+):
+    observations = (
+        ("the value is observable",) if observations is None else observations
+    )
     return IntegrationFacts(
-        request,
-        ("the value is observable",) if observations is None else observations,
+        observations,
+        tuple(
+            ChangeIntent(UNRECORDED_TYPE, description)
+            if description is not None
+            else None
+            for _ in observations
+        ),
         ("docs/product/architecture/brief.md#Value",)
         if authorities is None
         else authorities,
@@ -113,16 +124,18 @@ def test_a_git_quoted_path_names_no_scope():
     assert derive_scope(("src/des/citt\u00e0.py",)) == "des"
 
 
-def test_the_subject_is_the_requests_first_line_in_this_repositorys_case():
+def test_the_subject_is_the_first_observations_first_line_when_unrecorded():
     assert (
-        compose(request="Deliver the requested value\nignored\n").splitlines()[0]
-        == f"{DEFAULT_TYPE}(des): deliver the requested value"
+        compose(
+            description=None, observations=("Deliver the requested value\nignored\n",)
+        ).splitlines()[0]
+        == f"{UNRECORDED_TYPE}(des): deliver the requested value"
     )
 
 
-def test_an_acronym_the_request_capitalised_survives_the_case_normalisation():
+def test_an_acronym_the_description_capitalised_survives_case_normalisation():
     assert (
-        compose(request="API parity is observable")
+        compose(description="API parity is observable")
         .splitlines()[0]
         .endswith("API parity is observable")
     )
@@ -130,22 +143,25 @@ def test_an_acronym_the_request_capitalised_survives_the_case_normalisation():
 
 def test_a_subject_over_the_declared_limit_is_cut_at_a_word_boundary():
     rule = CommitMessageRule()
-    subject = compose(request="deliver " + "value " * 40, rule=rule).splitlines()[0]
+    subject = compose(description="deliver " + "value " * 40, rule=rule).splitlines()[0]
 
     assert len(subject) <= rule.title_max_length
     assert subject.endswith("value")
-    assert rule.defect(compose(request="deliver " + "value " * 40)) is None
+    assert rule.defect(compose(description="deliver " + "value " * 40)) is None
 
 
 @pytest.mark.parametrize(
-    "request_text",
+    "observation",
     ["", "   \n\n", "!!! ???", "123 456", "."],
 )
-def test_a_request_yielding_no_usable_subject_still_composes_a_conforming_one(
-    request_text,
+def test_an_observation_yielding_no_usable_subject_still_composes_a_conforming_one(
+    observation,
 ):
     rule = CommitMessageRule()
-    assert rule.defect(compose(request=request_text, rule=rule)) is None
+    assert (
+        rule.defect(compose(description=None, observations=(observation,), rule=rule))
+        is None
+    )
 
 
 def test_the_body_carries_every_observation_in_order_then_the_identity():
@@ -161,21 +177,23 @@ def test_the_body_carries_every_observation_in_order_then_the_identity():
 
 def test_an_observation_the_subject_already_states_is_not_repeated_in_the_body():
     # GDP-0: the line that cannot overflow is the line that is never emitted.
-    request = "the value is observable"
-    message = compose(request=request, observations=(request, "a second value"))
+    description = "the value is observable"
+    message = compose(
+        description=description, observations=(description, "a second value")
+    )
 
-    assert message.splitlines()[0] == f"{DEFAULT_TYPE}(des): {request}"
-    assert message.count(request) == 1
+    assert message.splitlines()[0] == f"{UNRECORDED_TYPE}(des): {description}"
+    assert message.count(description) == 1
     assert "a second value" in message
 
 
 def test_a_truncated_subject_keeps_the_observation_it_could_not_carry():
-    request = "deliver " + "value " * 40
-    message = compose(request=request, observations=(request,))
+    description = "deliver " + "value " * 40
+    message = compose(description=description, observations=(description,))
     subject, _, body = message.partition("\n\n")
 
-    assert len(subject) < len(" ".join(request.split()))
-    assert " ".join(request.split()) in " ".join(body.split())
+    assert len(subject) < len(" ".join(description.split()))
+    assert " ".join(description.split()) in " ".join(body.split())
 
 
 def test_a_long_observation_wraps_and_every_line_fits_the_declared_width():
@@ -305,17 +323,17 @@ def test_a_degenerate_declared_title_length_empties_the_subject_not_its_tail(
     title_max_length,
 ):
     # A budget of `title_max_length - len(prefix)` goes NEGATIVE here, and a
-    # negative slice cuts from the END: without the clamp the subject silently
-    # became the TAIL of the Request, a fact the composer never chose to carry.
+    # negative slice formerly kept the TAIL of the description, a fact the
+    # composer never chose to carry.
     rule = CommitMessageRule(title_max_length=title_max_length)
-    request = "deliver the requested value"
+    description = "deliver the requested value"
 
-    subject = compose(request=request, rule=rule).splitlines()[0]
+    subject = compose(description=description, rule=rule).splitlines()[0]
 
-    assert subject == f"{DEFAULT_TYPE}: "
-    assert not any(word in subject for word in request.split())
+    assert subject == f"{UNRECORDED_TYPE}: "
+    assert not any(word in subject for word in description.split())
     # And the family is the DECLARED rule, repaired in `.gitlint`, never a fact.
-    defect = rule.defect(compose(request=request, rule=rule))
+    defect = rule.defect(compose(description=description, rule=rule))
     assert defect is not None and ".gitlint" in defect.how
 
 
@@ -376,22 +394,22 @@ def test_a_narrowed_type_vocabulary_is_read_and_refused_not_approved():
     # narrows the vocabulary without touching the regex must not be approved.
     rule = CommitMessageRule.declared(
         "[general]\ncontrib = contrib-title-conventional-commits\n"
-        "[contrib-title-conventional-commits]\ntypes = fix,chore\n"
+        "[contrib-title-conventional-commits]\ntypes = fix,test\n"
     )
 
-    assert rule.conventional_types == ("fix", "chore")
+    assert rule.conventional_types == ("fix", "test")
     defect = rule.defect(compose(rule=rule))
-    assert defect is not None and "fix, chore" in defect.why
+    assert defect is not None and "fix, test" in defect.why
     assert "[contrib-title-conventional-commits]" in defect.how
 
 
-def test_enabling_the_contrib_rule_without_narrowing_it_admits_the_default_type():
+def test_enabling_the_contrib_rule_without_narrowing_it_admits_the_unrecorded_type():
     rule = CommitMessageRule.declared(
         "[general]\ncontrib = contrib-title-conventional-commits\n"
     )
 
     assert rule.conventional_types == DEFAULT_CONVENTIONAL_TYPES
-    assert DEFAULT_TYPE in rule.conventional_types
+    assert UNRECORDED_TYPE in rule.conventional_types
     assert rule.defect(compose(rule=rule)) is None
 
 
@@ -403,13 +421,13 @@ def test_a_repository_declaring_no_vocabulary_has_none_enforced():
     "message,fragment",
     [
         ("Integrate requested value", "does not match the declared title rule"),
-        (f"{DEFAULT_TYPE}: " + "x" * 120, "over the declared limit of 100"),
-        (f"{DEFAULT_TYPE}: value.", "ends with punctuation"),
-        (f"{DEFAULT_TYPE}: value \nbody", "trailing whitespace"),
-        (f"{DEFAULT_TYPE}: value\nbody", "no blank line separates"),
-        (f"{DEFAULT_TYPE}: value\n\n" + "x" * 200, "over the declared limit of 120"),
-        (f"{DEFAULT_TYPE}: value\n\nbody \n", "trailing whitespace"),
-        (f"{DEFAULT_TYPE}: value\n\n\tbody", "hard tab"),
+        (f"{UNRECORDED_TYPE}: " + "x" * 120, "over the declared limit of 100"),
+        (f"{UNRECORDED_TYPE}: value.", "ends with punctuation"),
+        (f"{UNRECORDED_TYPE}: value \nbody", "trailing whitespace"),
+        (f"{UNRECORDED_TYPE}: value\nbody", "no blank line separates"),
+        (f"{UNRECORDED_TYPE}: value\n\n" + "x" * 200, "over the declared limit of 120"),
+        (f"{UNRECORDED_TYPE}: value\n\nbody \n", "trailing whitespace"),
+        (f"{UNRECORDED_TYPE}: value\n\n\tbody", "hard tab"),
     ],
 )
 def test_the_declared_rule_names_the_one_violation_a_message_carries(message, fragment):

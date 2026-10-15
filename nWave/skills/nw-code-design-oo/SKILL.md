@@ -14,36 +14,79 @@ runner and hooks own build, test, and commit execution.
 
 ## Object Calisthenics
 
-These calisthenics are design heuristics for the OO core, not universal syntax,
-size or allocation gates. Apply them when they improve demonstrated ownership
-and invariants; native idioms and the concrete public contract govern.
+Ten rules for the OO core (Agile Technical Practices Distilled, "Object
+Calisthenics – 10 Steps to Better Software Design"). Inside the hexagon, domain
+objects and application services, they are strict. Breaking one is a conscious
+design decision recorded in the diagnostic with the smell it causes, its benefit
+and its cost; an unrecorded break is accidental complexity.
 
-| # | Rule | Design intent | Layer |
-|---|------|---------------|-------|
-| 1 | One indentation level per method | Forces decomposition | Domain, Application |
-| 2 | No `else` keyword | Guard clauses, early returns | Domain, Application |
-| 3 | Distinguish primitives when confusion/invalid state is a real risk | Prefer precise native types or zero-cost wrappers | Domain |
-| 4 | Give collections a domain owner when they own a law | No needless wrapper without a consumer/invariant | Domain |
-| 5 | One dot per line | Law of Demeter | Domain, Application |
-| 6 | No abbreviations | Intention-revealing names | All |
-| 7 | Keep cohesive small units | Responsibility clarity, not class/method LOC thresholds | Domain, Application |
-| 8 | Keep state cohesive | No fixed field-count gate or artificial decomposition | Domain |
-| 9 | No getters/setters | Tell, don't ask | Domain, Application |
+| # | Rule | Why | Smell it prevents |
+|---|------|-----|-------------------|
+| 1 | Only one level of indentation per method | One thing per method; small reusable units | Long Method |
+| 2 | Don't use the ELSE keyword | One main lane with guard clauses; polymorphism (State, Strategy) or Null Object for the alternatives | Switch Statements, Long Method |
+| 3 | Wrap all primitives and strings | No primitive or string as a method argument (except constructors) or return value; each concept gets a type that attracts its behaviour and makes wrong state unrepresentable | Primitive Obsession, Shotgun Surgery |
+| 4 | First-class collections | No collection as an argument (except constructors); a class that holds a collection holds nothing else; filters and joins live there | Primitive Obsession, Feature Envy |
+| 5 | One dot per line | Talk only to your immediate collaborators (Law of Demeter): self, owned fields, parameters and objects the method creates. The rule is about navigating a collaborator's internals, not LINQ, streams or fluent builders | Message Chains, Inappropriate Intimacy |
+| 6 | Don't abbreviate | Names reveal intention; a name you want to abbreviate signals a unit doing too much | Large Class |
+| 7 | Keep all entities small | Each method does one thing and each class holds one responsibility; size follows from cohesion, never from splitting code to meet a line count | Large Class, Long Method |
+| 8 | No classes with more than two instance variables | High cohesion; a third field signals a missing collaborator | Large Class, Data Clumps |
+| 9 | No getters/setters/properties | Tell, don't ask: the decision lives on the object that owns the data | Data Class, Feature Envy |
+| 10 | All classes must have state | No static utility classes or stateless "managers"; behaviour has a home | Feature Envy, Middle Man |
 
-**Rule 9 relaxation** — getters allowed for: DTOs/response objects at port
-boundaries, CQRS read models, value objects with computed properties
-(`Money.amount`), framework/ORM mapping. Rule 9 applies strictly to domain
-entities and application services.
+**Scope**: domain entities, value objects and application services. Adapters,
+infrastructure, DTOs at port boundaries, CQRS read models, configuration and
+framework or ORM mapping are exempt; map them to the domain at the boundary.
 
-**Scope** — applies inside the hexagon (domain + application). Does NOT apply to
-adapters, infrastructure, DTOs, or configuration.
+**Services**: an application service coordinates ports and domain objects and
+owns no domain rule. A decision about one object's data lives on that object; a
+policy spanning several aggregates may live in a domain service. An application
+service method that reads an object's state, branches on it and writes it back
+is a transaction script; move the decision onto the owner.
+
+**Rich domain model**: entities carry identity and the behaviour of their
+lifecycle; value objects are immutable, equal by value and refuse an invalid
+value at construction; an aggregate root is the only entry point that changes
+its aggregate and guards its invariants in one consistency boundary; a
+repository loads and stores one aggregate; a domain event names a completed
+fact. `nw-ddd-tactical` owns these building blocks and their rules.
+
+## Code Smells Hierarchy
+
+Primitive Obsession, Feature Envy (with Inappropriate Intimacy) and Message
+Chains cause most other smells; remove them first.
+
+- **Primitive Obsession** → Duplicated Code, Shotgun Surgery, Divergent Change, Long Parameter List.
+- **Feature Envy / Inappropriate Intimacy** → Lazy Class, Data Class, Middle Man, Data Clumps, Long Method, Large Class, Duplicated Code, Shotgun Surgery, Divergent Change, Long Parameter List.
+- **Message Chains** → Data Clumps, Duplicated Code.
+
+## Refactoring Priority Premise
+
+Refactor each delta in this order, smallest level first, without changing
+behaviour; the refactoring is verified once, together with the delta. A level is
+done when none of its smells remains in the code you changed. `nw-refactor` owns
+the mechanics.
+
+| Level | Goal | Smells it cleans |
+|-------|------|------------------|
+| L1 Readability | Tackle clutter, comments, dead code, implicit knowledge, scattering, bad naming | Comments, Dead Code, Magic Strings and Numbers, Scope of variables and methods |
+| L2 Complexity | Tackle complexity and duplication | Long Method, Duplicated Code |
+| L3 Responsibilities | Tackle misplaced responsibilities | Long Class, Feature Envy, Inappropriate Intimacy, Data Class, Message Chain |
+| L4 Abstractions | Tackle missing abstractions | Long Parameter List, Data Clump, Primitive Obsession, Middle Man |
+| L5 Design Patterns | Replace conditionals with polymorphism; apply a pattern only as the target of a refactoring the actual recurring problem asks for, shaped to the context and named for the domain behaviour | Switch Statements → Dictionary/Hashmap, Strategy, State, Command |
+| L6 SOLID++ | Fix the design principles | Refused Bequest → LSP, ISP; Divergent Change → SRP; Shotgun Surgery → SRP; Speculative Generality → YAGNI; Parallel Inheritance → ISP |
+
+**Liskov substitution**: a subtype or interface implementation keeps every
+promise to its clients: no stronger preconditions, no weaker postconditions,
+invariants preserved. **Interface segregation**: an interface is one cohesive
+role its clients need; no client depends on an operation it does not use.
+Inheritance expresses substitutable specialization only; other collaboration
+uses composition.
 
 ## RPP Smell Taxonomy
 
-Smell names an architect detects in a design before code is written. Detection is
-design-time; the refactor execution (cascade planning, batch-then-verify) is
-crafter-only in `nw-refactor`. Levels L1 Readability | L2 Complexity |
-L3 Responsibilities | L4 Abstractions | L5 Design Patterns | L6 SOLID++.
+Smells an architect detects in a design before code is written, and the design
+decision each one asks for. Detection is design-time; the refactoring order above
+and `nw-refactor` belong to the crafter.
 
 | Level | Smell | Design-time implication |
 |-------|-------|-------------------------|
@@ -52,11 +95,12 @@ L3 Responsibilities | L4 Abstractions | L5 Design Patterns | L6 SOLID++.
 | L3 | Tell-Don't-Ask | Caller queries state then decides → move the decision onto the owning object |
 | L3 | Feature Envy | Method reaches into another type's data → relocate behavior to that type |
 | L3 | God Object | One type owns too many responsibilities → split along bounded responsibilities |
-| L3 | Large Class | Class exceeds SRP / Calisthenics size → extract collaborators |
+| L3 | Large Class | Class owns more than one cohesive responsibility → extract collaborators |
 | L4 | Shotgun Surgery | One change forces edits across many sites → consolidate the concept into one home |
 
-Design rule: a smell named here at design time must not survive into the design
-artifact — resolve it in the type/boundary decisions, not at DELIVER.
+Design rule: a smell detected at design time does not survive into the design
+artifact unless it is a recorded conscious trade-off. Resolve it in the type and
+boundary decisions, not at DELIVER.
 
 ## Effect Isolation
 

@@ -1,8 +1,8 @@
-"""The existing attestation runs with the exact versioned original inputs.
+"""Frozen original inputs remain byte-identical and explicitly non-executable.
 
 Driving port: the incumbent public pytest node and existing EOF/Git commands.
-@contract-shape: real-io. Two historical files are a finite identity observation;
-all prompt bounds and complete paired renders remain owned by the incumbent.
+@contract-shape: real-io. The original pre-normalized authority must refuse with
+DesignFactsPreNormalized and a same-scope replace-current remedy.
 No observer plugin, alternate HOME, private helper or prompt implementation is used.
 """
 
@@ -118,8 +118,8 @@ def _run_frozen_attestation() -> None:
     attestation = _run([sys.executable, "-m", "pytest", "-q", "-rA", INCUMBENT_NODE])
     _successful(
         attestation,
-        "existing original-run5 attestation",
-        "use the frozen fixture in the existing test and retain its strict ATD1 <490000-byte, paired-render and unchanged-input assertions; restore native runtime if collection/setup failed",
+        "existing original-run5 refusal observation",
+        "use the exact frozen fixture and retain repeated refusal, DesignFactsPreNormalized, replace-current remediation and unchanged-input assertions; restore native runtime if collection/setup failed",
     )
     payloads = [
         line.partition("NWAVE_TEST_RESULT:")[2]

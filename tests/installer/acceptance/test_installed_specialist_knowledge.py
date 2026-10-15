@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 import pytest
 import tomllib
 
+from des.ports.driven_ports.task_invocation_port import DesignFacts, PreNormalizedDesign
 from scripts.install.plugins.agents_plugin import AgentsPlugin
 from scripts.install.plugins.base import InstallContext
 from scripts.install.plugins.codex_agents_plugin import CodexAgentsPlugin
@@ -275,7 +276,9 @@ def test_recovery_packet_seals_current_design_and_preserves_immutable_content_id
         code, out, err = _call(
             subject.root,
             "design",
-            json.dumps(_value_manifest(expected=expected_observation)),
+            json.dumps(
+                _value_manifest(expected=expected_observation, shared=subject.shared)
+            ),
             value=1,
             replace_current=True,
         )
@@ -321,21 +324,65 @@ def test_recovery_packet_seals_current_design_and_preserves_immutable_content_id
     assert path.read_bytes() == tampered
 
 
+def _pre_normalized_authority(locator: str, *, shared: bool) -> dict:
+    """Stage the old semantic wire without inventing a public-oracle projection."""
+    from tests.des.acceptance.design_document_construction.test_design_document_construction import (
+        WIDGET_INPUT,
+    )
+    from tests.des.acceptance.distill_document_construction.test_distill_document_construction import (
+        DESIGN_ORACLE,
+        SHARED_DECISION,
+    )
+
+    source = json.loads(json.dumps(WIDGET_INPUT))
+    raw = {
+        name: source[name]
+        for name in (
+            "paradigm",
+            "acceptance_supports",
+            "oracle_verification_index",
+            "architectural_tests",
+            "contract_tests",
+            "prefactoring",
+            "agreement_analysis",
+            "reuse_analysis",
+            "impact_closure",
+        )
+    }
+    raw.update(
+        authority_locator=locator,
+        targets=[
+            {"path": target["path"], "decision": target["decision"]}
+            for target in source["targets"]
+        ],
+        obligations=(
+            ["Value sections carry only deltas."] if shared else source["constraints"]
+        ),
+        decisions=[
+            SHARED_DECISION
+            if shared
+            else "Value one keeps color validation at construction."
+        ],
+        oracle="tests/test_shared.py::test_shared" if shared else DESIGN_ORACLE,
+        verification=[
+            ["pytest", "-q", "tests/test_shared.py"]
+            if shared
+            else ["pytest", "-q", DESIGN_ORACLE.split("::", maxsplit=1)[0]]
+        ],
+        adr=None,
+        architect_handoff=None,
+    )
+    return raw
+
+
 def test_selected_revision_recovery_refuses_legacy_semantic_bound_facts_without_public_oracle(
     tmp_path: Path,
 ):
-    """Legacy semantic-bound value DESIGN facts predate the public-oracle projection.
-
-    When a value was bound with the closed DESIGN constructor before this
-    correction existed, its authority has no public_oracle field. If later
-    re-submitted unchanged, the handover projection gains public_oracle and the
-    selection basis remains stable (step 4 of the correction: design_basis_sha256
-    excludes public_oracle). Recovery must refuse such a state to prevent
-    silently sealing an input that hides the current expected observation.
-    """
+    """Opaque value DESIGN without a public oracle must be rebound, not executed."""
     from tests.common.in_process_cli import run_cli_in_process
     from tests.des.acceptance.distill_document_construction.test_distill_document_construction import (
         _call,
+        _stored,
         _Subject,
         _value_manifest,
     )
@@ -348,20 +395,34 @@ def test_selected_revision_recovery_refuses_legacy_semantic_bound_facts_without_
     code, out, err = _call(
         subject.root,
         "design",
-        json.dumps(_value_manifest(expected="stdout is green and exit is zero.")),
+        json.dumps(
+            _value_manifest(
+                expected="stdout is green and exit is zero.", shared=subject.shared
+            )
+        ),
         value=1,
         replace_current=True,
     )
     assert code == 0, out + err
 
-    # Strip public_oracle from the bound authority to simulate legacy state
     handover_path = subject.root / ".nwave/des/handover.json"
     payload = json.loads(handover_path.read_text())
-    del payload["values"][0]["authority"]["public_oracle"]
-    payload["values"][0]["design_semantic_sha256"] = (
-        payload["values"][0].get("design_semantic_sha256") or "non_null"
-    )  # Ensure it's non-None to trigger the check
+    assert payload["values"][0]["design_semantic_sha256"] is not None
+    raw_authority = _pre_normalized_authority(
+        payload["values"][0]["authority"]["authority_locator"], shared=False
+    )
+    assert "public_oracle" not in raw_authority
+    payload["values"][0]["authority"] = raw_authority
     handover_path.write_text(json.dumps(payload, separators=(",", ":")))
+    restored = _stored(subject.root)
+    assert isinstance(restored.values[0].authority, PreNormalizedDesign)
+    assert restored.values[0].authority.raw == raw_authority
+    assert restored.shared_design is None
+    before, seen = handover_path.read_bytes(), len(subject.rows())
+    roles = subject.root / ".nwave/des/logs/roles"
+    artifacts = {
+        path.name: path.read_bytes() for path in roles.glob("*") if path.is_file()
+    }
 
     finding = (
         "DESIGN for value 1 changed after DISTILL B; des oracle --value 1 ended "
@@ -387,35 +448,35 @@ def test_selected_revision_recovery_refuses_legacy_semantic_bound_facts_without_
         catch_all=True,
     )
     assert code != 0, (
-        "WHAT: prepare-role accepted legacy semantic-bound facts without public_oracle. "
-        "WHY: such facts predate the projection and would hide the current expected. "
-        "HOW: prepare-role must refuse with a Refusal naming the re-bind HOW."
+        "WHAT: prepare-role accepted opaque value facts without public_oracle. "
+        "WHY: recovery would conceal the missing expected observation and execute retired facts. "
+        "HOW: refuse with DesignFactsPreNormalized and the same-value replacement HOW."
     )
-    assert "public-oracle projection" in (out + err), (
-        "refusal must name the root cause: the facts predate the projection"
+    assert "DesignFactsPreNormalized" in out + err, (
+        "refusal must identify the non-executable pre-normalized authority"
     )
-    assert "des design --repo-root ROOT --value N --input -" in (out + err), (
-        "refusal must name the re-bind HOW"
+    assert "value 1 holds opaque pre-normalized DESIGN" in out + err, (
+        "refusal must identify the value authority independently of shared DESIGN"
     )
+    assert "cannot supply executable facts" in out + err
+    assert (
+        "des design --repo-root ROOT --value 1 --replace-current --input -" in out + err
+    ), "refusal must name the same-value rebind HOW"
+    assert handover_path.read_bytes() == before
+    assert len(subject.rows()) == seen, "opaque DESIGN must buy no executable role turn"
+    assert {
+        path.name: path.read_bytes() for path in roles.glob("*") if path.is_file()
+    } == artifacts, "refusal must not seal a recovery artifact from opaque DESIGN"
 
 
 def test_selected_revision_recovery_refuses_legacy_semantic_bound_shared_design_facts_without_public_oracle(
     tmp_path: Path,
 ):
-    """Legacy semantic-bound shared DESIGN facts predate the public-oracle projection.
-
-    When a value was bound with the closed DESIGN constructor before this
-    correction existed, shared authority has no public_oracle field. If later
-    re-submitted unchanged, the handover projection gains public_oracle and the
-    selection basis remains stable. Recovery must refuse such a state to prevent
-    silently sealing an input that hides the current shared expected observation.
-
-    This test complements the value-only variant: it ensures that shared DESIGN
-    facts lacking public_oracle are detected separately from value DESIGN facts.
-    """
+    """Opaque shared DESIGN is refused even when the value's public oracle is current."""
     from tests.common.in_process_cli import run_cli_in_process
     from tests.des.acceptance.distill_document_construction.test_distill_document_construction import (
         _call,
+        _stored,
         _Subject,
         _value_manifest,
     )
@@ -428,30 +489,47 @@ def test_selected_revision_recovery_refuses_legacy_semantic_bound_shared_design_
     code, out, err = _call(
         subject.root,
         "design",
-        json.dumps(_value_manifest(expected="stdout is green and exit is zero.")),
+        json.dumps(
+            _value_manifest(
+                expected="stdout is green and exit is zero.", shared=subject.shared
+            )
+        ),
         value=1,
         replace_current=True,
     )
     assert code == 0, out + err
 
-    # Strip public_oracle from the shared design to simulate legacy state,
-    # while keeping value authority intact to test independent detection
     handover_path = subject.root / ".nwave/des/handover.json"
     payload = json.loads(handover_path.read_text())
-    # Verify shared_design exists and has semantic_sha256
     assert payload.get("shared_design") is not None, "test requires shared_design"
     assert payload["shared_design"].get("semantic_sha256") is not None, (
         "test requires shared_design to have semantic_sha256"
     )
-    # Delete public_oracle from shared_design's design (DesignFacts)
-    if "design" in payload["shared_design"]:
-        if "public_oracle" in payload["shared_design"]["design"]:
-            del payload["shared_design"]["design"]["public_oracle"]
-    # Ensure value authority still has public_oracle (to test independent detection)
+    raw_authority = _pre_normalized_authority(
+        payload["shared_design"]["authority_locator"], shared=True
+    )
+    assert "public_oracle" not in raw_authority
+    payload["shared_design"]["design"] = raw_authority
     assert payload["values"][0]["authority"].get("public_oracle") is not None, (
         "test requires value authority to keep public_oracle"
     )
+    current_value = payload["values"][0]["authority"]
     handover_path.write_text(json.dumps(payload, separators=(",", ":")))
+    restored = _stored(subject.root)
+    assert restored.shared_design is not None
+    assert isinstance(restored.shared_design.design, PreNormalizedDesign)
+    assert restored.shared_design.design.raw == raw_authority
+    assert isinstance(restored.values[0].authority, DesignFacts)
+    assert restored.values[0].authority.public_oracle is not None
+    assert (
+        json.loads(handover_path.read_bytes())["values"][0]["authority"]
+        == current_value
+    )
+    before, seen = handover_path.read_bytes(), len(subject.rows())
+    roles = subject.root / ".nwave/des/logs/roles"
+    artifacts = {
+        path.name: path.read_bytes() for path in roles.glob("*") if path.is_file()
+    }
 
     finding = (
         "DESIGN for value 1 changed after DISTILL B; des oracle --value 1 ended "
@@ -477,13 +555,26 @@ def test_selected_revision_recovery_refuses_legacy_semantic_bound_shared_design_
         catch_all=True,
     )
     assert code != 0, (
-        "WHAT: prepare-role accepted legacy semantic-bound shared facts without public_oracle. "
-        "WHY: such facts predate the projection and would hide the current expected observation. "
-        "HOW: prepare-role must refuse with a Refusal naming the re-bind HOW."
+        "WHAT: prepare-role accepted opaque shared facts without public_oracle. "
+        "WHY: recovery would conceal the missing shared observation and execute retired facts. "
+        "HOW: refuse with DesignFactsPreNormalized and the same-shared-scope replacement HOW."
     )
-    assert "public-oracle projection" in (out + err), (
-        "refusal must name the root cause: the facts predate the projection"
+    assert "DesignFactsPreNormalized" in out + err, (
+        "refusal must identify the non-executable pre-normalized authority"
     )
-    assert "des design --repo-root ROOT --shared --input -" in (out + err), (
-        "refusal must name the re-bind HOW with --shared flag"
+    assert "shared holds opaque pre-normalized DESIGN" in out + err, (
+        "refusal must identify shared DESIGN while the value remains normalized"
+    )
+    assert "cannot supply executable facts" in out + err
+    assert (
+        "des design --repo-root ROOT --shared --replace-current --input -" in out + err
+    ), "refusal must name the rebind HOW with the --shared flag"
+    assert handover_path.read_bytes() == before
+    assert len(subject.rows()) == seen, (
+        "opaque shared DESIGN must buy no executable role turn"
+    )
+    assert {
+        path.name: path.read_bytes() for path in roles.glob("*") if path.is_file()
+    } == artifacts, (
+        "refusal must not seal a recovery artifact from opaque shared DESIGN"
     )

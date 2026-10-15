@@ -1,0 +1,431 @@
+"""Strip private agents and skills from a target directory.
+
+Uses the agent catalog SSOT (``framework-catalog.yaml``) to determine
+which agents are public. Everything NOT in the public allow-list is
+removed -- this is **fail-closed** by design: uncatalogued agents are
+stripped rather than leaked.
+
+Skills are stripped using the ownership map built by the shared
+``agent_catalog.build_ownership_map`` -- frontmatter ``skills:`` lists
+PLUS the ``role-skill-loading.yaml`` registry's conditional on-demand
+ownership. This module first validates every agent's frontmatter
+strictly (fail-closed on corruption) and then delegates ownership
+construction to that shared authority, so the strip and the
+skill-reference validator never disagree about what a public agent
+owns. A skill is kept only if at least one of its owning agents is
+public.
+
+Usage::
+
+    python scripts/release/strip_private_agents.py <target-dir>
+
+``<target-dir>`` is the root of the rsynced public repo clone
+(contains ``nWave/`` subdirectory).
+"""
+
+from __future__ import annotations
+
+import shutil
+import sys
+from pathlib import Path
+
+
+# Ensure project root is in sys.path for standalone CLI invocation
+_project_root = str(Path(__file__).resolve().parent.parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+import yaml  # noqa: E402
+
+from scripts.shared.agent_catalog import (  # noqa: E402
+    build_ownership_map,
+    detect_command_skills,
+    is_public_agent,
+    is_public_command,
+    is_public_skill,
+    load_private_skills,
+    load_public_agents,
+    normalize_agent_name,
+)
+
+
+class FrontmatterParseError(ValueError):
+    """Raised when agent frontmatter cannot be parsed during skill stripping."""
+
+
+def _strip_catalog(catalog_path: Path, public_agents: set[str]) -> int:
+    """Remove non-public agent entries from the catalog YAML.
+
+    Also strips their command entries if present. Returns the number
+    of entries removed.
+    """
+    with catalog_path.open(encoding="utf-8") as fh:
+        catalog = yaml.safe_load(fh)
+
+    count = 0
+
+    # Strip from agents section: keep only public
+    agents = catalog.get("agents", {})
+    for name in list(agents):
+        if name not in public_agents:
+            del agents[name]
+            count += 1
+
+    # Strip from commands section (commands referencing non-public agents)
+    commands = catalog.get("commands", {})
+    for cmd_name in list(commands):
+        cmd = commands[cmd_name]
+        cmd_agents = cmd.get("agents") or []
+        non_public = [
+            agent
+            for agent in cmd_agents
+            if not is_public_command({"agents": [agent]}, public_agents)
+        ]
+        if not is_public_command(cmd, public_agents):
+            del commands[cmd_name]
+            count += 1
+        elif non_public:
+            cmd["agents"] = [agent for agent in cmd_agents if agent not in non_public]
+
+    with catalog_path.open("w", encoding="utf-8") as fh:
+        yaml.dump(catalog, fh, default_flow_style=False, sort_keys=False)
+
+    return count
+
+
+def _strip_reference_docs(target_dir: Path, non_public_agents: set[str]) -> list[str]:
+    """Remove generated reference docs for non-public agents.
+
+    Deletes individual agent doc files and scrubs index files
+    (``docs/reference/agents/index.md``, ``docs/reference/skills/index.md``).
+    """
+    removed: list[str] = []
+    ref_agents_dir = target_dir / "docs" / "reference" / "agents"
+    ref_skills_index = target_dir / "docs" / "reference" / "skills" / "index.md"
+
+    # Build set of all names to match (agent + reviewer variants)
+    private_names: set[str] = set()
+    for name in non_public_agents:
+        private_names.add(name)
+        private_names.add(f"{name}-reviewer")
+
+    # Delete individual agent reference files
+    if ref_agents_dir.exists():
+        for name in sorted(private_names):
+            doc_file = ref_agents_dir / f"nw-{name}.md"
+            if doc_file.exists():
+                doc_file.unlink()
+                removed.append(str(doc_file.relative_to(target_dir)))
+
+        # Scrub agent index: remove lines referencing non-public agents
+        agent_index = ref_agents_dir / "index.md"
+        if agent_index.exists():
+            _scrub_index_file(agent_index, private_names)
+            removed.append(f"scrubbed {agent_index.relative_to(target_dir)}")
+
+    # Scrub skills index: remove sections for non-public agents
+    if ref_skills_index.exists():
+        _scrub_index_file(ref_skills_index, private_names)
+        removed.append(f"scrubbed {ref_skills_index.relative_to(target_dir)}")
+
+    # Scrub public reviewer docs that link to private skill paths
+    if ref_agents_dir.exists():
+        for reviewer_doc in sorted(ref_agents_dir.glob("nw-*-reviewer.md")):
+            _scrub_private_links(reviewer_doc, private_names)
+
+    return removed
+
+
+def _scrub_index_file(index_path: Path, private_names: set[str]) -> None:
+    """Remove lines from an index file that reference private agents."""
+    content = index_path.read_text(encoding="utf-8")
+    lines = content.splitlines(keepends=True)
+    filtered: list[str] = []
+    skip_section = False
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("##") and any(
+            f"nw-{name}" in stripped for name in private_names
+        ):
+            skip_section = True
+            continue
+
+        if skip_section and stripped.startswith("##"):
+            skip_section = False
+
+        if skip_section:
+            continue
+
+        if any(f"nw-{name}" in line or f"/{name}" in line for name in private_names):
+            continue
+
+        filtered.append(line)
+
+    index_path.write_text("".join(filtered), encoding="utf-8")
+
+
+def _scrub_private_links(doc_path: Path, private_names: set[str]) -> None:
+    """Remove lines containing links to private skill directories."""
+    content = doc_path.read_text(encoding="utf-8")
+    lines = content.splitlines(keepends=True)
+    filtered = [
+        line
+        for line in lines
+        if not any(f"skills/{name}/" in line for name in private_names)
+    ]
+    if len(filtered) != len(lines):
+        doc_path.write_text("".join(filtered), encoding="utf-8")
+
+
+def _validate_frontmatter_or_raise(agents_dir: Path) -> None:
+    """Fail closed on corrupted agent frontmatter before ownership is built.
+
+    Parses each ``nw-*.md`` file's YAML frontmatter strictly. Unlike the
+    shared ``build_ownership_map()`` (which silently skips unparsable
+    frontmatter -- acceptable for the docgen/validation callers that use
+    it), this raises ``FrontmatterParseError`` so a corrupted agent file
+    halts the strip instead of silently losing that agent's skill
+    ownership and leaking its skills as "uncatalogued".
+
+    Ownership itself is NOT built here: once validation passes, ``strip()``
+    delegates to the shared ``agent_catalog.build_ownership_map`` -- the
+    same authority the skill-reference validator uses -- so both agree on
+    what a public agent owns (frontmatter plus the role-skill-loading.yaml
+    registry).
+    """
+    if not agents_dir.exists():
+        return
+
+    for agent_file in sorted(agents_dir.glob("nw-*.md")):
+        text = agent_file.read_text(encoding="utf-8")
+
+        if not text.startswith("---"):
+            continue
+
+        end = text.find("---", 3)
+        if end == -1:
+            continue
+
+        try:
+            parsed = yaml.safe_load(text[3:end])
+        except Exception as exc:
+            msg = f"Corrupted frontmatter in {agent_file.name}: {exc}"
+            raise FrontmatterParseError(msg) from exc
+
+        if not isinstance(parsed, dict):
+            msg = (
+                f"Non-mapping frontmatter in {agent_file.name}: "
+                f"expected a YAML mapping, got {type(parsed).__name__}"
+            )
+            raise FrontmatterParseError(msg)
+
+
+def strip(target_dir: Path) -> dict[str, list[str]]:
+    """Remove non-public agent files and skill dirs from *target_dir*.
+
+    Uses the allow-list approach: only agents in the public set from
+    ``framework-catalog.yaml`` are kept. Everything else (private and
+    uncatalogued) is stripped.
+
+    Raises ``CatalogNotFoundError`` if the catalog file is missing.
+
+    Returns a dict with ``agents``, ``skills``, ``docs``, ``references``
+    and ``catalog`` keys listing removed paths (relative to *target_dir*).
+    """
+    nwave_dir = target_dir / "nWave"
+
+    # Fail-closed: raises CatalogNotFoundError if catalog missing
+    public_agents = load_public_agents(nwave_dir, strict=True)
+
+    removed: dict[str, list[str]] = {
+        "agents": [],
+        "skills": [],
+        "docs": [],
+        "references": [],
+        "catalog": [],
+    }
+
+    agents_dir = nwave_dir / "agents"
+    skills_dir = nwave_dir / "skills"
+
+    # 1. Fail closed on corrupted frontmatter, then delegate ownership
+    #    construction to the shared SSOT (frontmatter + role-skill-loading
+    #    registry) -- the same authority validate_skill_references.py uses.
+    _validate_frontmatter_or_raise(agents_dir)
+    ownership_map = build_ownership_map(agents_dir)
+    command_skills = detect_command_skills(skills_dir)
+    private_skills = load_private_skills(nwave_dir)
+
+    # 2. Strip agent files: remove anything NOT in public allow-list
+    non_public_agents: set[str] = set()
+    if agents_dir.exists():
+        for agent_file in sorted(agents_dir.glob("nw-*.md")):
+            if not is_public_agent(agent_file.name, public_agents):
+                agent_file.unlink()
+                removed["agents"].append(str(agent_file.relative_to(target_dir)))
+                name = normalize_agent_name(agent_file.name)
+                non_public_agents.add(name)
+
+    # 3. Strip skill directories using ownership map
+    removed_skill_names: set[str] = set()
+    if skills_dir.exists():
+        for skill_dir in sorted(skills_dir.iterdir()):
+            if not skill_dir.is_dir():
+                continue
+            if not skill_dir.name.startswith("nw-"):
+                continue
+            if not is_public_skill(
+                skill_dir.name,
+                public_agents,
+                ownership_map=ownership_map,
+                command_skills=command_skills,
+                private_skills=private_skills,
+            ):
+                shutil.rmtree(skill_dir)
+                removed["skills"].append(str(skill_dir.relative_to(target_dir)))
+                removed_skill_names.add(skill_dir.name)
+
+    # 3b. Scrub references to the skills just removed out of the surviving
+    #     public agents, so the package carries no dangling instruction.
+    removed["references"] = _scrub_removed_skill_references(
+        agents_dir, target_dir, removed_skill_names, public_agents
+    )
+
+    # 4. Strip reference documentation
+    removed["docs"] = _strip_reference_docs(target_dir, non_public_agents)
+
+    # 5. Strip catalog entries
+    catalog_path = nwave_dir / "framework-catalog.yaml"
+    catalog_count = _strip_catalog(catalog_path, public_agents)
+    if catalog_count:
+        removed["catalog"].append(
+            f"{catalog_count} entries from framework-catalog.yaml"
+        )
+
+    # Summary
+    total = (
+        len(removed["agents"])
+        + len(removed["skills"])
+        + len(removed["docs"])
+        + len(removed["references"])
+        + catalog_count
+    )
+    print(f"Stripped {total} private items:")
+    for category, paths in removed.items():
+        for p in paths:
+            print(f"  [{category}] {p}")
+
+    return removed
+
+
+def _scrub_removed_skill_references(
+    agents_dir: Path,
+    target_dir: Path,
+    removed_skills: set[str],
+    public_agents: set[str],
+) -> list[str]:
+    """Drop ``skills:`` frontmatter entries naming a skill the strip removed.
+
+    WHY: a surviving public agent whose frontmatter still names a removed
+    skill ships a dangling instruction. The public user installs an agent
+    that points at a directory the package does not contain, and nothing
+    fails loudly -- the reference is inert at load time, so the defect
+    surfaces only as missing behaviour.
+
+    The edit is line-scoped on purpose: a YAML round-trip would reformat
+    every surviving public agent file, turning a two-line correction into
+    an unreviewable diff. Only the matching list-item lines are dropped;
+    the rest of the file, frontmatter included, is left byte-identical.
+
+    Returns one report string per scrubbed reference.
+    """
+    if not removed_skills or not agents_dir.exists():
+        return []
+
+    scrubbed: list[str] = []
+    for agent_file in sorted(agents_dir.glob("nw-*.md")):
+        if not is_public_agent(agent_file.name, public_agents):
+            continue
+        text = agent_file.read_text(encoding="utf-8")
+        if not text.startswith("---"):
+            continue
+        end = text.find("\n---", 3)
+        if end == -1:
+            continue
+
+        head, tail = text[:end], text[end:]
+        kept_lines: list[str] = []
+        in_skills = False
+        dropped: list[str] = []
+        for line in head.split("\n"):
+            stripped = line.strip()
+            if not line.startswith((" ", "\t")) and stripped.endswith(":"):
+                in_skills = stripped == "skills:"
+            elif in_skills and stripped.startswith("- "):
+                name = stripped[2:].strip().strip("\"'")
+                key = name if name.startswith("nw-") else f"nw-{name}"
+                if key in removed_skills:
+                    dropped.append(key)
+                    continue
+            kept_lines.append(line)
+
+        if not dropped:
+            continue
+        agent_file.write_text("\n".join(kept_lines) + tail, encoding="utf-8")
+        rel = agent_file.relative_to(target_dir)
+        scrubbed.extend(f"{rel} no longer references {name}" for name in dropped)
+
+    return scrubbed
+
+
+def verify_after_strip(target_dir: Path) -> list[str]:
+    """Defense-in-depth: re-verify ``target_dir`` with the SAME, stronger
+    check the real release pipeline runs (``verify_wheel_privacy.verify``,
+    wired into ``release-prod.yml`` via ``verify_public_tree_privacy.py``).
+
+    Checks agents AND skills (the old, dead ``verify_strip`` checked only
+    agents, was never called by ``main()``, and never ran in CI --
+    techdebt.md id
+    verify-strip-is-a-dead-weaker-unwired-duplicate-privacy-gate). Returns
+    an empty list when clean, or a list of violation strings.
+    """
+    from scripts.release.verify_wheel_privacy import verify
+
+    return verify(target_dir)
+
+
+def main() -> None:
+    if len(sys.argv) != 2:
+        print(f"Usage: {sys.argv[0]} <target-dir>", file=sys.stderr)
+        sys.exit(1)
+
+    target = Path(sys.argv[1])
+    if not target.is_dir():
+        print(f"ERROR: not a directory: {target}", file=sys.stderr)
+        sys.exit(1)
+
+    strip(target)
+
+    violations = verify_after_strip(target)
+    if violations:
+        print(
+            "ERROR: privacy violations remain after strip:",
+            file=sys.stderr,
+        )
+        for violation in violations:
+            print(f"  {violation}", file=sys.stderr)
+        print(
+            "WHY: strip() removed everything the catalog allow-list "
+            "flags as private, but a defense-in-depth re-check "
+            "(verify_wheel_privacy.verify, the same check release-prod.yml "
+            "runs) still found private artifacts. HOW: check "
+            "framework-catalog.yaml for missing/incorrect public: flags "
+            "on the named agents/skills, fix the catalog, then re-run.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

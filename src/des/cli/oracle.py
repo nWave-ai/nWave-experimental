@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import shlex
 from pathlib import Path
 
 from des.application.delivery_steps import DeliverySteps
@@ -22,6 +23,10 @@ def main(argv: list[str] | None = None) -> int:
     add_repo_root_argument(parser, "--repo-root", type=Path, required=True)
     parser.add_argument("--value", type=int, required=True)
     parser.add_argument(
+        "--baseline",
+        help="original source commit to measure current acceptance bytes against",
+    )
+    parser.add_argument(
         "--input",
         choices=("-",),
         required=True,
@@ -30,12 +35,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root = resolved_root(args.repo_root)
     own = "des oracle --repo-root {root} --value " + str(args.value) + " --input -"
+    if args.baseline is not None:
+        own += " --baseline " + shlex.quote(args.baseline)
     if isinstance(root, StepRefusal):
         return refuse(root, own)
     raw = read_request()
     if isinstance(raw, StepRefusal):
         return refuse(raw, own.format(root=root))
-    outcome = DeliverySteps().oracle(root, args.value, raw)
+    outcome = DeliverySteps().oracle(root, args.value, raw, baseline=args.baseline)
     if not outcome.succeeded:
         return refuse(
             StepRefusal(

@@ -17,7 +17,11 @@ printf '%s' "$DISCUSS_MANIFEST" | des po --repo-root ROOT --feature FEATURE_ID -
 The same typed constructors as a feature write durable authorities from native
 role facts under configured destinations. Keep the defect verbatim in DISCUSS
 and the matching observation in DISTILL. The native acceptance designer authors
-the regression oracle; `des oracle --input -` measures RED. The native crafter
+the regression oracle; first `des oracle --baseline <original pre-fix commit> --input -`
+measures current oracle/support bytes as RED in the existing disposable checkout.
+The fix may already be committed, so never infer this source from HEAD; later
+corrections reuse the recorded baseline when the flag is omitted. Missing source
+refuses as `OracleBaselineMissing` with WHAT/WHY/HOW. The native crafter
 implements the correction; `des craft --input -` measures GREEN and records it.
 DES never authors code or invokes a model; no wave is mandatory.
 

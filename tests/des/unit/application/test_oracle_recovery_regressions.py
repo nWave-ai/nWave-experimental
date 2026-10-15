@@ -30,12 +30,12 @@ from __future__ import annotations
 
 import os
 import stat
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from des.application.delivery_continuation import (
-    AuthorityFacts,
     DeliveryContinuationRunner,
     DeliveryOutcome,
     NativeRun,
@@ -51,7 +51,9 @@ from tests.des.unit.application.test_authored_oracle_is_executed_red import (
     RED_ON_ITS_ASSERTION,
     REQUEST,
     ScriptedPort,
+    execution_authority,
     git,
+    oracle_manifest,
 )
 
 
@@ -66,6 +68,17 @@ def subject(tmp_path: Path) -> Path:
     git(root, "add", ".")
     git(root, "commit", "-qm", "base")
     return root
+
+
+@pytest.fixture
+def genesis(subject: Path) -> str:
+    """Capture the established original commit before test-body mutations."""
+    return subprocess.run(
+        ["git", "-C", str(subject), "rev-parse", "--verify", "HEAD^{commit}"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +123,7 @@ class RejectsThenAuthors(ScriptedPort):
 
 def test_changed_design_with_unchanged_oracle_bytes_is_not_settled_by_stale_evidence(
     subject: Path,
+    genesis: str,
 ) -> None:
     # WHAT: correcting the DESIGN (decisions D1 -> D2) while the oracle bytes
     # stay byte-identical must not let `oracle_settlement` re-point the record
@@ -141,13 +155,15 @@ def test_changed_design_with_unchanged_oracle_bytes_is_not_settled_by_stale_evid
     runner = DeliveryContinuationRunner()
     stored = decomposed(runner, port, subject, REQUEST)
     stored, d1 = designed(runner, port, subject, stored, port.manifest("D1"))
-    first = oracled(runner, port, subject, stored, d1)
+    first = oracled(runner, port, subject, stored, d1, baseline=genesis)
     assert first.refusal is None, first.refusal
     assert runner.oracle_turn_complete(subject, stored, stored.values[0], d1)
 
     # Correct the DESIGN only (same value, same oracle bytes on disk): D2.
     stored, d2 = designed(runner, port, subject, stored, port.manifest("D2"))
-    assert d1.decisions != d2.decisions, "the probe requires a genuine design change"
+    assert tuple(d1.resolved.catalog.resolve(ref) for ref in d1.decisions) != tuple(
+        d2.resolved.catalog.resolve(ref) for ref in d2.decisions
+    ), "the probe requires a genuine design change"
     assert d1.acceptance_paths == d2.acceptance_paths, (
         "the probe requires unchanged oracle bytes on disk"
     )
@@ -275,17 +291,14 @@ def test_go_named_locator_runs_its_declared_generic_argv_not_pytest(
 
     go_oracle = "tests/acceptance/oracle_test.go"
     declared_argv = (str(fake_checker), "run")
-    authority = AuthorityFacts(
-        locator="docs/architecture.md#Go named oracle",
-        modified_authority_paths=(),
-        target_decisions=((PRODUCTION, "CREATE_NEW"),),
-        paradigm="object_oriented",
-        decisions=(),
-        obligations=(),
-        acceptance_oracle_locator=go_oracle,
-        acceptance_paths=(go_oracle,),
-        native_verification_argvs=(declared_argv,),
-        oracle_verification_index=0,
+    authority = execution_authority(
+        subject,
+        oracle_manifest(
+            "Execute the Go-named oracle through its declared generic command.",
+            oracle=go_oracle,
+            targets=((PRODUCTION, "CREATE_NEW"),),
+            verification=(declared_argv,),
+        ),
     )
 
     runner = DeliveryContinuationRunner()

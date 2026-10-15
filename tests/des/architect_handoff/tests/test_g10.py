@@ -43,6 +43,8 @@ from des.application.architect_handoff import g10_rules as RU
 from des.application.architect_handoff import g10_run as RUN
 from des.application.architect_handoff import g10_scope as S
 from des.application.architect_handoff import g10_types as T
+from des.domain.design_document import FactCatalog, build_fact_catalog
+from des.ports.driven_ports.task_invocation_port import FactId, FactRecord, FactRef
 
 
 G10 = "des.application.architect_handoff.g10"
@@ -74,8 +76,12 @@ UNPROVEN = (
 def read(path: str) -> dict:
     doc, ds = C.load_json(path)
     assert not ds, ds
-    ds = C.resolve_authoring(doc, str(Path(path).parent))
-    assert not ds, ds
+    for entry in doc["sections"]:
+        if entry["kind"] != "model":
+            continue
+        for model in entry["status"].get("payload", {}).get("models", []):
+            if "text_file" in model:
+                model["text"] = (Path(path).parent / model.pop("text_file")).read_text()
     return doc
 
 
@@ -83,19 +89,203 @@ def merged(paths: list[str]) -> dict:
     return {"sections": [s for p in paths for s in read(p)["sections"]]}
 
 
+def decode_current(doc: dict) -> T.Handoff:
+    handoff, defects = C.decode_handoff(doc)
+    assert handoff is not None, defects
+    return handoff
+
+
+def identity(handoff: T.Handoff) -> dict:
+    """Canonical projection, distinct from the lossless persistence wire."""
+    return {
+        "sections": [
+            {"kind": kind, "scope": scope, "status": C.enc(entry.status)}
+            for (kind, scope), entry in sorted(handoff.items())
+        ]
+    }
+
+
+def generated_catalog() -> FactCatalog:
+    records = tuple(
+        FactRecord(
+            id=FactId(f"Generated-{index}"),
+            text=f"Generated contract statement {index}",
+        )
+        for index in range(10)
+    ) + (
+        FactRecord(
+            id=FactId("Generated-Perturbed"),
+            text="The generated contract has been perturbed",
+        ),
+    )
+    catalog = build_fact_catalog(records)
+    assert isinstance(catalog, FactCatalog), catalog
+    return catalog
+
+
+def fixture_context(doc: dict) -> tuple[dict, FactCatalog, list[dict]]:
+    """Construct current inputs from the frozen G10 regression source vocabulary.
+
+    This is test fixture construction only: the public decoder never admits the
+    frozen prose, inline model bytes or authored receipts.
+    """
+    records: dict[str, FactRecord] = {}
+
+    def fact(text: str) -> dict:
+        identifier = FactId("Fixture-" + T.sha256_text(text)[:48])
+        records.setdefault(identifier, FactRecord(id=identifier, text=text))
+        return {"ref": identifier}
+
+    def current(tp, value):
+        if tp is FactRef:
+            return fact(value)
+        origin = t.get_origin(tp)
+        if origin is tuple:
+            return [current(t.get_args(tp)[0], item) for item in value]
+        if origin in (t.Union, types.UnionType):
+            if value is None:
+                return None
+            variants = [
+                variant for variant in t.get_args(tp) if variant is not type(None)
+            ]
+            if len(variants) == 1:
+                return current(variants[0], value)
+            for variant in variants:
+                tag = next(
+                    (
+                        field.default
+                        for field in dc.fields(variant)
+                        if field.name == "tag"
+                    ),
+                    None,
+                )
+                if isinstance(value, dict) and value.get("tag") == tag:
+                    return current(variant, value)
+            return copy.deepcopy(value)
+        if dc.is_dataclass(tp):
+            raw = copy.deepcopy(value)
+            if tp is T.Model:
+                text = raw.pop("text")
+                raw["source"] = {"path": raw["path"], "sha256": T.sha256_text(text)}
+            if tp is T.Argued:
+                raw["argument"] = [raw["argument"]]
+            hints = t.get_type_hints(tp)
+            for field in dc.fields(tp):
+                if field.name in raw:
+                    raw[field.name] = current(hints[field.name], raw[field.name])
+            return raw
+        return copy.deepcopy(value)
+
+    sections, driven = [], []
+    for entry in doc["sections"]:
+        if entry["kind"] == "receipts":
+            if entry["status"]["tag"] == "applicable":
+                driven.append(copy.deepcopy(entry))
+            continue
+        status = entry["status"]
+        normalized = (
+            {
+                "tag": "applicable",
+                "payload": current(T.PAYLOAD[entry["kind"]], status["payload"]),
+            }
+            if status["tag"] == "applicable"
+            else {"tag": "not_applicable", "reason": fact(status["reason"])}
+        )
+        sections.append({**entry, "status": normalized})
+    catalog = build_fact_catalog(tuple(records.values()))
+    assert isinstance(catalog, FactCatalog), catalog
+    return {"sections": sections}, catalog, driven
+
+
+def fixture_catalog(doc: dict) -> FactCatalog:
+    return fixture_context(doc)[1]
+
+
+def stage_detached_fixture(
+    source: str, directory: str, *, document: dict | None = None
+) -> str:
+    """Publish normalized sections and digest-bound facts, not submitted runs."""
+    raw = read(source) if document is None else document
+    wire, catalog, driven = fixture_context(raw)
+    for entry in raw["sections"]:
+        if entry["kind"] == "model":
+            for model in entry["status"].get("payload", {}).get("models", []):
+                path = Path(directory, model["path"])
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(model["text"], encoding="utf-8")
+    manifest = Path(directory, "design.json")
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "facts": [
+                    {"id": record.id, "text": record.text} for record in catalog.records
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    wire["catalog"] = [
+        {"path": manifest.name, "sha256": T.sha256_bytes(manifest.read_bytes())}
+    ]
+    handoff = Path(directory, "g10.json")
+    handoff.write_text(json.dumps(wire), encoding="utf-8")
+    if driven:
+        Path(directory, "g10.receipts.json").write_text(
+            json.dumps({"sections": driven}), encoding="utf-8"
+        )
+    return str(handoff)
+
+
+@contextlib.contextmanager
+def fixture_arguments(args: tuple[str, ...]):
+    """Stage only the named frozen regression sources before a real CLI call."""
+    sources = (MINIMAL, OO, os.path.join(V9_DIR, "g10.json"))
+    if not any(source in args for source in sources):
+        yield args
+        return
+    with tempfile.TemporaryDirectory(prefix="g10-current-cli-") as directory:
+        replacements = {}
+        for index, source in enumerate(sources):
+            if source not in args:
+                continue
+            destination = Path(directory, str(index))
+            if source == os.path.join(V9_DIR, "g10.json"):
+                shutil.copytree(
+                    V9_DIR, destination, ignore=shutil.ignore_patterns("mutants")
+                )
+                replacements[V9_DIR] = str(destination)
+                replacements[os.path.join(V9_DIR, "g10.receipts.json")] = str(
+                    destination / "g10.receipts.json"
+                )
+            else:
+                destination.mkdir()
+            replacements[source] = stage_detached_fixture(source, str(destination))
+        yield tuple(
+            replacements.get(argument, argument)
+            for argument in args
+            if argument != os.path.join(V9_DIR, "g10.receipts.json")
+        )
+
+
 def decode(doc: dict) -> T.Handoff:
-    h, ds = C.decode_handoff(doc)
+    normalized, _catalog, driven = fixture_context(doc)
+    h, ds = C.decode_handoff(normalized)
     assert h is not None, [f"{d.rule} {d.where} {d.what}" for d in ds]
+    for entry in driven:
+        defects = []
+        receipts = C.dec(T.Receipts, entry["status"]["payload"], "$.driven", defects)
+        assert not defects, defects
+        h[("receipts", entry["scope"])] = T.Entry(
+            kind="receipts", scope=entry["scope"], status=T.Applicable(payload=receipts)
+        )
     return h
 
 
 def defects(
     doc: dict, targets=None, mode: str = "auto", base: str | None = None
 ) -> list:
-    h, ds = C.decode_handoff(doc)
-    if h is None:
-        return ds
-    return RU.check(h, targets, mode, base)[0]
+    return RU.check(decode(doc), targets, mode, base, fixture_catalog(doc))[0]
 
 
 def rule_ids(
@@ -243,6 +433,8 @@ def rand(
     tp: t.Any, rng: random.Random, meta: t.Mapping[str, t.Any] | None = None
 ) -> t.Any:
     meta = meta or {}
+    if tp is FactRef:
+        return FactRef(FactId(f"Generated-{rng.randrange(10)}"))
     o = t.get_origin(tp)
     if o is t.Union or o is types.UnionType:
         args = t.get_args(tp)
@@ -253,6 +445,11 @@ def rand(
         return rng.choice(t.get_args(tp))
     if o is tuple:
         n = rng.randint(1 if meta.get("nonempty") else 0, 3)
+        if meta.get("unique_refs"):
+            return tuple(
+                FactRef(FactId(f"Generated-{index}"))
+                for index in rng.sample(range(10), n)
+            )
         return tuple(rand(t.get_args(tp)[0], rng) for _ in range(n))
     if isinstance(tp, t.NewType):
         return {
@@ -289,7 +486,7 @@ def random_handoff(rng: random.Random) -> T.Handoff:
                 continue
             na = rng.random() < 0.15
             status = (
-                T.NotApplicable(reason=rstr(rng))
+                T.NotApplicable(reason=rand(FactRef, rng))
                 if na
                 else T.Applicable(payload=rand(T.PAYLOAD[kind], rng))
             )
@@ -313,15 +510,32 @@ def shuffled(o, rng, key=None):
     return o
 
 
+UNIQUE_REFERENCE_FIELDS = frozenset(
+    field.name
+    for record in (
+        T.Generator,
+        T.Finite,
+        T.ExclusionClaim,
+        T.Construction,
+        T.Model,
+        T.Claim,
+    )
+    for field in dc.fields(record)
+    if field.metadata.get("unique_refs")
+)
+
+
 def doubled(o, key=None):
-    """Every set of the document written twice (argv and the list of sections excepted): a repeat must change nothing."""
+    """Repeat admitted structural sets, never argv, sections or unique semantic lists."""
     if isinstance(o, dict):
         return {k: doubled(v, k) for k, v in o.items()}
     if isinstance(o, list):
         items = [doubled(x) for x in o]
         return (
             items
-            if key in T.SEQUENCE_FIELDS or key == "sections"
+            if key in T.SEQUENCE_FIELDS
+            or key == "sections"
+            or key in UNIQUE_REFERENCE_FIELDS
             else items + copy.deepcopy(items)
         )
     return o
@@ -333,7 +547,7 @@ def perturb(h: T.Handoff, key) -> T.Handoff:
         T.Entry(
             kind=key[0],
             scope=key[1],
-            status=T.NotApplicable(reason="perturbed " + "/".join(key)),
+            status=T.NotApplicable(reason=FactRef(FactId("Generated-Perturbed"))),
         ),
     )
 
@@ -398,17 +612,18 @@ class Generated(unittest.TestCase):
         for s in SEEDS:
             h = random_handoff(random.Random(s))
             self.assertTrue(h)
-            decode(C.to_json(h))
+            decode_current(C.to_json(h))
 
     def test_check_and_every_projection_are_total_over_random_handoffs(self):
         for s in SEEDS:
-            h = decode(C.to_json(random_handoff(random.Random(s))))
-            RU.check(h, TARGETS, "auto", None)
+            h = decode_current(C.to_json(random_handoff(random.Random(s))))
+            catalog = generated_catalog()
+            RU.check(h, TARGETS, "auto", None, catalog)
             for role in P.ROLES:
-                P.compose(role, h, "T", targets=TARGETS)
-            P.render_markdown(h)
-            P.render_html(h)
-            P.summary(h)
+                P.compose(role, h, "T", targets=TARGETS, catalog=catalog)
+            P.render_markdown(h, catalog=catalog)
+            P.render_html(h, catalog=catalog)
+            P.summary(h, catalog=catalog)
 
 
 # =========================================================================== algebra
@@ -417,7 +632,7 @@ class Algebra(unittest.TestCase):
         for s in SEEDS:
             h = random_handoff(random.Random(s))
             j = C.to_json(h)
-            h2 = decode(j)
+            h2 = decode_current(j)
             self.assertEqual(C.to_json(h), C.to_json(h2), f"seed {s}")
             self.assertEqual(j, C.to_json(h2), f"seed {s}")
 
@@ -426,43 +641,64 @@ class Algebra(unittest.TestCase):
     ):
         for s in SEEDS:
             j = C.to_json(random_handoff(random.Random(s)))
-            h1, h2 = decode(j), decode(shuffled(j, random.Random(1000 + s)))
-            self.assertEqual(C.to_json(h1), C.to_json(h2), f"seed {s}")
+            h1, h2 = (
+                decode_current(j),
+                decode_current(shuffled(j, random.Random(1000 + s))),
+            )
+            self.assertEqual(identity(h1), identity(h2), f"seed {s}")
             for role in P.ROLES:
                 self.assertEqual(
-                    P.compose(role, h1, "T", {"k": "v"}, targets=TARGETS),
-                    P.compose(role, h2, "T", {"k": "v"}, targets=TARGETS),
+                    P.compose(
+                        role,
+                        h1,
+                        "T",
+                        {"k": "v"},
+                        targets=TARGETS,
+                        catalog=generated_catalog(),
+                    ),
+                    P.compose(
+                        role,
+                        h2,
+                        "T",
+                        {"k": "v"},
+                        targets=TARGETS,
+                        catalog=generated_catalog(),
+                    ),
                     f"seed {s} role {role}",
                 )
         doc = read(MINIMAL)
         runs = section(doc, "receipts")["runs"]
-        before = C.to_json(decode(doc))
+        before = identity(decode(doc))
         runs[0]["argv"] = list(reversed(runs[0]["argv"]))
-        self.assertNotEqual(before, C.to_json(decode(doc)))
+        self.assertNotEqual(before, identity(decode(doc)))
 
     def test_a_repeated_item_in_a_set_does_not_change_identity(self):
         doc = read(OO)
-        before = C.to_json(decode(doc))
-        c = section(doc, "construction")["claims"][0]
-        c["bypass"] = c["bypass"] + [c["bypass"][0]]
-        self.assertEqual(before, C.to_json(decode(doc)))
+        before = identity(decode(doc))
+        uses = section(doc, "laws")["laws"][0]["uses"]
+        uses.append(uses[0])
+        self.assertEqual(before, identity(decode(doc)))
 
     def test_a_repeat_of_every_set_item_changes_no_byte_of_any_prompt(self):
         for s in SEEDS:
             j = C.to_json(random_handoff(random.Random(s)))
-            h1, h2 = decode(j), decode(doubled(j))
-            self.assertEqual(C.to_json(h1), C.to_json(h2), f"seed {s}")
+            h1, h2 = decode_current(j), decode_current(doubled(j))
+            self.assertEqual(identity(h1), identity(h2), f"seed {s}")
             for role in P.ROLES:
                 self.assertEqual(
-                    P.compose(role, h1, "T", targets=TARGETS),
-                    P.compose(role, h2, "T", targets=TARGETS),
+                    P.compose(
+                        role, h1, "T", targets=TARGETS, catalog=generated_catalog()
+                    ),
+                    P.compose(
+                        role, h2, "T", targets=TARGETS, catalog=generated_catalog()
+                    ),
                     f"seed {s} role {role}",
                 )
 
     def test_merge_is_a_partial_disjoint_union(self):
         for s in SEEDS:
             rng = random.Random(s)
-            h = decode(C.to_json(random_handoff(rng)))
+            h = decode_current(C.to_json(random_handoff(rng)))
             keys = sorted(h)
             rng.shuffle(keys)
             c1, c2 = sorted(rng.randint(0, len(keys)) for _ in range(2))
@@ -470,19 +706,21 @@ class Algebra(unittest.TestCase):
                 {k: h[k] for k in keys[x:y]}
                 for x, y in ((0, c1), (c1, c2), (c2, len(keys)))
             )
-            whole = C.to_json(h)
-            self.assertEqual(whole, C.to_json(C.merge(C.merge(a, b), c)))
-            self.assertEqual(whole, C.to_json(C.merge(a, C.merge(b, c))))
-            self.assertEqual(whole, C.to_json(C.merge(C.merge(c, b), a)))
-            self.assertEqual(C.to_json(a), C.to_json(C.merge(a, a)))
+            whole = identity(h)
+            self.assertEqual(whole, identity(C.merge(C.merge(a, b), c)))
+            self.assertEqual(whole, identity(C.merge(a, C.merge(b, c))))
+            self.assertEqual(whole, identity(C.merge(C.merge(c, b), a)))
+            self.assertEqual(identity(a), identity(C.merge(a, a)))
 
     def test_merge_refuses_two_contents_for_one_key_with_what_why_how_and_replace_is_explicit(
         self,
     ):
-        h = decode(C.to_json(random_handoff(random.Random(5))))
+        h = decode_current(C.to_json(random_handoff(random.Random(5))))
         k = sorted(h)[0]
         other = T.Entry(
-            kind=k[0], scope=k[1], status=T.NotApplicable(reason="a different content")
+            kind=k[0],
+            scope=k[1],
+            status=T.NotApplicable(reason=FactRef(FactId("Generated-Perturbed"))),
         )
         with self.assertRaises(C.MergeConflict) as cm:
             C.merge(h, {k: other})
@@ -493,18 +731,34 @@ class Algebra(unittest.TestCase):
 
     def test_the_prompt_is_deterministic_and_independent_of_insertion_order(self):
         for s in SEEDS:
-            h = decode(C.to_json(random_handoff(random.Random(s))))
+            h = decode_current(C.to_json(random_handoff(random.Random(s))))
             keys = list(h)
             random.Random(s).shuffle(keys)
             h2 = {k: h[k] for k in keys}
             for role in P.ROLES:
                 self.assertEqual(
-                    P.compose(role, h, "T", {"a": "1"}, "v", targets=TARGETS),
-                    P.compose(role, h2, "T", {"a": "1"}, "v", targets=TARGETS),
+                    P.compose(
+                        role,
+                        h,
+                        "T",
+                        {"a": "1"},
+                        "v",
+                        targets=TARGETS,
+                        catalog=generated_catalog(),
+                    ),
+                    P.compose(
+                        role,
+                        h2,
+                        "T",
+                        {"a": "1"},
+                        "v",
+                        targets=TARGETS,
+                        catalog=generated_catalog(),
+                    ),
                 )
 
     def test_the_orchestrator_context_and_template_reach_every_role(self):
-        h = decode(C.to_json(random_handoff(random.Random(1))))
+        h = decode_current(C.to_json(random_handoff(random.Random(1))))
         for role in P.ROLES:
             out = P.compose(
                 role,
@@ -513,6 +767,7 @@ class Algebra(unittest.TestCase):
                 {"issue": "CONTEXT-7"},
                 "VERBATIM-9",
                 targets=TARGETS,
+                catalog=generated_catalog(),
             )
             for needle in ("TEMPLATE-WHAT", "CONTEXT-7", "VERBATIM-9"):
                 self.assertIn(needle, out, role)
@@ -522,11 +777,19 @@ class Algebra(unittest.TestCase):
 class Projection(unittest.TestCase):
     def test_complete_and_local_per_role(self):
         for s in SEEDS:
-            h = decode(C.to_json(random_handoff(random.Random(s))))
+            h = decode_current(C.to_json(random_handoff(random.Random(s))))
             for role in P.ROLES:
-                base = P.compose(role, h, "T", targets=TARGETS)
+                base = P.compose(
+                    role, h, "T", targets=TARGETS, catalog=generated_catalog()
+                )
                 for key in sorted(h):
-                    after = P.compose(role, perturb(h, key), "T", targets=TARGETS)
+                    after = P.compose(
+                        role,
+                        perturb(h, key),
+                        "T",
+                        targets=TARGETS,
+                        catalog=generated_catalog(),
+                    )
                     self.assertEqual(
                         key[0] in P.CONSUMERS[role],
                         base != after,
@@ -540,17 +803,34 @@ class Projection(unittest.TestCase):
                 {
                     "kind": "laws",
                     "scope": "value:10",
-                    "status": {"tag": "not_applicable", "reason": "ten"},
+                    "status": {
+                        "tag": "not_applicable",
+                        "reason": {"ref": "Generated-9"},
+                    },
                 }
             )
-            h = decode(j)
+            h = decode_current(j)
             for key in sorted(h):
                 if key[1] not in ("value:2", "value:10"):
                     continue
                 for role in P.ROLES:
                     self.assertEqual(
-                        P.compose(role, h, "T", value=1, targets=TARGETS),
-                        P.compose(role, perturb(h, key), "T", value=1, targets=TARGETS),
+                        P.compose(
+                            role,
+                            h,
+                            "T",
+                            value=1,
+                            targets=TARGETS,
+                            catalog=generated_catalog(),
+                        ),
+                        P.compose(
+                            role,
+                            perturb(h, key),
+                            "T",
+                            value=1,
+                            targets=TARGETS,
+                            catalog=generated_catalog(),
+                        ),
                         f"seed {s} role {role} entry {key}",
                     )
 
@@ -558,9 +838,10 @@ class Projection(unittest.TestCase):
         outs = {
             P.compose(
                 "examiner",
-                decode(C.to_json(random_handoff(random.Random(s)))),
+                decode_current(C.to_json(random_handoff(random.Random(s)))),
                 "WHAT",
                 {"k": "v"},
+                catalog=generated_catalog(),
             )
             for s in SEEDS
         }
@@ -569,12 +850,17 @@ class Projection(unittest.TestCase):
     def test_a_consumed_section_that_is_missing_arrives_as_unassessed_never_as_silence(
         self,
     ):
-        h = decode(C.to_json(random_handoff(random.Random(4))))
+        h = decode_current(C.to_json(random_handoff(random.Random(4))))
         for key in list(h):
             if key[1] == "shared" and key[0] in ("laws", "closure"):
                 del h[key]
-        self.assertIn("UNASSESSED", P.compose("atd", h, "T", targets=TARGETS))
-        self.assertNotIn("UNASSESSED", P.compose("examiner", h, "T"))
+        self.assertIn(
+            "UNASSESSED",
+            P.compose("atd", h, "T", targets=TARGETS, catalog=generated_catalog()),
+        )
+        self.assertNotIn(
+            "UNASSESSED", P.compose("examiner", h, "T", catalog=generated_catalog())
+        )
 
     def test_the_header_hash_is_the_hash_of_what_is_shown_so_a_hidden_field_leaves_the_bytes_alone(
         self,
@@ -582,34 +868,54 @@ class Projection(unittest.TestCase):
         with fresh_copy() as d:
             doc = base_doc(d)
             h1 = decode(doc)
+            catalog1 = fixture_catalog(doc)
             law(doc, "L1")["treatment"]["independent_observation"] = (
                 "a different reference"
             )
             h2 = decode(doc)
+            catalog2 = fixture_catalog(doc)
             self.assertEqual(
-                P.compose("software_crafter", h1, "T", targets=["pagination.py"]),
-                P.compose("software_crafter", h2, "T", targets=["pagination.py"]),
+                P.compose(
+                    "software_crafter",
+                    h1,
+                    "T",
+                    targets=["pagination.py"],
+                    catalog=catalog1,
+                ),
+                P.compose(
+                    "software_crafter",
+                    h2,
+                    "T",
+                    targets=["pagination.py"],
+                    catalog=catalog2,
+                ),
             )
             self.assertNotEqual(
-                P.compose("atd", h1, "T", targets=["pagination.py"]),
-                P.compose("atd", h2, "T", targets=["pagination.py"]),
+                P.compose("atd", h1, "T", targets=["pagination.py"], catalog=catalog1),
+                P.compose("atd", h2, "T", targets=["pagination.py"], catalog=catalog2),
             )
 
     def test_an_owned_view_without_targets_is_refused_not_silently_widened(self):
-        h = decode(read(OO))
+        doc = read(OO)
+        h = decode(doc)
         with self.assertRaises(P.ProjectionError) as cm:
-            P.compose("software_crafter", h, "T")
+            P.compose("software_crafter", h, "T", catalog=fixture_catalog(doc))
         d = cm.exception.defect
         self.assertTrue(d.what and d.why and d.how)
         self.assertIn("--targets", d.how)
 
     def test_the_owned_view_keeps_what_the_targets_own_constructed_or_consume(self):
-        h = decode(read(OO))
+        doc = read(OO)
+        h, catalog = decode(doc), fixture_catalog(doc)
         only_inventory = json.dumps(
-            P.project(h, "software_crafter", targets=["inventory.py"])
+            P.project(h, "software_crafter", targets=["inventory.py"], catalog=catalog)
         )
-        only_store = json.dumps(P.project(h, "software_crafter", targets=["store.py"]))
-        only_units = json.dumps(P.project(h, "software_crafter", targets=["units.py"]))
+        only_store = json.dumps(
+            P.project(h, "software_crafter", targets=["store.py"], catalog=catalog)
+        )
+        only_units = json.dumps(
+            P.project(h, "software_crafter", targets=["units.py"], catalog=catalog)
+        )
         self.assertIn(
             '"id": "E1"', only_inventory.replace('"id":"', '"id": "')
         )  # inventory.py consumes E1
@@ -635,7 +941,9 @@ class Projection(unittest.TestCase):
         for tg in (["inventory.py"], ["units.py"], OO_TARGETS):
             laws = next(
                 c
-                for k, s, _, v, c in P.project(h, "software_crafter", targets=tg)
+                for k, s, _, v, c in P.project(
+                    h, "software_crafter", targets=tg, catalog=fixture_catalog(doc)
+                )
                 if k == "laws"
             )
             if "equality" in laws:
@@ -647,9 +955,9 @@ class Projection(unittest.TestCase):
         self,
     ):
         with fresh_copy() as d:
-            h = decode(base_doc(d))
-            out = P.compose("human", h, "T", base_dir=d)
             doc = base_doc(d)
+            h = decode(doc)
+            out = P.compose("human", h, "T", base_dir=d, catalog=fixture_catalog(doc))
             walk = model_(doc, "walk")
             self.assertIn("A list with 6 item(s) is read in pages of 1", out)
             self.assertIn(
@@ -663,10 +971,13 @@ class Projection(unittest.TestCase):
 
     def test_the_atd_reviewer_judges_the_same_facts_the_atd_was_given(self):
         with fresh_copy() as d:
-            h = decode(base_doc(d))
+            doc = base_doc(d)
+            h = decode(doc)
             self.assertEqual(
-                P.project(h, "atd", targets=V9_TARGETS),
-                P.project(h, "atd_reviewer", targets=V9_TARGETS),
+                P.project(h, "atd", targets=V9_TARGETS, catalog=fixture_catalog(doc)),
+                P.project(
+                    h, "atd_reviewer", targets=V9_TARGETS, catalog=fixture_catalog(doc)
+                ),
             )
 
     def test_no_consumer_row_claims_a_role_may_run_commands_it_is_forbidden_to_run(
@@ -695,11 +1006,16 @@ class Projection(unittest.TestCase):
 # =========================================================================== OO and procedural crafter
 class ObjectOriented(unittest.TestCase):
     def setUp(self):
-        self.h = decode(read(OO))
+        doc = read(OO)
+        self.h, self.catalog = decode(doc), fixture_catalog(doc)
 
     def test_a_crafter_receives_only_what_its_declared_targets_own(self):
-        a = P.compose("software_crafter", self.h, "T", targets=["units.py"])
-        b = P.compose("software_crafter", self.h, "T", targets=OO_TARGETS)
+        a = P.compose(
+            "software_crafter", self.h, "T", targets=["units.py"], catalog=self.catalog
+        )
+        b = P.compose(
+            "software_crafter", self.h, "T", targets=OO_TARGETS, catalog=self.catalog
+        )
         self.assertLess(len(a), len(b))
         self.assertNotIn("available() == capacity", a)
         self.assertIn("available() == capacity", b)
@@ -707,7 +1023,9 @@ class ObjectOriented(unittest.TestCase):
     def test_the_crafter_gets_the_law_not_how_it_is_tested_and_the_oracle_author_gets_both(
         self,
     ):
-        crafter = P.compose("software_crafter", self.h, "T", targets=OO_TARGETS)
+        crafter = P.compose(
+            "software_crafter", self.h, "T", targets=OO_TARGETS, catalog=self.catalog
+        )
         for hidden in (
             '"treatment"',
             '"evidence"',
@@ -719,14 +1037,15 @@ class ObjectOriented(unittest.TestCase):
         ):
             self.assertNotIn(hidden, crafter, hidden)
         for shown in (
-            '"statement":"available() ==',
+            '"statement":'
+            + C.canon(self.h[("laws", "shared")].status.payload.laws[0].statement),
             '"owner":"inventory.py::Inventory"',
             '"kind":"invariant"',
             '"bypass"',
             '"strength":"centralised"',
         ):
             self.assertIn(shown, crafter, shown)
-        atd = P.compose("atd", self.h, "T", targets=OO_TARGETS)
+        atd = P.compose("atd", self.h, "T", targets=OO_TARGETS, catalog=self.catalog)
         for shown in (
             '"treatment"',
             '"generators"',
@@ -738,8 +1057,12 @@ class ObjectOriented(unittest.TestCase):
 
     def test_both_crafters_get_the_same_data_and_differ_only_in_the_what(self):
         for targets in (["units.py"], ["inventory.py"], OO_TARGETS):
-            sw = P.compose("software_crafter", self.h, "T", targets=targets)
-            fn = P.compose("functional_crafter", self.h, "T", targets=targets)
+            sw = P.compose(
+                "software_crafter", self.h, "T", targets=targets, catalog=self.catalog
+            )
+            fn = P.compose(
+                "functional_crafter", self.h, "T", targets=targets, catalog=self.catalog
+            )
             self.assertEqual(sw.split("=== [H]", 1)[1], fn.split("=== [H]", 1)[1])
             self.assertNotEqual(sw.split("=== [H]")[0], fn.split("=== [H]")[0])
 
@@ -747,7 +1070,7 @@ class ObjectOriented(unittest.TestCase):
         self,
     ):
         self.assertEqual([], defects(read(OO), OO_TARGETS, base=FIX))
-        s = P.summary(self.h)
+        s = P.summary(self.h, catalog=self.catalog)
         self.assertEqual(4, s["claims"]["PASS"] + s["claims"]["NOT_APPLICABLE"])
         self.assertEqual(0, s["proofs"]["passed"])
 
@@ -809,7 +1132,8 @@ class Renderer(unittest.TestCase):
 
     def test_a_scenario_is_rendered_from_the_trace_with_before_and_after_values(self):
         with fresh_copy() as d:
-            h = decode(base_doc(d))
+            doc = base_doc(d)
+            h, catalog = decode(doc), fixture_catalog(doc)
             v = S.visible(h, "shared")
             sc = next(
                 s
@@ -818,7 +1142,7 @@ class Renderer(unittest.TestCase):
                 for s in e.status.payload.scenarios
                 if s.id == "SC2"
             )
-            r = R.render_scenario(v, sc, d)
+            r = R.render_scenario(v, sc, d, catalog)
             self.assertIsInstance(r, R.Rendered)
             self.assertEqual(
                 "A list with 4 item(s) is read in pages of 1, starting at offset 0",
@@ -828,13 +1152,14 @@ class Renderer(unittest.TestCase):
                 "starts at offset 1 (page size 1) and moves on to offset 2",
                 r.events[2][1],
             )
-            self.assertEqual(r.events, R.render_scenario(v, sc, d).events)
+            self.assertEqual(r.events, R.render_scenario(v, sc, d, catalog).events)
 
     def test_a_counterexample_run_ends_with_the_property_that_failed_in_domain_words(
         self,
     ):
         with fresh_copy() as d:
-            h = decode(base_doc(d))
+            doc = base_doc(d)
+            h, catalog = decode(doc), fixture_catalog(doc)
             sc = next(
                 s
                 for (k, _), e in h.items()
@@ -842,7 +1167,7 @@ class Renderer(unittest.TestCase):
                 for s in e.status.payload.scenarios
                 if s.id == "SC1"
             )
-            r = R.render_scenario(S.visible(h, "shared"), sc, d)
+            r = R.render_scenario(S.visible(h, "shared"), sc, d, catalog)
             self.assertIn(
                 "The check fails in this state: the page the code returns equals the filter definition",
                 r.events[-1][1],
@@ -904,18 +1229,19 @@ class Renderer(unittest.TestCase):
         with fresh_copy() as d:
             doc = base_doc(d)
             scn(doc, "SC1")["title"] = "<script>alert(1)</script> & co"
-            out = P.render_html(decode(doc), d)
+            out = P.render_html(decode(doc), d, fixture_catalog(doc))
             self.assertNotIn("<script>", out)
             self.assertIn("&lt;script&gt;", out)
             self.assertNotIn("http", out)
-            self.assertEqual(out, P.render_html(decode(doc), d))
+            self.assertEqual(out, P.render_html(decode(doc), d, fixture_catalog(doc)))
 
     def test_quint_scenarios_has_the_shape_discuss_already_records(self):
         with fresh_copy() as d:
-            h = decode(base_doc(d))
+            doc = base_doc(d)
+            h, catalog = decode(doc), fixture_catalog(doc)
             v = S.visible(h, "shared")
             items = [
-                R.render_scenario(v, s, d)
+                R.render_scenario(v, s, d, catalog)
                 for (k, _), e in sorted(h.items())
                 if k == "scenarios"
                 for s in e.status.payload.scenarios
@@ -970,11 +1296,15 @@ class Renderer(unittest.TestCase):
         )
 
     def test_a_trace_with_no_state_is_a_problem_and_never_an_index_error(self):
-        model = S.visible(decode(v9_doc(V9_DIR)), "shared").models["walk"]
+        doc = v9_doc(V9_DIR)
+        model = S.visible(decode(doc), "shared").models["walk"]
+        catalog = fixture_catalog(doc)
         trace = I.parse({"#meta": {"status": "violation"}, "states": []})
-        self.assertEqual(["the trace has no state"], R.trace_problems(model, trace))
+        self.assertEqual(
+            ["the trace has no state"], R.trace_problems(model, trace, catalog)
+        )
         with self.assertRaises(ValueError):
-            R.render_trace(model, trace, ["pageMatchesSpec"])
+            R.render_trace(model, trace, ["pageMatchesSpec"], catalog)
 
     def test_itf_parse_refuses_what_it_cannot_read_with_a_message(self):
         for bad in (
@@ -993,7 +1323,7 @@ class Renderer(unittest.TestCase):
 # =========================================================================== decode (shape)
 class Decode(unittest.TestCase):
     def doc(self):
-        return read(MINIMAL)
+        return fixture_context(read(MINIMAL))[0]
 
     def codes(self, doc):
         _, ds = C.decode_handoff(doc)
@@ -1015,10 +1345,14 @@ class Decode(unittest.TestCase):
         cases = {
             "G1": with_law(lambda lw: lw["treatment"].pop("tag")),
             "G2": with_law(lambda lw: lw.__setitem__("kind", "magic")),
-            "G3": with_law(lambda lw: lw.__setitem__("statement", 7)),
-            "G4": with_law(lambda lw: lw.__setitem__("extra", 1)),
+            "DesignFactRefExpected": with_law(
+                lambda lw: lw.__setitem__("statement", 7)
+            ),
+            "DesignKeyNotInGrammar": with_law(lambda lw: lw.__setitem__("extra", 1)),
             "G5": with_law(lambda lw: lw.pop("owner")),
-            "G7": with_law(lambda lw: lw.__setitem__("statement", "  ")),
+            "DesignFactIdShape": with_law(
+                lambda lw: lw.__setitem__("statement", {"ref": " "})
+            ),
             "G8": with_law(lambda lw: lw.__setitem__("uses", [])),
             "G9": with_generator(lambda g: g.__setitem__("size_bound", 0)),
             "G10": with_law(lambda lw: lw.__setitem__("owner", "not a locator, prose")),
@@ -1031,8 +1365,8 @@ class Decode(unittest.TestCase):
         scope = self.doc()
         scope["sections"][0]["scope"] = "value:0"
         self.assertIn("G10", self.codes(scope))
-        self.assertIn("G4", self.codes({"sections": [], "x": 1}))
-        self.assertIn("G4", self.codes([]))
+        self.assertIn("DesignKeyNotInGrammar", self.codes({"sections": [], "x": 1}))
+        self.assertIn("DesignKeyNotInGrammar", self.codes([]))
         missing = self.doc()
         missing["sections"][1]["status"] = {"tag": "not_applicable"}
         self.assertIn("G5", self.codes(missing))
@@ -1040,7 +1374,7 @@ class Decode(unittest.TestCase):
     def test_a_blank_string_and_an_unknown_field_cannot_hide(self):
         d = self.doc()
         section(d, "laws")["observations"][0]["cannot_distinguish"] = ""
-        self.assertIn("G7", self.codes(d))
+        self.assertIn("DesignFactRefExpected", self.codes(d))
 
     def test_every_shape_defect_is_collected_in_one_pass(self):
         d = self.doc()
@@ -1050,7 +1384,10 @@ class Decode(unittest.TestCase):
         lw["owner"] = "prose, not a path"
         lw["bogus"] = 1
         _, ds = C.decode_handoff(d)
-        self.assertGreaterEqual({x.rule for x in ds}, {"G2", "G3", "G4", "G10"})
+        self.assertGreaterEqual(
+            {x.rule for x in ds},
+            {"G2", "DesignFactRefExpected", "DesignKeyNotInGrammar", "G10"},
+        )
         self.assertGreaterEqual(len(ds), 4)
 
     def test_a_trailing_newline_never_makes_a_value_valid(self):
@@ -1060,16 +1397,21 @@ class Decode(unittest.TestCase):
             lambda d: section(d, "laws")["laws"][0].__setitem__(
                 "owner", "clamp.py::clamp\n"
             ),
-            lambda d: section(d, "receipts")["runs"][0].__setitem__(
-                "variant", "fixed\n"
-            ),
-            lambda d: section(d, "receipts")["runs"][0].__setitem__("tool_version", ""),
         ):
             d = self.doc()
             mutate(d)
             self.assertTrue(
                 self.codes(d), "a value with a trailing newline was accepted"
             )
+        run = section(read(MINIMAL), "receipts")["runs"][0]
+        for field, value, rule in (
+            ("variant", "fixed\n", "G10"),
+            ("tool_version", "", "G7"),
+        ):
+            ds = []
+            out = C.dec(T.Run, {**run, field: value}, "$.run", ds)
+            self.assertIs(C.BAD, out)
+            self.assertEqual([rule], [d.rule for d in ds])
 
     def test_locators_of_other_languages_are_accepted_and_traversal_is_not(self):
         ok = [
@@ -1103,7 +1445,7 @@ class Decode(unittest.TestCase):
             section(d, "laws")["laws"][0]["owner"] = loc
             self.assertIn("G10", self.codes(d), loc)
 
-    def test_text_file_is_confined_to_the_directory_of_the_sidecar(self):
+    def test_text_file_authoring_is_retired_for_inside_and_outside_paths(self):
         with tempfile.TemporaryDirectory() as tmp:
             sub = os.path.join(tmp, "side")
             Path(sub).mkdir(parents=True)
@@ -1128,11 +1470,16 @@ class Decode(unittest.TestCase):
                         }
                     ]
                 }
-                ds = C.resolve_authoring(doc, sub)
-                self.assertEqual(expect_ok, not ds, rel)
-                if not expect_ok:
-                    self.assertEqual("G11", ds[0].rule)
-                    self.assertTrue(ds[0].how)
+                out, ds = C.decode_handoff(doc)
+                self.assertIsNone(out)
+                retired = [
+                    d for d in ds if d.rule == "ArchitectHandoffModelTextRetired"
+                ]
+                self.assertEqual(1, len(retired), rel)
+                self.assertEqual(
+                    "$.sections[0].status.payload.models[0].text_file", retired[0].where
+                )
+                self.assertTrue(retired[0].what and retired[0].why and retired[0].how)
 
     def test_decode_never_raises_whatever_the_document_is(self):
         junk = [
@@ -1154,6 +1501,7 @@ class Decode(unittest.TestCase):
             {"tag": None},
         ]
         for base in (read(MINIMAL), read(OO), v9_doc(V9_DIR)):
+            base, catalog, _driven = fixture_context(base)
             for s in range(150):
                 rng = random.Random(s)
                 doc = copy.deepcopy(base)
@@ -1181,12 +1529,12 @@ class Decode(unittest.TestCase):
                 for d in ds:
                     self.assertTrue(d.what and d.why and d.how, d)
                 if h is not None:
-                    RU.check(h, V9_TARGETS, "auto", None)
+                    RU.check(h, V9_TARGETS, "auto", None, catalog)
                     for role in P.ROLES:
-                        P.compose(role, h, "T", targets=V9_TARGETS)
-                    P.render_markdown(h)
-                    P.render_html(h)
-                    P.summary(h)
+                        P.compose(role, h, "T", targets=V9_TARGETS, catalog=catalog)
+                    P.render_markdown(h, catalog=catalog)
+                    P.render_html(h, catalog=catalog)
+                    P.summary(h, catalog=catalog)
 
     def test_reading_a_file_never_raises(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1218,9 +1566,13 @@ class Decode(unittest.TestCase):
 
     def test_a_non_finite_or_negative_duration_is_refused(self):
         for bad in (-5, float("nan"), float("inf")):
-            d = self.doc()
-            section(d, "receipts")["runs"][0]["duration_s"] = bad
-            self.assertIn("G9", self.codes(d), bad)
+            run = copy.deepcopy(section(read(MINIMAL), "receipts")["runs"][0])
+            run["duration_s"] = bad
+            ds = []
+            value = C.dec(T.Run, run, "$.driven.runs[0]", ds)
+            self.assertIs(C.BAD, value)
+            self.assertEqual(["G9"], [d.rule for d in ds], bad)
+            self.assertEqual("$.driven.runs[0].duration_s", ds[0].where)
 
 
 # =========================================================================== every rule fires on one mutation, and only that rule
@@ -1797,14 +2149,14 @@ class ReviewRegressions(Docs, unittest.TestCase):
 
     # --- the check on where a value is cut (BreakG10 D5, D8)
     def test_a_scope_with_a_trailing_newline_cannot_hide_a_second_section(self):
-        doc = read(MINIMAL)
+        doc = fixture_context(read(MINIMAL))[0]
         doc["sections"].append(
             {**copy.deepcopy(doc["sections"][-1]), "scope": "shared\n"}
         )
         self.assertIn("G10", {d.rule for d in C.decode_handoff(doc)[1]})
 
     def test_a_law_id_with_a_trailing_newline_is_not_an_id(self):
-        doc = read(MINIMAL)
+        doc = fixture_context(read(MINIMAL))[0]
         section(doc, "laws")["laws"][0]["id"] = "L1\n"
         self.assertIn("G10", {d.rule for d in C.decode_handoff(doc)[1]})
 
@@ -1990,8 +2342,11 @@ class ReviewRegressions(Docs, unittest.TestCase):
             {"sections": "x"},
             {"sections": [None]},
         ):
-            self.assertTrue(C.decode_handoff(bad)[1], bad)
-            self.assertEqual([], C.resolve_authoring(bad, "."))
+            before = copy.deepcopy(bad)
+            out, ds = C.decode_handoff(bad)
+            self.assertIsNone(out)
+            self.assertTrue(ds, bad)
+            self.assertEqual(before, bad)
 
 
 # =========================================================================== the sole writer of receipts
@@ -2240,13 +2595,14 @@ class SoleWriter(unittest.TestCase):
 # =========================================================================== command line
 class CLI(unittest.TestCase):
     def g10(self, *args: str):
-        p = subprocess.run(
-            [PY, "-m", G10, *args],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-        )
+        with fixture_arguments(args) as current:
+            p = subprocess.run(
+                [PY, "-m", G10, *current],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
         self.assertNotIn("Traceback", p.stderr + p.stdout, (args, p.stderr[-400:]))
         return p
 
@@ -2275,9 +2631,7 @@ class CLI(unittest.TestCase):
     ):
         out = self.g10("check", MINIMAL, "--targets", "clamp.py").stdout
         self.assertTrue(out.startswith("0 defects."))
-        self.assertIn(
-            "0 with a kept output (sha256 checked by R6), 2 claims without output", out
-        )
+        self.assertIn("0 with kept output, 2 claims without output", out)
 
     def test_wrong_usage_is_exit_two_with_a_message(self):
         for args in (
@@ -2334,10 +2688,8 @@ class CLI(unittest.TestCase):
 
     def test_run_and_record_then_check_close_the_loop(self):
         with tempfile.TemporaryDirectory() as tmp:
-            side = os.path.join(tmp, "g10.json")
-            doc = read(MINIMAL)
-            doc["sections"] = [s for s in doc["sections"] if s["kind"] != "receipts"]
-            json.dump(doc, open(side, "w"))
+            side = stage_detached_fixture(MINIMAL, tmp)
+            (Path(tmp) / RUN.RECEIPTS_FILE).unlink()
             ran = self.g10(
                 "run",
                 "--dir",
@@ -2390,13 +2742,12 @@ class CLI(unittest.TestCase):
             out = self.g10(
                 "check",
                 side,
-                os.path.join(tmp, RUN.RECEIPTS_FILE),
                 "--targets",
                 "clamp.py",
             )
             self.assertEqual(0, out.returncode, out.stdout)
             self.assertIn(
-                "1 with a kept output (sha256 checked by R6), 1 claims without output",
+                "1 with kept output, 1 claims without output",
                 out.stdout,
             )
 
@@ -2751,7 +3102,7 @@ class OneCondition(Docs, unittest.TestCase):
 # =========================================================================== edges: files, hashes, symlinks, required sections
 class StrictEdges(unittest.TestCase):
     def test_every_required_section_is_required_and_construction_is_optional(self):
-        for kind in ("laws", "model", "closure", "receipts", "scenarios"):
+        for kind in ("laws", "model", "closure", "scenarios"):
             with fresh_copy() as d:
                 doc = base_doc(d)
                 doc["sections"] = [s for s in doc["sections"] if s["kind"] != kind]
@@ -2770,6 +3121,22 @@ class StrictEdges(unittest.TestCase):
                 [], [f"{x.rule} {x.where}" for x in defects(doc, V9_TARGETS, "auto", d)]
             )
 
+    def test_authored_receipts_are_retired_whether_applicable_or_not_applicable(self):
+        for status in (
+            {"tag": "applicable", "payload": {"runs": [authored_run("R1")]}},
+            {"tag": "not_applicable", "reason": {"ref": "No-runs"}},
+        ):
+            document = {
+                "sections": [{"kind": "receipts", "scope": "shared", "status": status}]
+            }
+            value, defects = C.decode_handoff(document)
+            self.assertIsNone(value)
+            self.assertEqual(
+                ["ArchitectHandoffSectionRetired"], [d.rule for d in defects]
+            )
+            self.assertEqual("$.sections[0]", defects[0].where)
+            self.assertTrue(defects[0].what and defects[0].why and defects[0].how)
+
     def test_a_trace_whose_bytes_changed_after_the_run_is_not_rendered(self):
         with fresh_copy() as d:
             doc = base_doc(d)
@@ -2783,7 +3150,7 @@ class StrictEdges(unittest.TestCase):
                 for s in e.status.payload.scenarios
                 if s.id == "SC2"
             )
-            out = R.render_scenario(S.visible(h, "shared"), sc, d)
+            out = R.render_scenario(S.visible(h, "shared"), sc, d, fixture_catalog(doc))
             self.assertIsInstance(out, R.Skipped)
             self.assertIn("changed after the run", out.reason)
 
@@ -2806,23 +3173,40 @@ class StrictEdges(unittest.TestCase):
                     }
                 ]
             }
-            ds = C.resolve_authoring(doc, sub)
-            self.assertEqual(["G11"], [x.rule for x in ds])
+            out, ds = C.decode_handoff(doc)
+            self.assertIsNone(out)
+            retired = [d for d in ds if d.rule == "ArchitectHandoffModelTextRetired"]
+            self.assertEqual(1, len(retired))
+            self.assertEqual(
+                "$.sections[0].status.payload.models[0].text_file", retired[0].where
+            )
+            self.assertEqual("outside", Path(secret).read_text())
 
     def test_the_oracle_author_sees_the_mutants_and_assumptions_the_oracle_must_respect_and_never_the_model_text(
         self,
     ):
         with fresh_copy() as d:
-            atd = P.compose("atd", decode(base_doc(d)), "T", targets=V9_TARGETS)
+            doc = base_doc(d)
+            atd = P.compose(
+                "atd",
+                decode(doc),
+                "T",
+                targets=V9_TARGETS,
+                catalog=fixture_catalog(doc),
+            )
         for needle in ('"mutants"', '"M1"', '"assumptions"', '"pageMatchesSpec"'):
             self.assertIn(needle, atd)
         self.assertNotIn("module pagination_walk", atd)
 
     def test_a_crafter_without_an_owned_law_receives_no_equality(self):
+        doc = read(OO)
         laws = next(
             c
             for k, _s, _sha, _v, c in P.project(
-                decode(read(OO)), "software_crafter", targets=["units.py"]
+                decode(doc),
+                "software_crafter",
+                targets=["units.py"],
+                catalog=fixture_catalog(doc),
             )
             if k == "laws"
         )
@@ -2854,13 +3238,17 @@ class StrictEdges(unittest.TestCase):
                     runs.insert(0, twin)
                 else:
                     runs.append(twin)
-                return decode(doc)
+                return decode(doc), fixture_catalog(doc)
 
-            a, b = variant(True), variant(False)
+            (a, catalog_a), (b, catalog_b) = variant(True), variant(False)
             for role in P.ROLES:
                 self.assertEqual(
-                    P.compose(role, a, "T", targets=V9_TARGETS, base_dir=d),
-                    P.compose(role, b, "T", targets=V9_TARGETS, base_dir=d),
+                    P.compose(
+                        role, a, "T", targets=V9_TARGETS, base_dir=d, catalog=catalog_a
+                    ),
+                    P.compose(
+                        role, b, "T", targets=V9_TARGETS, base_dir=d, catalog=catalog_b
+                    ),
                     role,
                 )
 
@@ -2880,13 +3268,17 @@ class StrictEdges(unittest.TestCase):
                     models.insert(0, twin)
                 else:
                     models.append(twin)
-                return decode(doc)
+                return decode(doc), fixture_catalog(doc)
 
-            a, b = variant(True), variant(False)
+            (a, catalog_a), (b, catalog_b) = variant(True), variant(False)
             for role in P.ROLES:
                 self.assertEqual(
-                    P.compose(role, a, "T", targets=V9_TARGETS, base_dir=d),
-                    P.compose(role, b, "T", targets=V9_TARGETS, base_dir=d),
+                    P.compose(
+                        role, a, "T", targets=V9_TARGETS, base_dir=d, catalog=catalog_a
+                    ),
+                    P.compose(
+                        role, b, "T", targets=V9_TARGETS, base_dir=d, catalog=catalog_b
+                    ),
                     role,
                 )
 
@@ -2910,13 +3302,17 @@ class StrictEdges(unittest.TestCase):
                 ex1["artifacts"] = (
                     [extra, *ex1["artifacts"]] if first else [*ex1["artifacts"], extra]
                 )
-                return decode(doc)
+                return decode(doc), fixture_catalog(doc)
 
-            a, b = variant(True), variant(False)
+            (a, catalog_a), (b, catalog_b) = variant(True), variant(False)
             for role in P.ROLES:
                 self.assertEqual(
-                    P.compose(role, a, "T", targets=V9_TARGETS, base_dir=d),
-                    P.compose(role, b, "T", targets=V9_TARGETS, base_dir=d),
+                    P.compose(
+                        role, a, "T", targets=V9_TARGETS, base_dir=d, catalog=catalog_a
+                    ),
+                    P.compose(
+                        role, b, "T", targets=V9_TARGETS, base_dir=d, catalog=catalog_b
+                    ),
                     role,
                 )
 
@@ -3189,17 +3585,36 @@ class ReviewRound2(Docs, unittest.TestCase):
                 for front in (True, False):
                     doc = base_doc(d)
                     twin(doc, d, front)
-                    outs.add(P.compose("human", decode(doc), "T", base_dir=d))
+                    outs.add(
+                        P.compose(
+                            "human",
+                            decode(doc),
+                            "T",
+                            base_dir=d,
+                            catalog=fixture_catalog(doc),
+                        )
+                    )
                 self.assertEqual(1, len(outs), twin.__name__)
 
     # --- the view of a crafter that owns nothing is empty, not the vocabulary of the whole design
     def test_a_crafter_that_owns_nothing_receives_no_admitted_or_excluded_states(self):
+        doc = read(OO)
         out = P.compose(
-            "software_crafter", decode(read(OO)), "T", targets=["nothing.py"]
+            "software_crafter",
+            decode(doc),
+            "T",
+            targets=["nothing.py"],
+            catalog=fixture_catalog(doc),
         )
         for hidden in ("a Key and an int >= 1 unit count", "Units(0)"):
             self.assertNotIn(hidden, out)
-        owned = P.compose("software_crafter", decode(read(OO)), "T", targets=OO_TARGETS)
+        owned = P.compose(
+            "software_crafter",
+            decode(doc),
+            "T",
+            targets=OO_TARGETS,
+            catalog=fixture_catalog(doc),
+        )
         self.assertIn("Units(0)", owned)
 
     # --- the receipts that rest on what a person declared say so
@@ -3258,12 +3673,13 @@ class NoTraceback(unittest.TestCase):
 
     def g(self, *args: str, env: dict | None = None):
         e = {**os.environ, **(env or {})}
-        return subprocess.run(
-            [sys.executable, "-W", "ignore", "-m", G10, *args],
-            capture_output=True,
-            env=e,
-            check=False,
-        )
+        with fixture_arguments(args) as current:
+            return subprocess.run(
+                [sys.executable, "-W", "ignore", "-m", G10, *current],
+                capture_output=True,
+                env=e,
+                check=False,
+            )
 
     def total(self, p, code):
         self.assertNotIn(
@@ -3297,22 +3713,17 @@ class NoTraceback(unittest.TestCase):
 
     def test_a_model_file_name_with_a_nul_byte(self):
         with tempfile.TemporaryDirectory() as tmp:
-            doc = (
-                read(os.path.join(V9_DIR, "g10.json"))
-                if False
-                else json.load(open(os.path.join(V9_DIR, "g10.json"), encoding="utf-8"))
-            )
-            model_(doc, "walk").pop("text", None)
-            model_(doc, "walk")["text_file"] = "a\x00b"
+            doc = fixture_context(read(os.path.join(V9_DIR, "g10.json")))[0]
+            model_(doc, "walk")["source"]["path"] = "a\x00b"
             out = self.total(self.g("check", self.write(tmp, doc)), 1)
-            self.assertIn("G11", out)
+            self.assertIn("G10", out)
 
     def test_a_lone_surrogate_and_a_huge_integer_are_refused_at_decode(self):
         with tempfile.TemporaryDirectory() as tmp:
-            doc = read(MINIMAL)
-            section(doc, "laws")["laws"][0]["statement"] = "x\ud800y"
+            doc = fixture_context(read(MINIMAL))[0]
+            section(doc, "laws")["constructors"][0]["signature"] = "x\ud800y"
             self.assertIn("G13", self.total(self.g("check", self.write(tmp, doc)), 1))
-            doc = read(MINIMAL)
+            doc = fixture_context(read(MINIMAL))[0]
             section(doc, "laws")["generators"][0]["size_bound"] = 10**30
             self.assertIn("G9", self.total(self.g("check", self.write(tmp, doc)), 1))
 
@@ -3335,7 +3746,7 @@ class NoTraceback(unittest.TestCase):
             section(doc, "laws")["laws"][0]["statement"] = (
                 "temp\u00e9rature stays in range"
             )
-            path = self.write(tmp, doc)
+            path = stage_detached_fixture(MINIMAL, tmp, document=doc)
             plain = self.g(
                 "prompt", path, "--role", "atd", "--dir", tmp, "--targets", "clamp.py"
             )
@@ -3369,16 +3780,9 @@ class NoTraceback(unittest.TestCase):
             Path(b).mkdir(parents=True)
             doc = read(MINIMAL)
             runs = section(doc, "receipts")["runs"]
-            laws_only = {
-                "sections": [s for s in doc["sections"] if s["kind"] != "receipts"]
-            }
-            receipts_only = {
-                "sections": [s for s in doc["sections"] if s["kind"] == "receipts"]
-            }
-            f1, f2 = (
-                self.write(a, laws_only),
-                self.write(b, receipts_only, "g10.receipts.json"),
-            )
+            f1 = stage_detached_fixture(MINIMAL, a)
+            f2 = str(Path(b, "additional.json"))
+            Path(f2).write_text(json.dumps({"sections": []}), encoding="utf-8")
             self.assertTrue(runs)
             out = self.total(
                 self.g("prompt", f1, f2, "--role", "atd", "--targets", "clamp.py"), 2
@@ -3421,7 +3825,8 @@ class CliCommands(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                code = G.main(list(args))
+                with fixture_arguments(args) as current:
+                    code = G.main(list(current))
             except SystemExit as exc:  # argparse refuses a wrong command line
                 code = exc.code
         return code, out.getvalue(), err.getvalue()

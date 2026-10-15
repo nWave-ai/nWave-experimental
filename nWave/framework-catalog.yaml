@@ -555,11 +555,6 @@ templates:
       description: Moderately interactive platform readiness for DEVOPS wave
       interactivity: moderate
       validation: deployment_infrastructure_design
-    deliver_simple:
-      file: templates/deliver-outside-in-tdd.yaml
-      description: Simple implementation-focused template for DELIVER wave
-      interactivity: simple
-      methodology: outside_in_tdd_systematic_refactoring
   comprehensive_template:
     complete_methodology:
       file: templates/nWave-complete-methodology.yaml

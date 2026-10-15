@@ -354,7 +354,7 @@ class ArchitectObservation:
             explanation(
                 f"unchanged manifest binding failed: exit={code}, stdout={out!r}, stderr={err!r}",
                 "The accepted carrier must already be the public constructor's complete input.",
-                "Preserve the v1 language and submit only manifest on stdin; never add a bridge.",
+                "Preserve the schema-2 language and submit only manifest on stdin; never add a bridge.",
             )
         )
         authority = json.loads(after["handover"])["values"][0]["authority"]
@@ -366,17 +366,17 @@ class ArchitectObservation:
         )
         supplied = case.manifest
         expected_facts = {
-            "targets": [
-                {"path": target["path"], "decision": target["decision"]}
-                for target in supplied["targets"]
-            ],
+            "targets": supplied["targets"],
             "paradigm": supplied["paradigm"],
             "decisions": supplied["decisions"],
-            "obligations": supplied["constraints"],
+            "constraints": supplied["constraints"],
             "oracle": supplied["oracle"],
             "acceptance_supports": supplied["acceptance_supports"],
             "verification": supplied["verification"],
             "oracle_verification_index": supplied["oracle_verification_index"],
+            "facts": supplied["facts"],
+            "purpose": supplied["purpose"],
+            "inherits": supplied.get("inherits", []),
         }
         for field, expected in expected_facts.items():
             assert authority.get(field) == expected, explanation(
@@ -384,17 +384,14 @@ class ArchitectObservation:
                 "The single manifest carrier preserves the existing internal facts contract.",
                 "Derive persisted facts from the unchanged manifest through the constructor.",
             )
-        expected_locator = (
-            f"{DESTINATION.as_posix()}#{case.manifest['authority']['heading']}"
-        )
+        expected_locator = f"{DESTINATION.as_posix()}#Value 1"
         assert authority["authority_locator"] == expected_locator, explanation(
             f"bound locator is {authority.get('authority_locator')!r}, expected {expected_locator!r}",
             "The installed response must publish and bind the requested authority.",
-            "Retain the constructor's configured destination and supplied heading.",
+            "Retain the configured destination and compiled scope heading.",
         )
         assert after["architecture"] is not None and (
-            f"## {case.manifest['authority']['heading']}\n".encode()
-            in after["architecture"]
+            b"## Value 1\n" in after["architecture"]
         ), explanation(
             "Success did not publish the requested authority section",
             "A handover designation without an actual document is not direct binding.",
@@ -470,7 +467,7 @@ class ArchitectObservation:
         code, out, err = self.command(root, "design", manifest)
         rows = block(out, err)
         assert (
-            code != 0
+            code == 1
             and rows.get("WHAT") == "InvalidDesignDocument"
             and all(rows.get(label) for label in ("WHAT", "WHY", "HOW"))
         ), explanation(
@@ -478,6 +475,17 @@ class ArchitectObservation:
             "A structural provider projection must not broaden semantic constructor admission.",
             "Retain the existing InvalidDesignDocument WHAT/WHY/HOW validation.",
         )
+        references = manifest.get("constraints")
+        if (
+            isinstance(references, list)
+            and len(references) > 1
+            and references[0] == references[1]
+            and isinstance(references[0], dict)
+            and set(references[0]) == {"ref"}
+        ):
+            assert "DesignListEntryRepeated" in out + err
+            assert "manifest.constraints" in out + err
+            assert references[0]["ref"] in out + err
         assert self.state(root) == before, explanation(
             "invalid manifest mutated authority, handover or unrelated README",
             "Constructor refusal cannot publish an invalid designation.",

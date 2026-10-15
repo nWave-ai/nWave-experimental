@@ -13,7 +13,12 @@ import typing as t
 from . import g10_render as R
 from . import g10_scope as S
 from . import g10_types as T
+from .g10_codec import canonical
 from .g10_defect import Defect
+
+
+if t.TYPE_CHECKING:
+    from des.domain.design_document import FactCatalog
 
 
 # id -> (what, why, how, source)
@@ -379,10 +384,30 @@ def check(
     targets: t.Sequence[str] | None = None,
     mode: str = "auto",
     base_dir: str | None = None,
+    catalog: FactCatalog | None = None,
 ) -> tuple[list[Defect], list[str]]:
     """All defects in one pass, plus the checks that could not run and why."""
+    h = {key: canonical(entry) for key, entry in h.items()}
     ds: list[Defect] = []
     skipped: list[str] = []
+    if catalog is None:
+        skipped.append("FactRef resolution, M2 and S3 UNRUN: " + R.CATALOG_UNAVAILABLE)
+    else:
+        from des.domain.design_document import fact_references
+
+        for ref in fact_references(h):
+            try:
+                catalog.resolve(ref)
+            except (KeyError, ValueError) as exc:
+                ds.append(
+                    Defect(
+                        "DesignFactUnresolved",
+                        ref.ref,
+                        str(exc),
+                        "every semantic reference needs a catalog definition",
+                        "define the fact in the schema-2 manifest catalog",
+                    )
+                )
 
     def add(rid: str, where: str, detail: str) -> None:
         w, y, how, _ = RULES[rid]
@@ -483,8 +508,9 @@ def check(
     for scope, p in model_p:
         v = vis(scope)
         for m in p.models:
-            for problem in R.template_problems(m):
-                add("M2", f"model:{m.id}", problem)
+            if catalog is not None:
+                for problem in R.template_problems(m, catalog):
+                    add("M2", f"model:{m.id}", problem)
             for mu in m.mutants:
                 for k in mu.kills:
                     if not _is_the_kill(v.runs.get(k.run), mu.id, m.id, k.property):
@@ -573,7 +599,17 @@ def check(
         )
 
     # ---- closure
-    for i in _dups([f"{sc}/{c.subject}" for sc, p in clos_p for c in p.closures]):
+    def subject_label(reference: T.FactRef) -> str:
+        if catalog is not None:
+            try:
+                return catalog.resolve(reference)
+            except KeyError:
+                pass
+        return reference.ref
+
+    for i in _dups(
+        [f"{sc}/{subject_label(c.subject)}" for sc, p in clos_p for c in p.closures]
+    ):
         add("CL10", f"closure@{i.split('/')[0]}", f"subject {i.split('/', 1)[1]!r}")
     shared_set = dict(clos_p).get("shared")
     for scope, p in clos_p:
@@ -581,7 +617,7 @@ def check(
         for c in p.closures:
             for cname in CLASSES:
                 entry = getattr(c, cname)
-                where = f"closure@{scope}[{c.subject}].{cname}"
+                where = f"closure@{scope}[{subject_label(c.subject)}].{cname}"
                 if isinstance(entry, T.NotApplicableClaim):
                     continue
                 if isinstance(entry, T.Inherited):
@@ -604,7 +640,7 @@ def check(
                 b = cl.basis
                 if not isinstance(b, ALLOWED_BASIS[cname]):
                     add("CL1", where, f"basis {b.tag}")
-                if cl.design == "BLOCKED" and not (cl.design_note or "").strip():
+                if cl.design == "BLOCKED" and cl.design_note is None:
                     add("CL2", where, "BLOCKED without design_note")
                 if (
                     cl.design == "PASS"
@@ -623,9 +659,9 @@ def check(
                     m = v.models.get(b.model_id)
                     if m is None:
                         add("CL7", where, f"model {b.model_id}")
-                    if cname == "liveness" and not (b.fairness or "").strip():
+                    if cname == "liveness" and b.fairness is None:
                         add("CL5", where, "no fairness")
-                    if b.proof != "passed" and not (b.proof_note or "").strip():
+                    if b.proof != "passed" and b.proof_note is None:
                         add("CL3", where, f"proof {b.proof} without proof_note")
                     variant = "fairness" if cname == "liveness" else "base"
                     for prop in b.properties if m is not None else ():
@@ -663,10 +699,7 @@ def check(
                     and not cl.assumptions
                 ):
                     add("CL9", where, "no assumptions")
-                if (
-                    cl.runtime == "INDETERMINATE"
-                    and not (cl.runtime_note or "").strip()
-                ):
+                if cl.runtime == "INDETERMINATE" and cl.runtime_note is None:
                     add("CL6", where, "INDETERMINATE without runtime_note")
                 if cl.runtime == "OBSERVED" and not any(
                     r and r.result_class == "ok" and r.target == "implementation"
@@ -697,7 +730,7 @@ def check(
                     ),
                 )
             else:
-                out = R.render_scenario(v, sc, base_dir)
+                out = R.render_scenario(v, sc, base_dir, catalog)
                 if isinstance(out, R.Bad):
                     add("S3", where, "; ".join(out.problems))
                 elif isinstance(out, R.Skipped):
@@ -729,7 +762,7 @@ def check(
                     )
                 if (
                     sc.review.judgment in ("depends", "unclear", "correction")
-                    and not (sc.review.note or "").strip()
+                    and sc.review.note is None
                 ):
                     add("S4", where, f"judgment {sc.review.judgment} without a note")
     skipped += [f"S3 for a scenario: {x}" for x in s3_skips if base_dir is not None]

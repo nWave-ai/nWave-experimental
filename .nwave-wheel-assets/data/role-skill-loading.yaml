@@ -20,11 +20,11 @@ roles:
       - nw-algebraic-design-protocol
     on_demand:
       nw-code-design-oo: the bound DESIGN paradigm is object_oriented; procedural work preserves its imperative script without it
+      nw-ddd-tactical: changing domain identity, lifecycle, aggregate consistency, a repository or a domain event
       nw-refactor: changing existing responsibilities or removing a demonstrated code smell while preserving behavior
       nw-code-analysis-port: resolving repository symbols, dependencies, reuse or callers before changing existing code
       nw-certainty-by-construction: any rule the code enforces about data -- a range, a duration, a required pairing, a state that excludes another; decide construction vs validation BEFORE writing the check
       nw-type-level-design: API design or implementation needs a valid-state model, opaque smart constructor, evidence-preserving result, or a finite state/capability transition
-      nw-tdd-methodology-paradigm: choosing the native observation treatment for a changed behavior
       nw-cross-cutting-invariants: an applied design rule or authority cites a cross-cutting invariant clause id the change must honor
   nw-functional-software-crafter:
     catalog_only:
@@ -37,7 +37,6 @@ roles:
       nw-algebraic-design-protocol: a law or observation is contested or must be found before choosing constructors
       nw-certainty-by-construction: any rule the code enforces about data -- a range, a duration, a required pairing, a state that excludes another; decide construction vs validation BEFORE writing the check
       nw-type-level-design: API needs a valid-state model, opaque smart constructor, evidence-preserving result, or a finite state/capability transition; use advanced Haskell material only for a GHC target
-      nw-tdd-methodology-paradigm: choosing the native observation treatment for a changed behavior
   nw-software-crafter-reviewer:
     reviewer_of:
       - nw-software-crafter
@@ -114,6 +113,7 @@ roles:
       nw-test-design-mandates-layered-mechanics: choosing assertion mechanics for a layer or testing real adapter behavior
       nw-test-design-mandates-composition-contract: composing the public driving surface across components or checking its contract shape
       nw-test-organization-conventions: choosing the target test file, directory or discovery conventions
+      nw-tdd-methodology: authoring a unit, contract or acceptance test with its RED observation
       nw-tdd-methodology-paradigm: authoring a new unit or acceptance oracle
       nw-tdd-methodology-walking-skeleton: authoring an explicitly selected walking skeleton
       nw-distill-port-treatment-policy: selecting real IO, a fake, or a mock at a declared port

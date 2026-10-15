@@ -3,7 +3,7 @@ name: nw-researcher-reviewer
 description: Use for review and critique tasks - Research quality and evidence review specialist. Runs on Haiku for cost efficiency.
 model: haiku
 maxTurns: 40
-tools: Read, Glob, Grep, Task
+tools: Read, Glob, Grep, Task, Bash
 skills:
   - nw-typesafe-system-one
   - nw-rr-critique-dimensions

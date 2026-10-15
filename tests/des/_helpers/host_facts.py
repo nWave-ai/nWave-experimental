@@ -62,10 +62,7 @@ def _closure(facts: dict, targets: list[dict]) -> dict:
 
 
 def design_manifest(facts: dict, observation: str, position: int) -> dict:
-    """Produce a complete JSON-valued manifest from the internal fixture facts."""
-    heading = (
-        facts.get("authority_locator", "").partition("#")[2] or f"Value {position}"
-    )
+    """Construct schema-2 input from this test host's explicit fixture fields."""
     not_applicable = {
         "applicability": "not_applicable",
         "reason": "The fixture has no affected boundary.",
@@ -75,10 +72,11 @@ def design_manifest(facts: dict, observation: str, position: int) -> dict:
         for item in facts["targets"]
     ]
     manifest = {
-        "schema_version": 1,
-        "authority": {"heading": heading},
-        "purpose": observation,
-        "constraints": ["Preserve unrelated repository bytes."],
+        "schema_version": 2,
+        "purpose": facts.get("purpose", observation),
+        "constraints": facts.get(
+            "constraints", ["Preserve unrelated repository bytes."]
+        ),
         "targets": targets,
         "paradigm": facts["paradigm"],
         "decisions": facts["decisions"],
@@ -100,7 +98,18 @@ def design_manifest(facts: dict, observation: str, position: int) -> dict:
         "agreement_analysis": facts["agreement_analysis"],
         "impact_closure": facts.get("impact_closure") or _closure(facts, targets),
         **({"adr": facts["adr"]} if facts.get("adr") is not None else {}),
-        "boundaries": dict(not_applicable),
+        **(
+            {"product_change": facts["product_change"]}
+            if "product_change" in facts
+            else {}
+        ),
+        **(
+            {"architect_handoff": facts["architect_handoff"]}
+            if "architect_handoff" in facts
+            else {}
+        ),
+        **({"inherits": facts["inherits"]} if "inherits" in facts else {}),
+        "boundaries": facts.get("boundaries", dict(not_applicable)),
         "public_oracle": facts.get("public_oracle")
         or {
             "observation": observation,
@@ -113,7 +122,107 @@ def design_manifest(facts: dict, observation: str, position: int) -> dict:
         "verification": facts["verification"],
         "oracle_verification_index": facts.get("oracle_verification_index", 0),
     }
+    manifest = copy.deepcopy(manifest)
+    definitions = copy.deepcopy(facts.get("facts", []))
+    ids_by_text = {
+        " ".join(record["text"].split()).casefold(): record["id"]
+        for record in definitions
+    }
+    occupied_ids = {record["id"] for record in definitions}
+
+    def reference(text):
+        if isinstance(text, dict):
+            return copy.deepcopy(text)
+        key = " ".join(text.split()).casefold()
+        identifier = ids_by_text.get(key)
+        if identifier is None:
+            number = len(definitions) + 1
+            identifier = f"V{position}-F{number}"
+            while identifier in occupied_ids:
+                number += 1
+                identifier = f"V{position}-F{number}"
+            occupied_ids.add(identifier)
+            ids_by_text[key] = identifier
+            definitions.append({"id": identifier, "text": text})
+        return {"ref": identifier}
+
+    for name in ("purpose",):
+        manifest[name] = reference(manifest[name])
+    for name in ("constraints", "decisions"):
+        manifest[name] = [reference(text) for text in manifest[name]]
+    for target in manifest["targets"]:
+        target["reason"] = reference(target["reason"])
+    for candidate in manifest["reuse_analysis"]["candidates"]:
+        candidate["reason"] = reference(candidate["reason"])
+    for name in (
+        "architectural_tests",
+        "contract_tests",
+        "prefactoring",
+        "agreement_analysis",
+        "impact_closure",
+        "boundaries",
+        "adr",
+    ):
+        section = manifest.get(name)
+        if section is None:
+            continue
+        if section["applicability"] == "not_applicable":
+            section["reason"] = reference(section["reason"])
+            continue
+        if name == "prefactoring":
+            for field in ("move", "preserved_observation"):
+                section[field] = reference(section[field])
+        elif name == "adr":
+            for field in ("context", "decision"):
+                section[field] = reference(section[field])
+            for field in ("alternatives", "consequences"):
+                section[field] = [reference(text) for text in section[field]]
+        elif name == "boundaries":
+            for field in ("driving_port", "dependency_direction"):
+                section[field] = reference(section[field])
+            section["driven_ports"] = [
+                reference(text) for text in section["driven_ports"]
+            ]
+            for failure in section["failures"]:
+                for field in ("condition", "observation"):
+                    failure[field] = reference(failure[field])
+        else:
+            collection = (
+                "parties"
+                if name == "agreement_analysis"
+                else "items"
+                if name == "impact_closure"
+                else "obligations"
+            )
+            for index, record in enumerate(section[collection], 1):
+                if collection != "items":
+                    record.setdefault("id", f"V{position}-{name}-{index}")
+                for field in ("reason", "obligation", "observation"):
+                    if field in record:
+                        record[field] = reference(record[field])
+    for field, text in manifest["public_oracle"].items():
+        manifest["public_oracle"][field] = reference(text)
+    manifest["facts"] = definitions
     return json.loads(json.dumps(manifest))
+
+
+def referencing_manifest(
+    facts: dict, observation: str, position: int, shared: dict
+) -> dict:
+    """A value DESIGN whose meaning already in ``shared`` references it once.
+
+    Sibling values never repeat a fact: every sentence the bound shared DESIGN
+    defines becomes a reference, and only the value's own new sentences stay
+    defined in the value manifest.
+    """
+    manifest = design_manifest(
+        {**facts, "facts": shared["facts"]}, observation, position
+    )
+    defined = {record["id"] for record in shared["facts"]}
+    manifest["facts"] = [
+        record for record in manifest["facts"] if record["id"] not in defined
+    ]
+    return manifest
 
 
 def supplied_arguments(root, argv, answers, stdin):

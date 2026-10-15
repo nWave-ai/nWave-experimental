@@ -127,6 +127,57 @@ class TestDesCommitScoping:
         body = _git(tmp_path, "log", "-1", "--format=%B")
         assert "Step-Id: 02-03" in body
 
+    def test_broad_owned_directory_commits_source_and_config_not_tracked_runtime(
+        self, tmp_path
+    ):
+        _init_git_repo(tmp_path)
+        source = tmp_path / "a.py"
+        config = tmp_path / ".nwave/config.json"
+        runtime = tmp_path / ".nwave/des/handover.json"
+        runtime.parent.mkdir(parents=True)
+        source.write_text("owned = 1\n")
+        config.write_text('{"rigor":"standard"}\n')
+        historical_runtime = '{"request":"historical","values":[]}\n'
+        runtime.write_text(historical_runtime)
+        _git(tmp_path, "add", "a.py", ".nwave/config.json", ".nwave/des/handover.json")
+        _git(tmp_path, "commit", "-m", "Seed source, config and legacy runtime")
+        before = _git(tmp_path, "rev-parse", "HEAD").strip()
+        assert ".nwave/des/handover.json" in _git(tmp_path, "ls-files").splitlines()
+
+        source.write_text("owned = 2\n")
+        config.write_text('{"rigor":"custom"}\n')
+        current_runtime = '{"request":"current","values":[]}\n'
+        runtime.write_text(current_runtime)
+
+        assert (
+            _run(
+                tmp_path, ["."], step_id="runtime-01", message="feat: source and config"
+            )
+            == 0
+        )
+
+        assert _committed_files(tmp_path) == {"a.py", ".nwave/config.json"}
+        assert _git(tmp_path, "rev-parse", "HEAD^").strip() == before
+        assert _git(tmp_path, "show", "HEAD:a.py") == source.read_text()
+        assert _git(tmp_path, "show", "HEAD:.nwave/config.json") == config.read_text()
+        # Already-tracked history stays intact; only the new runtime bytes are excluded.
+        assert _git(tmp_path, "show", f"{before}:.nwave/des/handover.json") == (
+            historical_runtime
+        )
+        assert _git(tmp_path, "show", "HEAD:.nwave/des/handover.json") == (
+            historical_runtime
+        )
+        assert runtime.read_text() == current_runtime
+        assert _staged_files(tmp_path) == set()
+        assert _git(tmp_path, "diff", "--name-only").splitlines() == [
+            ".nwave/des/handover.json"
+        ]
+        assert (tmp_path / ".nwave/des/.gitignore").is_file()
+        assert _git(tmp_path, "check-ignore", ".nwave/des/commit.lock").strip() == (
+            ".nwave/des/commit.lock"
+        )
+        assert "Step-Id: runtime-01" in _git(tmp_path, "log", "-1", "--format=%B")
+
 
 class TestDesCommitConcurrentNoCrossStaging:
     """Concurrent des-commit calls each commit exactly their own file."""

@@ -65,7 +65,8 @@ Verdict-first, tables over prose, evidence-dense, zero narrative. Depth comes fr
    choice to install or explicitly waive verification. The host relays the offer;
    do not ask the human or install tools yourself. Only a recorded human waiver
    permits continuing without that proof; retain the waiver reason and affected
-   claims in `decisions` as `INDETERMINATE`, never PASS or a fabricated run.
+   claims through current FactRefs; keep the waiver evidence at an external
+   locator. An unchecked claim remains `INDETERMINATE`, never PASS.
 4. Preserve the original actors and authority constraints, including input
    bounds and unresolved decisions. The acceptance designer owns the executable
    public oracle; source-blind EXAMINE receives no private design evidence.
@@ -97,7 +98,12 @@ alone does not make an imperative script functional. Do not invent classes, new
 files, or an FP relabeling merely to fit the carrier. Keep this semantic choice
 in the architect's returned facts; DES validates and projects it unchanged.
 Read the OO or FP design skill only when the chosen paradigm matches it;
-`procedural` forces neither specialized skill.
+`procedural` forces neither specialized skill. For `object_oriented` and
+`functional`, design for the rules the crafter applies from that same skill:
+each domain decision has a cohesive owner that holds its data, justified in
+the reuse analysis and targeted `EXTEND` or `CREATE_NEW`; a cross-aggregate
+policy may live in a domain service; no decision about one object's data is
+placed in an application service or script.
 
 Resolve applicability from the affected observation and actual parties, not from
 the existence of a manifest field. Use the declared `not_applicable` branch with
@@ -126,7 +132,7 @@ acceptance-oracle bytes. DES is the sole authority writer.
 
 Return one closed outcome envelope: `outcome`, opaque `diagnostic`, and
 `manifest`. For `accepted`, `manifest` is the requested complete closed
-schema_version 1 DesignDocument, following the generated contract below. For
+schema_version 2 DesignDocument, following the generated contract below. For
 `rejected` or `indeterminate`, omit `manifest` or set it to `null` and give a
 nonempty diagnostic. A missing prerequisite names `BLOCKED-BY: <owner>` and
 its remediation; a finding names `DEFECT-OWNER: <owner>`. These are semantic
@@ -147,96 +153,110 @@ accepted replacement manifest with `--replace-current --input -`, preserving
 the same owned configured destination and section heading. Do not imply
 replacement without that explicit intent or execute the constructor yourself.
 
+## Sole normalized author form
+
+- Define current next-role meaning once in `facts: [{"id": "F-purpose", "text": "..."}]`; semantic slots use exact `{"ref": "F-purpose"}` objects, never strings or reference-plus-text objects. Ids match `[A-Za-z][A-Za-z0-9_-]{0,63}`. Do not repeat an id or normalized text anywhere in the Request.
+- Values declare only their own facts and structured scalars. Select shared decisions and constraints with FactRefs in the corresponding value arrays; select shared manifest/typed records with value-only `inherits` FactRefs. Non-inheritable shared structure needs a value-owned record with its own scalars and shared FactRefs, not copied prose.
+- DES compiles `Shared design` and `Value N` headings and subsection labels. Supply no `authority`, `heading` or author title. ADR status is only `proposed` or `accepted`.
+- Fact texts contain minimal current operational facts only. Historical narration, provenance, receipts, traces, supersession stories, skill-read inventories and Jev execution reports are forbidden in fact texts and decisions. Keep evidence external by locator; independent review and EXAMINE judge semantic compliance. No semantic classifier or substring gate is promised.
+- Models/proofs are external files: `Model.source` is `{path, sha256}`. Record checker/probe runs only through `des handoff run` and `des handoff record` in the driven evidence store; typed claims cite run ids. Submit no receipts section or inline model text.
+- Receiving-role facts are exactly the closure reachable after role filtering from `selected_authority`, `inherited_records`, `shared_verification` and `architect_projection`. Do not copy the catalog into those roots or include unrelated shared records.
+
 <!-- GENERATED:design-document-input START — source of truth: des.domain.design_document.DesignDocument.input_description(); do not hand-edit (docgen renders this region) -->
 DESIGN constructor input is one strict UTF-8 JSON manifest:
 object with exactly:
-- `schema_version`: integer `1`.
-- `authority`: object with exactly:
-  - `heading`: plain non-empty text, not a Markdown heading.
-- `purpose`: non-empty text.
-- `constraints`: non-empty unique list of non-empty text.
+- `schema_version`: integer `2`.
+- `facts`: list of object with exactly:
+    - `id`: identifier [A-Za-z][A-Za-z0-9_-]{0,63}.
+    - `text`: non-empty text, retained verbatim.
+- `inherits` (optional): list of exact object {"ref": id}.
+- `purpose`: exact object {"ref": id}.
+- `constraints`: unique list of exact object {"ref": id}.
 - `product_change` (optional): `required` or `none`; omission means required with a mutable production target excluding the oracle; none requires targets=[]; consultation belongs in reuse_analysis.candidates.
 - `targets`: unique list with distinct paths of object with exactly:
     - `path`: repository-relative file path.
     - `decision`: `EXTEND` or `CREATE_NEW`
-    - `reason`: non-empty text.
+    - `reason`: exact object {"ref": id}.
 - `paradigm`: `object_oriented` or `functional` or `procedural`
-- `decisions`: non-empty unique list of non-empty text.
+- `decisions`: non-empty unique list of exact object {"ref": id}.
 - `reuse_analysis`: object with exactly:
   - `candidates`: unique list of object with exactly:
       - `symbol`: non-empty text.
       - `locator`: repository-relative path and positive line.
       - `decision`: `REUSE` or `EXTEND` or `REPLACE` or `CREATE_NEW`
-      - `reason`: non-empty text.
+      - `reason`: exact object {"ref": id}.
 - `prefactoring`: tagged object on `applicability`:
   - `applicable`:
     object with exactly:
     - `applicability`: `applicable`
     - `existing_oracle`: a repository-relative DESIGN oracle locator: the whole file (`test/orders.ml`) or the file with an optional `::selector` (`tests/orders.rs::reject_cancelled`); native runner targets select that file; a `:line` suffix is not accepted.
-    - `move`: non-empty text.
-    - `preserved_observation`: non-empty text.
+    - `move`: exact object {"ref": id}.
+    - `preserved_observation`: exact object {"ref": id}.
     - `verification`: non-empty unique list of non-empty argv list of non-empty text without NUL.
     - `acceptance_supports`: unique list of repository-relative file path; never `existing_oracle`'s own file.
   - `not_applicable`:
     object with exactly:
     - `applicability`: `not_applicable`
-    - `reason`: non-empty text.
+    - `reason`: exact object {"ref": id}.
 - `agreement_analysis`: tagged object on `applicability`:
   - `applicable`:
     object with exactly:
     - `applicability`: `applicable`
-    - `parties`: non-empty unique list of object with exactly:
+    - `parties`: list of object with exactly:
+        - `id`: identifier [A-Za-z][A-Za-z0-9_-]{0,63}.
         - `contract`: non-empty text.
         - `role`: `producer` or `consumer`
         - `locator`: repository-relative path and positive line.
         - `decision`: `MIGRATED` or `UNCHANGED_COMPATIBLE` or `INCOMPATIBLE`
-        - `reason`: non-empty text.
+        - `reason`: exact object {"ref": id}.
   - `not_applicable`:
     object with exactly:
     - `applicability`: `not_applicable`
-    - `reason`: non-empty text.
+    - `reason`: exact object {"ref": id}.
 - `architectural_tests`: tagged object on `applicability`:
   - `applicable`:
     object with exactly:
     - `applicability`: `applicable`
-    - `obligations`: non-empty unique list of object with exactly:
-        - `obligation`: non-empty text.
+    - `obligations`: list of object with exactly:
+        - `id`: identifier [A-Za-z][A-Za-z0-9_-]{0,63}.
+        - `obligation`: exact object {"ref": id}.
         - `oracle`: a repository-relative DESIGN oracle locator: the whole file (`test/orders.ml`) or the file with an optional `::selector` (`tests/orders.rs::reject_cancelled`); native runner targets select that file; a `:line` suffix is not accepted.
         - `verification_index`: non-negative integer.
   - `not_applicable`:
     object with exactly:
     - `applicability`: `not_applicable`
-    - `reason`: non-empty text.
+    - `reason`: exact object {"ref": id}.
 - `contract_tests`: tagged object on `applicability`:
   - `applicable`:
     object with exactly:
     - `applicability`: `applicable`
-    - `obligations`: non-empty unique list of object with exactly:
-        - `obligation`: non-empty text.
+    - `obligations`: list of object with exactly:
+        - `id`: identifier [A-Za-z][A-Za-z0-9_-]{0,63}.
+        - `obligation`: exact object {"ref": id}.
         - `contract`: non-empty text.
         - `producer`: repository-relative path and positive line.
         - `consumer`: repository-relative path and positive line.
-        - `observation`: non-empty text.
+        - `observation`: exact object {"ref": id}.
         - `oracle`: a repository-relative DESIGN oracle locator: the whole file (`test/orders.ml`) or the file with an optional `::selector` (`tests/orders.rs::reject_cancelled`); native runner targets select that file; a `:line` suffix is not accepted.
         - `verification_index`: non-negative integer.
   - `not_applicable`:
     object with exactly:
     - `applicability`: `not_applicable`
-    - `reason`: non-empty text.
+    - `reason`: exact object {"ref": id}.
 - `adr` (optional): tagged object on `applicability`:
   - `applicable`:
     object with exactly:
     - `applicability`: `applicable`
-    - `context`: non-empty text.
-    - `decision`: non-empty text.
-    - `alternatives`: non-empty unique list of non-empty text.
-    - `consequences`: non-empty unique list of non-empty text.
-    - `status`: `proposed` or `accepted` or `superseded` or `deprecated`
+    - `context`: exact object {"ref": id}.
+    - `decision`: exact object {"ref": id}.
+    - `alternatives`: unique list of exact object {"ref": id}.
+    - `consequences`: unique list of exact object {"ref": id}.
+    - `status`: `proposed` or `accepted`
   - `not_applicable`:
     object with exactly:
     - `applicability`: `not_applicable`
-    - `reason`: non-empty text.
-- `architect_handoff` (optional): typed architect sections from `des handoff describe`; raw model text is retained.
+    - `reason`: exact object {"ref": id}.
+- `architect_handoff` (optional): current typed architect sections with FactRefs; model source is an external locator.
 - `impact_closure`: tagged object on `applicability`:
   - `applicable`:
     object with exactly:
@@ -245,31 +265,31 @@ object with exactly:
         - `kind`: `public_interface` or `consumer` or `test` or `fixture` or `export` or `discovery` or `build_metadata` or `manifest` or `lock` or `runtime`
         - `locator`: repository-relative path, optionally followed by `:line`.
         - `decision`: `CHANGED` or `MIGRATED` or `UNCHANGED_COMPATIBLE`
-        - `reason`: non-empty text.
+        - `reason`: exact object {"ref": id}.
   - `not_applicable`:
     object with exactly:
     - `applicability`: `not_applicable`
-    - `reason`: non-empty text.
+    - `reason`: exact object {"ref": id}.
 - `boundaries`: tagged object on `applicability`:
   - `applicable`:
     object with exactly:
     - `applicability`: `applicable`
-    - `driving_port`: non-empty text.
-    - `driven_ports`: non-empty unique list of non-empty text.
-    - `dependency_direction`: non-empty text.
+    - `driving_port`: exact object {"ref": id}.
+    - `driven_ports`: unique list of exact object {"ref": id}.
+    - `dependency_direction`: exact object {"ref": id}.
     - `failures`: non-empty unique list of object with exactly:
-        - `condition`: non-empty text.
+        - `condition`: exact object {"ref": id}.
         - `outcome`: `Refusal` or `Retry` or `Indeterminate`
-        - `observation`: non-empty text.
+        - `observation`: exact object {"ref": id}.
   - `not_applicable`:
     object with exactly:
     - `applicability`: `not_applicable`
-    - `reason`: non-empty text.
+    - `reason`: exact object {"ref": id}.
 - `public_oracle`: object with exactly:
-  - `observation`: non-empty text.
-  - `stimulus`: non-empty text.
-  - `expected`: non-empty text.
-  - `falsifier`: non-empty text.
+  - `observation`: exact object {"ref": id}.
+  - `stimulus`: exact object {"ref": id}.
+  - `expected`: exact object {"ref": id}.
+  - `falsifier`: exact object {"ref": id}.
 - `oracle`: a repository-relative DESIGN oracle locator: the whole file (`test/orders.ml`) or the file with an optional `::selector` (`tests/orders.rs::reject_cancelled`); native runner targets select that file; a `:line` suffix is not accepted.
 - `acceptance_supports`: unique list of repository-relative file path; only acceptance-owned fixtures the oracle needs before craft: never the `oracle`'s own file and never a `targets` path (a production module the oracle imports is a target).
 - `verification`: non-empty unique list of non-empty argv list of non-empty text without NUL.

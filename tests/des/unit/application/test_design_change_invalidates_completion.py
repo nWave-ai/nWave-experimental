@@ -10,7 +10,7 @@ needed.
 from __future__ import annotations
 
 import subprocess
-from dataclasses import asdict, replace
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -22,17 +22,21 @@ from des.application.delivery_continuation import (
 from des.application.handover import StoredHandover
 from des.domain.turn_record_ref import ORACLE_WITNESS_TURN, turn_ref
 from des.ports.driven_ports.task_invocation_port import (
-    DesignFacts,
-    DesignTarget,
     ModelOutcome,
     ModelRun,
-    NotApplicable,
     ProductValue,
-    ReuseAnalysis,
     TaskInvocationPort,
 )
-from tests.des._helpers.host_facts import design_manifest
-from tests.des._helpers.step_stimulus import crafted, decomposed, designed, oracled
+from tests.des._helpers.step_stimulus import (
+    crafted,
+    decomposed,
+    designed,
+    immutable_source,
+    oracled,
+)
+from tests.des.unit.application.test_authored_oracle_is_executed_red import (
+    oracle_manifest,
+)
 
 
 OBSERVATION = "the installed answer module answers 42 through its public entry point"
@@ -48,29 +52,9 @@ RED_ON_ITS_ASSERTION = (
 )
 
 
-def _design(decision: str) -> DesignFacts:
-    return DesignFacts(
-        targets=(
-            DesignTarget(PRODUCTION, "CREATE_NEW"),
-            DesignTarget(ORACLE, "CREATE_NEW"),
-        ),
-        paradigm="object_oriented",
-        decisions=(decision,),
-        oracle=ORACLE,
-        acceptance_supports=(),
-        verification=(("python", "-m", "pytest", ORACLE, "-q"),),
-        oracle_verification_index=0,
-        architectural_tests=NotApplicable(
-            "The fixture has no structural boundary change."
-        ),
-        contract_tests=NotApplicable("The fixture changes no shared contract."),
-        prefactoring=NotApplicable("The fixture requires no preservation move."),
-        agreement_analysis=NotApplicable("The fixture has no affected agreement."),
-        reuse_analysis=ReuseAnalysis(()),
-        impact_closure=NotApplicable(
-            "The fixture reaches no public surface, consumer or build metadata."
-        ),
-    )
+def _design(decision: str) -> dict:
+    """Submit the shared fixture's complete schema-2 producer manifest."""
+    return oracle_manifest(decision)
 
 
 def _accepted(**facts: object) -> ModelRun:
@@ -87,7 +71,7 @@ class RedesigningPort(TaskInvocationPort):
     def __init__(self, root: Path) -> None:
         self.root = root
         self.roles: list[str] = []
-        self.next_design: DesignFacts = _design("D2")
+        self.next_design: dict = _design("D2")
         self._architect_calls = 0
 
     def invoke(
@@ -137,8 +121,19 @@ def subject(tmp_path: Path) -> Path:
     return root
 
 
+@pytest.fixture
+def genesis(subject: Path) -> str:
+    """Retain the base established by the fixture, before any author or craft call."""
+    return subprocess.run(
+        ["git", "-C", str(subject), "rev-parse", "--verify", "HEAD^{commit}"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
 def _authored_and_crafted(
-    subject: Path, port: RedesigningPort
+    subject: Path, port: RedesigningPort, *, baseline: str
 ) -> tuple[DeliveryContinuationRunner, StoredHandover, object]:
     """Reach D1 authored (RED, recorded) and crafted (GREEN bytes, recorded)."""
     runner = DeliveryContinuationRunner()
@@ -148,9 +143,9 @@ def _authored_and_crafted(
         port,
         subject,
         stored,
-        design_manifest(asdict(_design("D1")), OBSERVATION, 1),
+        _design("D1"),
     )
-    first = oracled(runner, port, subject, stored, d1)
+    first = oracled(runner, port, subject, stored, d1, baseline=baseline)
     assert first.refusal is None, first.refusal
     outcome = crafted(runner, port, subject, stored, d1)
     assert not isinstance(outcome, DeliveryOutcome), outcome
@@ -165,6 +160,7 @@ def _authored_and_crafted(
 
 def test_changed_design_invalidates_old_author_and_craft_completion(
     subject: Path,
+    genesis: str,
 ) -> None:
     # WHAT: D1 is authored and crafted; the architect then corrects the
     # DECISIONS field alone (D1 -> D2) over the exact same oracle bytes.
@@ -175,18 +171,20 @@ def test_changed_design_invalidates_old_author_and_craft_completion(
     # HOW: `_bind_authority` forgets the affected value's oracle/craft turn
     # refs before the new authority becomes bound.
     port = RedesigningPort(subject)
-    runner, stored, d1 = _authored_and_crafted(subject, port)
+    runner, stored, d1 = _authored_and_crafted(subject, port, baseline=genesis)
 
     corrected = designed(
         runner,
         port,
         subject,
         stored,
-        design_manifest(asdict(port.next_design), OBSERVATION, 1),
+        port.next_design,
     )
     assert not isinstance(corrected, DeliveryOutcome), corrected
     stored, d2 = corrected
-    assert d1.decisions != d2.decisions, "the probe requires a genuine design change"
+    assert tuple(d1.resolved.catalog.resolve(ref) for ref in d1.decisions) != tuple(
+        d2.resolved.catalog.resolve(ref) for ref in d2.decisions
+    ), "the probe requires a genuine design change"
     assert d1.acceptance_paths == d2.acceptance_paths, (
         "the probe requires unchanged oracle bytes on disk"
     )
@@ -207,6 +205,7 @@ def test_changed_design_invalidates_old_author_and_craft_completion(
 
 def test_identical_design_correction_keeps_completion_and_cheap_resume(
     subject: Path,
+    genesis: str,
 ) -> None:
     # WHAT: an accepted correction that returns the SAME typed facts D1 already
     # holds must not disturb either recorded claim.
@@ -216,7 +215,7 @@ def test_identical_design_correction_keeps_completion_and_cheap_resume(
     # HOW: `_bind_authority` compares current vs. replacement by the typed
     # facts' own equality and forgets nothing when they match.
     port = RedesigningPort(subject)
-    runner, stored, d1 = _authored_and_crafted(subject, port)
+    runner, stored, d1 = _authored_and_crafted(subject, port, baseline=genesis)
     port.next_design = _design("D1")  # byte-identical replacement
 
     corrected = designed(
@@ -224,7 +223,7 @@ def test_identical_design_correction_keeps_completion_and_cheap_resume(
         port,
         subject,
         stored,
-        design_manifest(asdict(port.next_design), OBSERVATION, 1),
+        port.next_design,
     )
     assert not isinstance(corrected, DeliveryOutcome), corrected
     stored, d1_again = corrected
@@ -240,6 +239,7 @@ def test_identical_design_correction_keeps_completion_and_cheap_resume(
 
 def test_changed_design_preserves_records_as_historical_without_ref_deletion(
     subject: Path,
+    genesis: str,
 ) -> None:
     """A correction succeeds even if a hypothetical ref deletion would fail.
 
@@ -248,7 +248,7 @@ def test_changed_design_preserves_records_as_historical_without_ref_deletion(
     restoration while preventing it from being reused for D2.
     """
     port = RedesigningPort(subject)
-    runner, stored, _d1 = _authored_and_crafted(subject, port)
+    runner, stored, _d1 = _authored_and_crafted(subject, port, baseline=genesis)
 
     real_git = runner._git
 
@@ -263,21 +263,22 @@ def test_changed_design_preserves_records_as_historical_without_ref_deletion(
         port,
         subject,
         stored,
-        design_manifest(asdict(port.next_design), OBSERVATION, 1),
+        port.next_design,
     )
 
     assert not isinstance(corrected, DeliveryOutcome), corrected
     reread, d2 = corrected
-    assert d2.decisions == ("D2",)
+    assert tuple(d2.resolved.catalog.resolve(ref) for ref in d2.decisions) == ("D2",)
     assert not runner.oracle_turn_complete(subject, reread, reread.values[0], d2)
     assert not runner.craft_turn_complete(subject, reread, reread.values[0], d2)
 
 
 def test_witness_history_tracks_authority_and_byte_currentness_without_losing_red(
     subject: Path,
+    genesis: str,
 ) -> None:
     port = RedesigningPort(subject)
-    runner, stored, d1 = _authored_and_crafted(subject, port)
+    runner, stored, d1 = _authored_and_crafted(subject, port, baseline=genesis)
     first = runner.oracle_witness(subject, stored, OBSERVATION, d1)
     assert first and first[0]["current"] is True
     assert first[0]["oracles"][0]["verdict"] == "red"
@@ -287,7 +288,7 @@ def test_witness_history_tracks_authority_and_byte_currentness_without_losing_re
         port,
         subject,
         stored,
-        design_manifest(asdict(port.next_design), OBSERVATION, 1),
+        port.next_design,
     )
     historical = runner.oracle_witness(subject, corrected, OBSERVATION, d2)
     assert historical and historical[0]["current"] is False
@@ -299,7 +300,7 @@ def test_witness_history_tracks_authority_and_byte_currentness_without_losing_re
         port,
         subject,
         corrected,
-        design_manifest(asdict(port.next_design), OBSERVATION, 1),
+        port.next_design,
     )
     assert runner.oracle_witness(subject, restored, OBSERVATION, original) == first
     (subject / ORACLE).write_text(RED_ON_ITS_ASSERTION + "\n# changed acceptance\n")
@@ -318,15 +319,25 @@ def test_a_first_green_witness_is_durable_and_follows_value_record_lifecycle(
         port,
         subject,
         stored,
-        design_manifest(asdict(_design("D1")), OBSERVATION, 1),
+        _design("D1"),
     )
     (subject / PRODUCTION).parent.mkdir(parents=True, exist_ok=True)
     (subject / PRODUCTION).write_text("ANSWER = 42\n")
-    outcome = oracled(runner, port, subject, stored, design)
+    green_source, green_tree = immutable_source(subject, (PRODUCTION,))
+    outcome = oracled(runner, port, subject, stored, design, baseline=green_source)
     assert outcome.refusal is None
     witness = runner.oracle_witness(subject, stored, OBSERVATION, design)
     assert witness and witness[0]["oracles"][0]["verdict"] == "green"
     assert witness[0]["current"] is True
+    assert witness[0]["baseline"] == {
+        "sha": green_source,
+        "tree": green_tree,
+        "source": "explicit",
+    }, (
+        "WHAT: the first GREEN witness does not identify the explicitly selected product source. "
+        "WHY: dirty workspace GREEN must never be mistaken for original-source evidence. "
+        "HOW: record the resolved immutable GREEN SHA/tree supplied by the test host."
+    )
 
     new_request = REQUEST + " with an amended scope"
     runner._rekey_turn_records(subject, REQUEST, new_request, (OBSERVATION,))

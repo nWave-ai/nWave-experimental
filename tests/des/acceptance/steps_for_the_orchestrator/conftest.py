@@ -95,12 +95,23 @@ def stepper(root: Path, workspace: Path, turns: Path):
     second hand-rolled harness would be a second provider surface, which is the
     drift this corpus already paid for once.
     """
+    # The synthetic test host chooses its original source once, before any
+    # simulated host writes or commits. DES must never infer this from HEAD.
+    original_source = git(root, "rev-parse", "HEAD")
     launcher_dir = workspace / "bin"
     results = workspace / "results.json"
     counter = workspace / "results-consumed"
     claude_dir = workspace / "claude-config"
 
     def invoke(*argv: str, answers: list[dict] | None = None, stdin: str = ""):
+        if (
+            argv
+            and argv[0] == "oracle"
+            and answers is not None
+            and "--baseline" not in argv
+            and "--input" not in argv
+        ):
+            argv = (*argv, "--baseline", original_source)
         results.write_text(json.dumps(answers if answers is not None else []))
         counter.unlink(missing_ok=True)
         environment = hermetic_environment(

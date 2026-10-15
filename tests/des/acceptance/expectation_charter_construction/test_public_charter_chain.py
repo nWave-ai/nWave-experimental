@@ -113,6 +113,7 @@ class PublicProject:
         self.workspace = workspace
         self.root = base_repository(workspace / "root")
         self.turns = workspace / "turns.json"
+        self.baseline = git(self.root, "rev-parse", "HEAD")
         self.results = workspace / "results.json"
         self.counter = workspace / "results-consumed"
         self.launchers = workspace / "bin"
@@ -139,6 +140,8 @@ class PublicProject:
         from tests.des._helpers.host_facts import supplied_arguments
 
         args, stdin = supplied_arguments(self.root, args, answers, stdin)
+        if args[0] == "oracle" and "--baseline" not in args:
+            args = [*args, "--baseline", self.baseline]
         result = subprocess.run(
             [sys.executable, "-m", "des", *args],
             cwd=self.root,
@@ -403,14 +406,8 @@ _WITHHELD_FIELD = {
 }
 
 
-def _craft_value(
-    project: PublicProject, value: int, oracle: str, support: str, target: str
-) -> None:
-    """Design, author and settle one additional value with its own files."""
-    root, step = project.root, project.run
-    from tests.des._helpers.host_facts import design_manifest
-
-    design_facts = {
+def _value_design_facts(value: int, oracle: str, support: str, target: str) -> dict:
+    return {
         "targets": [{"path": target, "decision": "CREATE_NEW"}],
         "paradigm": "object_oriented",
         "decisions": [f"one observable value at position {value}"],
@@ -440,27 +437,64 @@ def _craft_value(
             "reason": "The fixture reaches no public surface, consumer or build metadata.",
         },
     }
-    assert (
-        step(
-            "design",
-            "--repo-root",
-            str(root),
-            "--value",
-            str(value),
-            answers=[
-                {
-                    "structured_output": {
-                        "outcome": "accepted",
-                        "diagnostic": "bound the typed facts",
-                        "manifest": design_manifest(
-                            design_facts, observation(chr(ord("A") + value - 1)), value
-                        ),
-                    }
+
+
+#: The one shared DESIGN every project binds before its first value: built from
+#: the first value's facts, so each later value references exactly these texts.
+_SHARED_FACTS = _value_design_facts(
+    1,
+    "tests/acceptance/test_value_1.py",
+    "tests/acceptance/support_1.py",
+    "product_value_1.py",
+)
+
+
+def _craft_value(
+    project: PublicProject, value: int, oracle: str, support: str, target: str
+) -> None:
+    """Design, author and settle one additional value with its own files."""
+    root, step = project.root, project.run
+    from tests.des._helpers.host_facts import design_manifest, referencing_manifest
+
+    design_facts = _value_design_facts(value, oracle, support, target)
+    # The fixture's absent-section reasons are one shared meaning: the project
+    # binds them once as the shared DESIGN and every value references them.
+    shared = design_manifest(_SHARED_FACTS, observation("A"), 0)
+    if value == 1:
+        _assert_success(
+            step(
+                "design",
+                "--repo-root",
+                str(root),
+                "--shared",
+                "--input",
+                "-",
+                stdin=json.dumps(shared),
+            ),
+            "shared DESIGN",
+        )
+    code, out, err = step(
+        "design",
+        "--repo-root",
+        str(root),
+        "--value",
+        str(value),
+        answers=[
+            {
+                "structured_output": {
+                    "outcome": "accepted",
+                    "diagnostic": "bound the typed facts",
+                    "manifest": referencing_manifest(
+                        design_facts,
+                        observation(chr(ord("A") + value - 1)),
+                        value,
+                        shared,
+                    ),
                 }
-            ],
-        )[0]
-        == 0
+            }
+        ],
     )
+    assert code == 0, out + err
     module = target[:-3]
     red_oracle = (
         "import pathlib\nimport sys\n\n\ndef test_value():\n"

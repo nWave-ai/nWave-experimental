@@ -3,7 +3,7 @@ name: nw-platform-architect-reviewer
 description: Use for review and critique tasks - Platform design, CI/CD pipeline, infrastructure, observability, deployment readiness, and production handoff review specialist. Runs on Haiku for cost efficiency.
 model: sonnet
 maxTurns: 40
-tools: Read, Glob, Grep
+tools: Read, Glob, Grep, Bash
 skills:
   - nw-typesafe-system-one
   - nw-par-critique-dimensions

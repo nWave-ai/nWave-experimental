@@ -5,7 +5,7 @@ Reviews DISCUSS product decisions, human understanding and visible increments, o
 **Wave:** Other
 **Model:** claude-opus-5
 **Max turns:** 40
-**Tools:** Read, Glob, Grep
+**Tools:** Read, Glob, Grep, Bash
 
 ## Preloaded skills
 

@@ -210,6 +210,66 @@ def load_public_agents(nwave_dir: Path, *, strict: bool = True) -> set[str]:
     }
 
 
+def scrub_removed_skill_references(
+    agents_dir: Path,
+    target_dir: Path,
+    removed_skills: set[str],
+    public_agents: set[str],
+) -> list[str]:
+    """Drop ``skills:`` frontmatter entries naming a skill the strip removed.
+
+    WHY: a surviving public agent whose frontmatter still names a removed
+    skill ships a dangling instruction. The public user installs an agent
+    that points at a directory the package does not contain, and nothing
+    fails loudly -- the reference is inert at load time, so the defect
+    surfaces only as missing behaviour.
+
+    The edit is line-scoped on purpose: a YAML round-trip would reformat
+    every surviving public agent file, turning a two-line correction into
+    an unreviewable diff. Only the matching list-item lines are dropped;
+    the rest of the file, frontmatter included, is left byte-identical.
+
+    Returns one report string per scrubbed reference.
+    """
+    if not removed_skills or not agents_dir.exists():
+        return []
+
+    scrubbed: list[str] = []
+    for agent_file in sorted(agents_dir.glob("nw-*.md")):
+        if not is_public_agent(agent_file.name, public_agents):
+            continue
+        text = agent_file.read_text(encoding="utf-8")
+        if not text.startswith("---"):
+            continue
+        end = text.find("\n---", 3)
+        if end == -1:
+            continue
+
+        head, tail = text[:end], text[end:]
+        kept_lines: list[str] = []
+        in_skills = False
+        dropped: list[str] = []
+        for line in head.split("\n"):
+            stripped = line.strip()
+            if not line.startswith((" ", "\t")) and stripped.endswith(":"):
+                in_skills = stripped == "skills:"
+            elif in_skills and stripped.startswith("- "):
+                name = stripped[2:].strip().strip("\"'")
+                key = name if name.startswith("nw-") else f"nw-{name}"
+                if key in removed_skills:
+                    dropped.append(key)
+                    continue
+            kept_lines.append(line)
+
+        if not dropped:
+            continue
+        agent_file.write_text("\n".join(kept_lines) + tail, encoding="utf-8")
+        rel = agent_file.relative_to(target_dir)
+        scrubbed.extend(f"{rel} no longer references {name}" for name in dropped)
+
+    return scrubbed
+
+
 def is_public_command(metadata: dict, public_agents: set[str]) -> bool:
     """A command is public unless all of its declared agents are non-public."""
     agents = metadata.get("agents") or []

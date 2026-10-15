@@ -6,6 +6,7 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -26,17 +27,22 @@ from des.application.handover import (
     valid_design_facts,
 )
 from des.domain.architecture_brief_resolver import DESIGN_ORACLE_LOCATOR_PATTERN
+from des.domain.design_document import DesignDocument
 from des.ports.driven_ports.task_invocation_port import (
     ApplicableADR,
     ApplicableImpactClosure,
     DesignFacts,
     DesignTarget,
+    FactId,
+    FactRecord,
+    FactRef,
     ImpactItem,
-    LegacyDesignFacts,
     NotApplicable,
+    PreNormalizedDesign,
     ReuseAnalysis,
     ReuseCandidate,
 )
+from tests.des._helpers.host_facts import design_manifest
 
 
 def test_canonical_graph_carries_exact_minimal_bytes_on_restart(
@@ -70,10 +76,17 @@ def test_reader_rejects_forward_duplicate_old_design_or_typed_authority_facts() 
         b'"authority":{"locator":"docs/a.md"}}]}'
     )
 
-    for raw in (forward, duplicate, old_design, typed_authority):
+    for raw in (forward, duplicate, old_design):
         parsed = read_handover(raw)
         assert isinstance(parsed, Blocked), raw
         assert parsed.what == "HandoverMalformed", raw
+    restored = read_handover(typed_authority)
+    assert isinstance(restored, StoredHandover)
+    opaque = restored.values[0].authority
+    assert isinstance(opaque, PreNormalizedDesign)
+    assert opaque.raw == {"locator": "docs/a.md"}
+    assert restored.raw == typed_authority
+    assert "DesignFactsPreNormalized" in design_facts_defect(opaque)
 
 
 def test_reader_refuses_noncanonical_bytes_that_parse_to_a_valid_graph() -> None:
@@ -97,77 +110,56 @@ def test_reader_refuses_noncanonical_bytes_that_parse_to_a_valid_graph() -> None
 def test_reader_validates_raw_obligation_members_without_breaking_legacy_shape() -> (
     None
 ):
-    facts = DesignFacts(
-        (DesignTarget("src/value.py", "EXTEND"),),
-        "object_oriented",
-        ("reuse the existing boundary",),
-        "tests/test_value.py",
-        (),
-        (("python", "-m", "pytest"),),
-        0,
-        ("constraint",),
-        architectural_tests=NotApplicable(
-            "The fixture has no structural boundary change."
-        ),
-        contract_tests=NotApplicable("The fixture changes no shared contract."),
-        prefactoring=NotApplicable("The fixture requires no preservation move."),
-        agreement_analysis=NotApplicable("The fixture has no affected agreement."),
-        reuse_analysis=ReuseAnalysis(()),
-        impact_closure=NotApplicable(
-            "The fixture reaches no public surface, consumer or build metadata."
-        ),
+    facts = _facts(
+        constraints=(FactRef(FactId("Constraint")),),
+        facts=(*_facts().facts, FactRecord(FactId("Constraint"), "constraint")),
     )
     canonical = json.loads(
         _canonical_bytes("deliver", (HandoverValue("A", (), facts),))
     )
 
-    for malformed in (1, [1], [""], [" "], ["constraint", "constraint"]):
+    for malformed in (
+        1,
+        [1],
+        [{"ref": ""}],
+        [{"ref": " "}],
+        [""],
+        [" "],
+        ["constraint", "constraint"],
+    ):
         payload = json.loads(json.dumps(canonical))
-        payload["values"][0]["authority"]["obligations"] = malformed
+        payload["values"][0]["authority"]["constraints"] = malformed
         raw = json.dumps(payload, separators=(",", ":")).encode()
         parsed = read_handover(raw)
         assert isinstance(parsed, Blocked), malformed
         assert parsed.what == "HandoverMalformed", malformed
+    repeated_definition = json.loads(json.dumps(canonical))
+    authority = repeated_definition["values"][0]["authority"]
+    authority["facts"].append({"id": "ConstraintAgain", "text": "constraint"})
+    authority["constraints"].append({"ref": "ConstraintAgain"})
+    parsed = read_handover(
+        json.dumps(repeated_definition, separators=(",", ":")).encode()
+    )
+    assert isinstance(parsed, Blocked)
+    assert parsed.what == "HandoverMalformed"
+    assert "DesignFactTextRepeated" in parsed.why
 
     legacy = json.loads(json.dumps(canonical))
-    del legacy["values"][0]["authority"]["obligations"]
+    del legacy["values"][0]["authority"]["schema_version"]
+    legacy["values"][0]["authority"]["obligations"] = ["constraint"]
     parsed_legacy = read_handover(json.dumps(legacy, separators=(",", ":")).encode())
     assert isinstance(parsed_legacy, StoredHandover)
-    assert isinstance(parsed_legacy.values[0].authority, DesignFacts)
-    assert parsed_legacy.values[0].authority.obligations == ()
+    assert isinstance(parsed_legacy.values[0].authority, PreNormalizedDesign)
+    assert parsed_legacy.values[0].authority.raw == legacy["values"][0]["authority"]
+    assert "DesignFactsPreNormalized" in design_facts_defect(
+        parsed_legacy.values[0].authority
+    )
 
 
 def test_reader_validates_raw_public_oracle_members_without_breaking_legacy_shape() -> (
     None
 ):
-    from des.ports.driven_ports.task_invocation_port import PublicOracle
-
-    facts = DesignFacts(
-        (DesignTarget("src/value.py", "EXTEND"),),
-        "object_oriented",
-        ("reuse the existing boundary",),
-        "tests/test_value.py",
-        (),
-        (("python", "-m", "pytest"),),
-        0,
-        ("constraint",),
-        public_oracle=PublicOracle(
-            observation="observed",
-            stimulus="stimulus text",
-            expected="expected outcome",
-            falsifier="falsifier text",
-        ),
-        architectural_tests=NotApplicable(
-            "The fixture has no structural boundary change."
-        ),
-        contract_tests=NotApplicable("The fixture changes no shared contract."),
-        prefactoring=NotApplicable("The fixture requires no preservation move."),
-        agreement_analysis=NotApplicable("The fixture has no affected agreement."),
-        reuse_analysis=ReuseAnalysis(()),
-        impact_closure=NotApplicable(
-            "The fixture reaches no public surface, consumer or build metadata."
-        ),
-    )
+    facts = _facts()
     canonical = json.loads(
         _canonical_bytes("deliver", (HandoverValue("A", (), facts),))
     )
@@ -176,26 +168,29 @@ def test_reader_validates_raw_public_oracle_members_without_breaking_legacy_shap
     for malformed in (
         1,  # not an object
         [],  # not an object
-        {"observation": "obs"},  # missing keys
         {
-            "observation": "obs",
-            "stimulus": "",
-            "expected": "exp",
-            "falsifier": "fals",
-        },  # empty string
+            "observation": canonical["values"][0]["authority"]["public_oracle"][
+                "observation"
+            ]
+        },
         {
-            "observation": "obs",
-            "stimulus": " ",
-            "expected": "exp",
-            "falsifier": "fals",
-        },  # whitespace only
+            **canonical["values"][0]["authority"]["public_oracle"],
+            "stimulus": {"ref": ""},
+        },
+        {
+            **canonical["values"][0]["authority"]["public_oracle"],
+            "stimulus": {"ref": " "},
+        },
+        {
+            **canonical["values"][0]["authority"]["public_oracle"],
+            "extra": "key",
+        },
         {
             "observation": "obs",
             "stimulus": "stim",
             "expected": "exp",
             "falsifier": "fals",
-            "extra": "key",
-        },  # extra key
+        },
     ):
         payload = json.loads(json.dumps(canonical))
         payload["values"][0]["authority"]["public_oracle"] = malformed
@@ -204,13 +199,17 @@ def test_reader_validates_raw_public_oracle_members_without_breaking_legacy_shap
         assert isinstance(parsed, Blocked), malformed
         assert parsed.what == "HandoverMalformed", malformed
 
-    # Legacy absence (no public_oracle field) should be accepted
+    # Pre-normalized absence is retained only as opaque, non-executable data.
     legacy = json.loads(json.dumps(canonical))
     del legacy["values"][0]["authority"]["public_oracle"]
+    del legacy["values"][0]["authority"]["schema_version"]
     parsed_legacy = read_handover(json.dumps(legacy, separators=(",", ":")).encode())
     assert isinstance(parsed_legacy, StoredHandover)
-    assert isinstance(parsed_legacy.values[0].authority, DesignFacts)
-    assert parsed_legacy.values[0].authority.public_oracle is None
+    assert isinstance(parsed_legacy.values[0].authority, PreNormalizedDesign)
+    assert parsed_legacy.values[0].authority.raw == legacy["values"][0]["authority"]
+    assert "DesignFactsPreNormalized" in design_facts_defect(
+        parsed_legacy.values[0].authority
+    )
 
     # Re-encode should be byte-identical when public_oracle was absent
     reparsed = read_handover(
@@ -245,24 +244,12 @@ def test_create_rejects_unusable_graph_facts_before_write(tmp_path) -> None:
 
 def test_typed_design_facts_reject_every_non_repository_locator() -> None:
     def facts(*, target="src/value.py", oracle="tests/test_value.py", support=()):
-        return DesignFacts(
-            (DesignTarget(target, "EXTEND"),),
-            "object_oriented",
-            ("reuse the existing boundary",),
-            oracle,
-            support,
-            (("python", "-m", "pytest"),),
-            0,
-            architectural_tests=NotApplicable(
-                "The fixture has no structural boundary change."
-            ),
-            contract_tests=NotApplicable("The fixture changes no shared contract."),
-            prefactoring=NotApplicable("The fixture requires no preservation move."),
-            agreement_analysis=NotApplicable("The fixture has no affected agreement."),
-            reuse_analysis=ReuseAnalysis(()),
-            impact_closure=NotApplicable(
-                "The fixture reaches no public surface, consumer or build metadata."
-            ),
+        base = _facts()
+        return replace(
+            base,
+            targets=(DesignTarget(target, "EXTEND", base.targets[0].reason),),
+            oracle=oracle,
+            acceptance_supports=support,
         )
 
     assert valid_design_facts(facts())
@@ -319,9 +306,7 @@ def test_restored_legacy_handover_names_the_missing_oracle_binding(tmp_path) -> 
 
     assert isinstance(parsed, Blocked)
     assert parsed.what == "HandoverMalformed"
-    assert (
-        parsed.why == "design facts omit the required oracle_verification_index binding"
-    )
+    assert "oracle_verification_index" in parsed.why
 
 
 def test_create_normalizes_an_out_of_order_semantic_graph(tmp_path) -> None:
@@ -385,6 +370,111 @@ def test_second_runner_observes_busy_shared_delivery_lock(tmp_path) -> None:
             first.release()
 
 
+@pytest.mark.parametrize("policy", (None, b"# custom policy\r\ncache/\r\n"))
+def test_delivery_lock_ignores_only_runtime_and_preserves_nwave_policy(
+    tmp_path, policy
+) -> None:
+    import subprocess
+
+    def git(*args):
+        return subprocess.run(
+            ["git", "-C", str(tmp_path), *args],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    assert git("init").returncode == 0
+    nwave = tmp_path / ".nwave"
+    nwave.mkdir()
+    config = nwave / "config.json"
+    config_bytes = b'{"rigor":"custom"}\n'
+    config.write_bytes(config_bytes)
+    assert git("add", ".nwave/config.json").returncode == 0
+    user_ignore = nwave / ".gitignore"
+    if policy is not None:
+        user_ignore.write_bytes(policy)
+
+    lock = acquire_delivery_lock(tmp_path)
+    try:
+        assert not isinstance(lock, Blocked), lock
+        runtime_ignore = nwave / "des/.gitignore"
+        assert runtime_ignore.is_file()
+        patterns = [
+            line
+            for line in runtime_ignore.read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+        assert patterns == ["*"]
+        assert (nwave / "des/commit.lock").is_file()
+        ignored = git("check-ignore", "-v", ".nwave/des/commit.lock")
+        assert ignored.returncode == 0, ignored.stderr
+        assert ".nwave/des/.gitignore:" in ignored.stdout
+        assert git("check-ignore", ".nwave/des/.gitignore").returncode == 0
+        assert git("check-ignore", "--no-index", ".nwave/config.json").returncode == 1
+        assert git("ls-files", "--", ".nwave/config.json").stdout.splitlines() == [
+            ".nwave/config.json"
+        ]
+        assert config.read_bytes() == config_bytes
+        if policy is None:
+            assert not user_ignore.exists()
+        else:
+            assert user_ignore.read_bytes() == policy
+    finally:
+        if not isinstance(lock, Blocked):
+            lock.release()
+
+
+def test_delivery_lock_never_overwrites_existing_runtime_ignore(tmp_path) -> None:
+    directory = tmp_path / ".nwave/des"
+    directory.mkdir(parents=True)
+    ignore = directory / ".gitignore"
+    original = b"# retained runtime policy\r\n*\r\n"
+    ignore.write_bytes(original)
+
+    lock = acquire_delivery_lock(tmp_path)
+    try:
+        assert not isinstance(lock, Blocked), lock
+        assert ignore.read_bytes() == original
+        assert (directory / "commit.lock").is_file()
+    finally:
+        if not isinstance(lock, Blocked):
+            lock.release()
+
+
+def test_unavailable_runtime_ignore_storage_refuses_before_lock_or_state_change(
+    tmp_path,
+) -> None:
+    import os
+    import stat
+
+    stored = create_handover(tmp_path, "deliver", (HandoverValue("A", (), None),))
+    assert isinstance(stored, StoredHandover)
+    directory = tmp_path / ".nwave/des"
+    before = {path.name: path.read_bytes() for path in directory.iterdir()}
+    original_mode = stat.S_IMODE(directory.stat().st_mode)
+    assert os.geteuid() != 0, "permission refusal requires an unprivileged host"
+    lock = None
+    try:
+        directory.chmod(0o555)
+        assert not os.access(directory, os.W_OK), "storage must actually deny writes"
+
+        lock = acquire_delivery_lock(tmp_path)
+
+        assert isinstance(lock, Blocked), lock
+        assert lock.what == "DeliveryLockUnavailable"
+        assert str(directory / ".gitignore") in lock.why
+        assert lock.how
+        assert not (directory / "commit.lock").exists()
+        assert not (directory / ".gitignore").exists()
+        assert {path.name: path.read_bytes() for path in directory.iterdir()} == before
+        assert handover_path(tmp_path).read_bytes() == stored.raw
+    finally:
+        if lock is not None and not isinstance(lock, Blocked):
+            lock.release()
+        directory.chmod(original_mode)
+
+
 def test_rewrite_expected_mismatch_preserves_winner(tmp_path) -> None:
     original = create_handover(tmp_path, "deliver", (HandoverValue("A", (), None),))
     assert isinstance(original, StoredHandover)
@@ -440,29 +530,45 @@ def test_cleanup_fsync_failure_restores_owned_bytes(tmp_path, monkeypatch) -> No
 
 
 def _facts(**overrides) -> DesignFacts:
-    fields = {
-        "targets": (DesignTarget("src/value.py", "EXTEND"),),
-        "paradigm": "object_oriented",
-        "decisions": ("reuse the existing boundary",),
-        "oracle": "tests/test_value.py",
-        "acceptance_supports": (),
-        "verification": (("python", "-m", "pytest"),),
-        "oracle_verification_index": 0,
-    }
-    fields.update(overrides)
-    return DesignFacts(
-        *fields.values(),
-        architectural_tests=NotApplicable(
-            "The fixture has no structural boundary change."
-        ),
-        contract_tests=NotApplicable("The fixture changes no shared contract."),
-        prefactoring=NotApplicable("The fixture requires no preservation move."),
-        agreement_analysis=NotApplicable("The fixture has no affected agreement."),
-        reuse_analysis=ReuseAnalysis(()),
-        impact_closure=NotApplicable(
-            "The fixture reaches no public surface, consumer or build metadata."
-        ),
-    )
+    base = DesignDocument.from_json(
+        json.dumps(
+            design_manifest(
+                {
+                    "targets": [{"path": "src/value.py", "decision": "EXTEND"}],
+                    "paradigm": "object_oriented",
+                    "decisions": ["reuse the existing boundary"],
+                    "oracle": "tests/test_value.py",
+                    "acceptance_supports": [],
+                    "verification": [["python", "-m", "pytest"]],
+                    "oracle_verification_index": 0,
+                    "architectural_tests": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture has no structural boundary change.",
+                    },
+                    "contract_tests": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture changes no shared contract.",
+                    },
+                    "prefactoring": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture requires no preservation move.",
+                    },
+                    "agreement_analysis": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture has no affected agreement.",
+                    },
+                    "reuse_analysis": {"candidates": []},
+                    "impact_closure": {
+                        "applicability": "not_applicable",
+                        "reason": "The fixture reaches no public surface, consumer or build metadata.",
+                    },
+                },
+                "Expose value.",
+                1,
+            )
+        )
+    ).facts
+    return replace(base, **overrides)
 
 
 def test_the_guard_still_owns_every_clause_json_schema_cannot_express() -> None:
@@ -477,8 +583,8 @@ def test_the_guard_still_owns_every_clause_json_schema_cannot_express() -> None:
     """
     duplicate_paths = _facts(
         targets=(
-            DesignTarget("src/value.py", "EXTEND"),
-            DesignTarget("src/value.py", "CREATE_NEW"),
+            DesignTarget("src/value.py", "EXTEND", _facts().targets[0].reason),
+            DesignTarget("src/value.py", "CREATE_NEW", _facts().targets[0].reason),
         )
     )
     oracle_as_its_own_support = _facts(
@@ -502,7 +608,7 @@ def test_a_non_oracle_target_cannot_also_be_required_acceptance_support(
 ) -> None:
     """Craft changes its targets; the oracle witness pins its supports."""
     conflict = _facts(
-        targets=(DesignTarget("src/value.py", decision),),
+        targets=(DesignTarget("src/value.py", decision, _facts().targets[0].reason),),
         acceptance_supports=("tests/support/helper.py", "src/value.py"),
     )
 
@@ -511,25 +617,44 @@ def test_a_non_oracle_target_cannot_also_be_required_acceptance_support(
     assert "src/value.py" in defect and "helper.py" not in defect
 
 
-def test_a_persisted_extend_support_binding_stays_readable_for_correction() -> None:
-    """Bindings stored before the EXTEND half was refused remain correctable."""
-    extended = _facts(
-        targets=(DesignTarget("src/value.py", "EXTEND"),),
-        acceptance_supports=("src/value.py",),
-    )
-    created = _facts(
-        targets=(DesignTarget("src/value.py", "CREATE_NEW"),),
-        acceptance_supports=("src/value.py",),
+def test_persisted_support_conflicts_are_opaque_and_refused_for_execution() -> None:
+    """Old support bindings remain correctable, never executable compatibility."""
+    from pathlib import Path
+
+    from des.application.delivery_continuation import (
+        DeliveryContinuationRunner,
+        DeliveryOutcome,
     )
 
-    assert design_facts_defect(extended, historical=True) is None
-    assert design_facts_defect(created, historical=True) is not None
+    for decision in ("EXTEND", "CREATE_NEW"):
+        current = _facts(
+            targets=(
+                DesignTarget("src/value.py", decision, _facts().targets[0].reason),
+            ),
+            acceptance_supports=("src/value.py",),
+        )
+        assert design_facts_defect(current) is not None
+        payload = json.loads(
+            _canonical_bytes("deliver", (HandoverValue("A", (), current),))
+        )
+        del payload["values"][0]["authority"]["schema_version"]
+        original = json.dumps(payload, separators=(",", ":")).encode()
+        restored = read_handover(original)
+        assert isinstance(restored, StoredHandover)
+        assert restored.raw == original
+        opaque = restored.values[0].authority
+        assert isinstance(opaque, PreNormalizedDesign)
+        assert opaque.raw == payload["values"][0]["authority"]
+        refused = DeliveryContinuationRunner().derive_authority(Path(), opaque)
+        assert isinstance(refused, DeliveryOutcome)
+        assert refused.failure.what == "DesignFactsPreNormalized"
+        assert "--replace-current" in refused.failure.how
 
 
 def test_a_support_only_helper_beside_an_extended_target_is_valid() -> None:
     support_only = _facts(acceptance_supports=("tests/support/new_helper.py",))
     extended = _facts(
-        targets=(DesignTarget("src/value.py", "EXTEND"),),
+        targets=(DesignTarget("src/value.py", "EXTEND", _facts().targets[0].reason),),
         acceptance_supports=("tests/support/new_helper.py",),
     )
 
@@ -574,29 +699,7 @@ def test_restoring_inadmissible_design_facts_names_the_rejected_field() -> None:
         HandoverValue(
             "A",
             (),
-            DesignFacts(
-                (DesignTarget("src/value.py", "EXTEND"),),
-                "object_oriented",
-                ("reuse the existing boundary",),
-                "tests/test_value.py",
-                (prose,),
-                (("python", "-m", "pytest"),),
-                0,
-                architectural_tests=NotApplicable(
-                    "The fixture has no structural boundary change."
-                ),
-                contract_tests=NotApplicable("The fixture changes no shared contract."),
-                prefactoring=NotApplicable(
-                    "The fixture requires no preservation move."
-                ),
-                agreement_analysis=NotApplicable(
-                    "The fixture has no affected agreement."
-                ),
-                reuse_analysis=ReuseAnalysis(()),
-                impact_closure=NotApplicable(
-                    "The fixture reaches no public surface, consumer or build metadata."
-                ),
-            ),
+            _facts(acceptance_supports=(prose,)),
         ),
     )
 
@@ -604,10 +707,8 @@ def test_restoring_inadmissible_design_facts_names_the_rejected_field() -> None:
 
     assert isinstance(parsed, Blocked)
     assert parsed.what == "HandoverMalformed"
-    assert parsed.why == (
-        "restored design facts are inadmissible: acceptance_supports[0] is "
-        f'not a repository-relative file locator: "{prose}"'
-    )
+    assert "acceptance_supports[0]" in parsed.why
+    assert prose in parsed.why
 
 
 @pytest.mark.parametrize(
@@ -645,13 +746,29 @@ def test_the_guard_and_the_provider_schema_decide_an_oracle_identically(
 def _rich_facts() -> DesignFacts:
     return replace(
         _facts(),
+        facts=(
+            *_facts().facts,
+            *(
+                FactRecord(FactId(identifier), text)
+                for identifier, text in (
+                    ("ReuseReason", "No existing renderer fits the contract."),
+                    ("ImpactReason", "The target is rewritten."),
+                    ("AdrContext", "context"),
+                    ("AdrDecision", "decision"),
+                    ("AdrAlternative", "alternative"),
+                    ("AdrConsequence", "consequence"),
+                    ("NoAdr", "The fixture needs no decision record."),
+                    ("MigratedReason", "The target is migrated."),
+                )
+            ),
+        ),
         reuse_analysis=ReuseAnalysis(
             (
                 ReuseCandidate(
                     "Value.render",
                     "src/value.py:10",
                     "CREATE_NEW",
-                    "No existing renderer fits the contract.",
+                    FactRef(FactId("ReuseReason")),
                 ),
             )
         ),
@@ -661,12 +778,16 @@ def _rich_facts() -> DesignFacts:
                     "runtime",
                     "src/value.py",
                     "CHANGED",
-                    "The target is rewritten.",
+                    FactRef(FactId("ImpactReason")),
                 ),
             )
         ),
         adr=ApplicableADR(
-            "context", "decision", ("alternative",), ("consequence",), "accepted"
+            FactRef(FactId("AdrContext")),
+            FactRef(FactId("AdrDecision")),
+            (FactRef(FactId("AdrAlternative")),),
+            (FactRef(FactId("AdrConsequence")),),
+            "accepted",
         ),
     )
 
@@ -686,11 +807,14 @@ def test_each_of_reuse_adr_and_closure_changes_the_design_basis() -> None:
     base = _rich_facts()
     changed = {
         "reuse_analysis": ReuseAnalysis(()),
-        "adr": NotApplicable("The fixture needs no decision record."),
+        "adr": NotApplicable(FactRef(FactId("NoAdr"))),
         "impact_closure": ApplicableImpactClosure(
             (
                 ImpactItem(
-                    "runtime", "src/value.py", "MIGRATED", "The target is migrated."
+                    "runtime",
+                    "src/value.py",
+                    "MIGRATED",
+                    FactRef(FactId("MigratedReason")),
                 ),
             )
         ),
@@ -710,13 +834,15 @@ def test_a_persisted_authority_without_reuse_and_closure_is_legacy() -> None:
     )
     del canonical["values"][0]["authority"]["reuse_analysis"]
     del canonical["values"][0]["authority"]["impact_closure"]
+    del canonical["values"][0]["authority"]["schema_version"]
 
     parsed = read_handover(json.dumps(canonical, separators=(",", ":")).encode())
 
     assert isinstance(parsed, StoredHandover)
     authority = parsed.values[0].authority
-    assert isinstance(authority, LegacyDesignFacts)
-    assert {"reuse_analysis", "impact_closure"} <= set(authority.missing_decisions)
+    assert isinstance(authority, PreNormalizedDesign)
+    assert authority.raw == canonical["values"][0]["authority"]
+    assert "DesignFactsPreNormalized" in design_facts_defect(authority)
 
 
 def test_native_receipts_preserve_the_graph_and_survive_other_graph_writers(
@@ -1041,6 +1167,10 @@ def test_design_import_refusal_names_the_handoff_instead_of_valid_stdin(
 @pytest.mark.parametrize(
     "required_instruction",
     [
+        "Keep every scenario body visibly in domain-language typed steps: Given, "
+        "exactly one When, Then for journeys; Arrange, exactly one Act, Assert for "
+        "focused contract/property tests. Use fresh scenario-scoped context and "
+        "reusable steps, never whole-scenario or scenario-kind-branching helpers.",
         "Drive every test through the declared public port: build the stimulus and "
         "read the result through that port, never by importing production modules, "
         "constructing production objects, calling below the port or patching internal "
@@ -1134,6 +1264,108 @@ def test_atd_oracle_prompt_preserves_authorization_and_return_schema(
         object_match.group(1),
     )
     assert set(json.loads(example)) == {"outcome", "diagnostic"}
+
+
+@pytest.mark.parametrize(
+    "required_instruction",
+    [
+        "Treat the design as binding: every decision, boundary, reuse decision, "
+        "architectural test and contract test in `native_input.selected_authority`, "
+        "and every law, construction claim and mapped symbol in "
+        "`native_input.architect_projection`.",
+        "Treat the tests as the specification: the public oracle is the outer loop; "
+        "architectural and contract tests bind the structure.",
+        "`object_oriented`: `nw-code-design-oo`. `functional`: `nw-code-design-fp`. "
+        "`procedural`: preserve the imperative structure the DESIGN bound, with the "
+        "universal rules of `nw-code-craftsmanship`.",
+        "`object_oriented`, in the Refactoring Priority Premise order of "
+        "`nw-code-design-oo`, until the changed code shows no smell of levels L1-L4; "
+        "`functional`, in the refactoring order of `nw-code-design-fp`, preserving "
+        "every declared law; `procedural`, readability, complexity and duplication only.",
+        "When the paradigm is `object_oriented` and the bound targets or decisions "
+        "place a decision about one object's data in an application service or script",
+    ],
+)
+def test_craft_implementation_prompt_binds_design_tests_and_paradigm_rules(
+    required_instruction,
+):
+    from des.application import architect_prompt
+
+    spec = json.loads(
+        (
+            Path(__file__).parents[4]
+            / "nWave/templates/architect-handoff/craft.impl-v3.spec.json"
+        ).read_text(encoding="utf-8")
+    )
+    fixture = {
+        field: ["supplied"] if kind == "list" else "supplied"
+        for field, kind in spec["required"].items()
+    }
+    prompt, _ = architect_prompt.render(
+        "craft.impl-v3", fixture, role_id="nw-software-crafter"
+    )
+    assert required_instruction in " ".join(prompt.split()), (
+        f"WHAT: the crafter prompt lacks {required_instruction!r}. "
+        "WHY: the crafter must receive the design, the tests and the paradigm rules "
+        "as binding constraints, and refuse a design that forces an anemic model. "
+        "HOW: restore the clause in craft.impl-v3.tmpl without changing unrelated lines."
+    )
+
+
+def test_architect_prompt_designs_for_the_crafter_paradigm_rules(tmp_path, capsys):
+    from des.cli.handoff import main
+
+    stored = create_handover(tmp_path, "deliver", (HandoverValue("A", (), _facts()),))
+    assert isinstance(stored, StoredHandover)
+    context = tmp_path / "root.txt"
+    context.write_text("host context\n")
+    assert (
+        main(
+            [
+                "--repo-root",
+                str(tmp_path),
+                "prompt",
+                "--role",
+                "nw-solution-architect",
+                "--root-context",
+                str(context),
+            ]
+        )
+        == 0
+    )
+    prompt = " ".join(capsys.readouterr().out.split())
+    assert (
+        "Never place a decision about one object's data in an application service "
+        "or script: the crafter refuses a design that forces an anemic entity, an "
+        "application transaction script or domain decisions in effectful code."
+    ) in prompt, (
+        "WHAT: the architect prompt does not carry the crafter's ownership rule. "
+        "WHY: a design that places domain decisions in application services forces "
+        "the crafter to write a transaction script or refuse. "
+        "HOW: restore the domain-owners clause in design.architect-v9.tmpl."
+    )
+
+
+def test_role_invocation_passes_the_canonical_role_prompt_verbatim():
+    guidance = " ".join(
+        (Path(__file__).parents[4] / "nWave/skills/nw-role-invocation/SKILL.md")
+        .read_text(encoding="utf-8")
+        .split()
+    )
+    assert (
+        "run `des handoff --repo-root ROOT prompt --role ROLE [--value N] "
+        "--root-context FILE`"
+        in guidance
+        and "pass its stdout verbatim as the role's task" in guidance
+        and "`--role nw-software-crafter` or `--role nw-functional-software-crafter`"
+        in guidance
+    ), (
+        "WHAT: the host role-invocation guidance does not name the canonical prompt "
+        "producer for the architect, acceptance designer and crafter. WHY: a host "
+        "that composes its own crafter prompt never delivers the design handoff, "
+        "the tests or the paradigm rules. HOW: restore the `des handoff ... prompt` "
+        "paragraph in nw-role-invocation/SKILL.md."
+    )
 
 
 def test_atd_oracle_prompt_requires_review_without_repeating_finite_prefixes(
@@ -1259,7 +1491,6 @@ def test_native_architect_handoff_keeps_submission_host_owned_and_manifest_only(
     tmp_path, capsys
 ):
     import shlex
-    from dataclasses import asdict
 
     import jsonschema
 
@@ -1270,7 +1501,6 @@ def test_native_architect_handoff_keeps_submission_host_owned_and_manifest_only(
     from des.cli.handoff import main
     from des.domain.design_document import DesignDocument, DesignDocumentInvalid
     from des.ports.driven_ports.task_invocation_port import ModelOutcome
-    from tests.des._helpers.host_facts import design_manifest
 
     assert isinstance(
         create_handover(tmp_path, "deliver", (HandoverValue("A", (), _facts()),)),
@@ -1325,7 +1555,14 @@ def test_native_architect_handoff_keeps_submission_host_owned_and_manifest_only(
     assert "Do not execute" in submit
     assert "BLOCKED-BY: <owner>" in submit
 
-    manifest = design_manifest(asdict(_facts()), "A", 1)
+    from des.domain.design_document import normalized_wire
+
+    manifest = {
+        key: value
+        for key, value in normalized_wire(_facts()).items()
+        if key != "authority_locator" and value is not None
+    }
+    manifest["facts"][0]["text"] = "A"
     schema = jsonschema.Draft202012Validator(
         json.loads(_schema_for("nw-solution-architect"))
     )
@@ -1335,7 +1572,9 @@ def test_native_architect_handoff_keeps_submission_host_owned_and_manifest_only(
         decode_model_run(accepted, role_id="nw-solution-architect").outcome
         is ModelOutcome.Accepted
     )
-    assert DesignDocument.from_json(json.dumps(accepted["manifest"])).purpose == "A"
+    document = DesignDocument.from_json(json.dumps(accepted["manifest"]))
+    assert document.facts.purpose.ref == manifest["purpose"]["ref"]
+    assert document.facts.facts[0].text == "A"
     with pytest.raises(DesignDocumentInvalid):
         DesignDocument.from_json(json.dumps(accepted))
 
@@ -1618,6 +1857,27 @@ def test_fifo_output_is_refused_without_blocking_or_retaining_delivery_lock(tmp_
         lock.release()
 
 
+def _detached_catalog(tmp_path):
+    """Name actual schema-2 manifest bytes for detached rendering consumers."""
+    import hashlib
+
+    from des.domain.design_document import normalized_wire
+
+    source = tmp_path / "catalog.design.json"
+    source.write_text(
+        json.dumps(
+            {
+                key: value
+                for key, value in normalized_wire(_facts()).items()
+                if key != "authority_locator" and value is not None
+            }
+        )
+    )
+    return [
+        {"path": source.name, "sha256": hashlib.sha256(source.read_bytes()).hexdigest()}
+    ]
+
+
 def test_detached_handoff_check_reads_defects_without_creating_a_handover(
     tmp_path, capsys
 ):
@@ -1641,14 +1901,16 @@ def test_detached_handoff_summary_reads_file_without_creating_a_handover(
     from des.cli.handoff import main
 
     source = tmp_path / "defective.g10.json"
-    original = b'{"sections": []}\n'
+    original = json.dumps(
+        {"sections": [], "catalog": _detached_catalog(tmp_path)}
+    ).encode()
     source.write_bytes(original)
     assert main(["summary", "--repo-root", str(tmp_path), source.name]) == 0
     out, err = capsys.readouterr()
     assert set(json.loads(out)["missing_shared"]) == set(g10_types.REQUIRED_SHARED)
     assert err == ""
     assert source.read_bytes() == original
-    assert set(tmp_path.rglob("*")) == {source}
+    assert set(tmp_path.rglob("*")) == {source, tmp_path / "catalog.design.json"}
 
 
 def test_detached_handoff_render_writes_only_the_requested_html_without_a_handover(
@@ -1657,7 +1919,9 @@ def test_detached_handoff_render_writes_only_the_requested_html_without_a_handov
     from des.cli.handoff import main
 
     source = tmp_path / "defective.g10.json"
-    original = b'{"sections": []}\n'
+    original = json.dumps(
+        {"sections": [], "catalog": _detached_catalog(tmp_path)}
+    ).encode()
     source.write_bytes(original)
     page = tmp_path / "inspection.html"
     assert (
@@ -1677,7 +1941,7 @@ def test_detached_handoff_render_writes_only_the_requested_html_without_a_handov
     assert f"wrote {page}" in out and err == ""
     assert page.read_text().startswith("<!doctype html>")
     assert source.read_bytes() == original
-    assert set(tmp_path.rglob("*")) == {source, page}
+    assert set(tmp_path.rglob("*")) == {source, page, tmp_path / "catalog.design.json"}
 
 
 def test_handoff_graph_operations_still_refuse_missing_handover_without_effects(
@@ -1752,17 +2016,18 @@ def test_detached_file_with_handover_keeps_file_payload_and_existing_target_defa
     source.write_text(
         json.dumps(
             {
+                "catalog": _detached_catalog(tmp_path),
                 "sections": [
                     {
                         "kind": kind,
                         "scope": "shared",
                         "status": {
                             "tag": "not_applicable",
-                            "reason": "Detached inspection.",
+                            "reason": {"ref": _facts().purpose.ref},
                         },
                     }
                     for kind in g10_types.REQUIRED_SHARED
-                ]
+                ],
             }
         )
     )
@@ -1772,3 +2037,23 @@ def test_detached_file_with_handover_keeps_file_payload_and_existing_target_defa
     assert "X1" not in out
     assert "need --targets; none were given" not in out
     assert handover_path(tmp_path).read_bytes() == stored.raw
+
+
+@pytest.mark.parametrize("command", ["summary", "render"])
+def test_detached_text_consumer_refuses_missing_catalog_without_effects(
+    tmp_path, capsys, command
+):
+    from des.cli.handoff import main
+
+    source = tmp_path / "detached.g10.json"
+    original = b'{"sections": []}\n'
+    source.write_bytes(original)
+    arguments = [command, "--repo-root", str(tmp_path), source.name]
+    if command == "render":
+        arguments.extend(["--html", "inspection.html"])
+    assert main(arguments) == 1
+    out, err = capsys.readouterr()
+    assert "ArchitectHandoffCatalogUnavailable" in out + err
+    assert "catalog" in (out + err).lower()
+    assert source.read_bytes() == original
+    assert set(tmp_path.rglob("*")) == {source}

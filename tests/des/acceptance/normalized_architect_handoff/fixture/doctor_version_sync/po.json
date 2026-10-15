@@ -1,0 +1,52 @@
+{
+  "schema_version": 2,
+  "request": "The version check passes when it cannot decide. A check that cannot measure the property it exists to measure must not report success. The third state could-not-verify must reach the aggregate rather than collapsing into the positive one. An undeterminable comparison reports as undeterminable, the aggregate carries that state, and a stale recorded version is distinguishable from an unreadable running one.",
+  "outcomes": [
+    "When a user runs nwave-ai doctor or nwave-ai doctor --json with recorded version 4.0.0+atddpure.ec270dcddb68 and running version unknown, the version comparison is reported as could-not-verify rather than passed.",
+    "When the version comparison could not be verified, the overall report retains that state, excludes that comparison from passed counts, and the command's exit status does not treat it as a pass, including when every other reported check passes.",
+    "A user comparing doctor reports can distinguish a report with known differing installed and running versions from a report with an unreadable running version: the former identifies a known mismatch, while the latter identifies could-not-verify rather than asserting a mismatch or a pass."
+  ],
+  "scope": {
+    "in_scope": [
+      "When a user runs nwave-ai doctor or nwave-ai doctor --json with recorded version 4.0.0+atddpure.ec270dcddb68 and running version unknown, the version comparison is reported as could-not-verify rather than passed.",
+      "When the version comparison could not be verified, the overall report retains that state, excludes that comparison from passed counts, and the command's exit status does not treat it as a pass, including when every other reported check passes.",
+      "A user comparing doctor reports can distinguish a report with known differing installed and running versions from a report with an unreadable running version: the former identifies a known mismatch, while the latter identifies could-not-verify rather than asserting a mismatch or a pass."
+    ],
+    "out_of_scope": {
+      "applicability": "not_applicable",
+      "reason": "Only the supplied doctor report outcomes are selected.",
+      "items": []
+    }
+  },
+  "decisions": [
+    "Preserve the supplied ordered doctor report outcomes and dependencies."
+  ],
+  "values": [
+    {
+      "observation": "When a user runs nwave-ai doctor or nwave-ai doctor --json with recorded version 4.0.0+atddpure.ec270dcddb68 and running version unknown, the version comparison is reported as could-not-verify rather than passed.",
+      "dependencies": []
+    },
+    {
+      "observation": "When the version comparison could not be verified, the overall report retains that state, excludes that comparison from passed counts, and the command's exit status does not treat it as a pass, including when every other reported check passes.",
+      "dependencies": [
+        "When a user runs nwave-ai doctor or nwave-ai doctor --json with recorded version 4.0.0+atddpure.ec270dcddb68 and running version unknown, the version comparison is reported as could-not-verify rather than passed."
+      ]
+    },
+    {
+      "observation": "A user comparing doctor reports can distinguish a report with known differing installed and running versions from a report with an unreadable running version: the former identifies a known mismatch, while the latter identifies could-not-verify rather than asserting a mismatch or a pass.",
+      "dependencies": []
+    }
+  ],
+  "jtbd": {
+    "status": "not_explored"
+  },
+  "journey": {
+    "status": "not_explored"
+  },
+  "gherkin": {
+    "status": "not_explored"
+  },
+  "quint_scenarios": {
+    "status": "not_run"
+  }
+}

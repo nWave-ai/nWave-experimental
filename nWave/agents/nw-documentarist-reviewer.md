@@ -3,7 +3,7 @@ name: nw-documentarist-reviewer
 description: Use for reviewing documentarist assessments. Validates classification accuracy, validation completeness, collapse detection, and recommendation quality using Haiku model.
 model: haiku
 maxTurns: 40
-tools: [Read, Glob, Grep]
+tools: [Read, Glob, Grep, Bash]
 skills:
   - nw-typesafe-system-one
   - nw-dr-review-criteria

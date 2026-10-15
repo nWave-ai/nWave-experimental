@@ -14,9 +14,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from des.application.architect_handoff import (
-    decode as decode_architect_handoff,
-)
-from des.application.architect_handoff import (
     decode_receipts,
 )
 from des.application.architect_handoff.g10_codec import enc as architect_encode
@@ -28,11 +25,14 @@ from des.domain.architecture_brief_resolver import (
 )
 from des.domain.design_authority_locator import is_design_authority_locator
 from des.domain.design_document import (
-    decode_design_decisions,
+    DesignDocument,
+    DesignDocumentInvalid,
     design_decisions_defect,
-    design_decisions_wire,
+    fact_reference_list_defects,
     native_verification_defect,
+    normalized_wire,
     product_change_defect,
+    resolve_inheritance,
 )
 from des.domain.distill_document import AcceptanceObligation
 from des.domain.document_scope import (
@@ -44,12 +44,15 @@ from des.domain.document_scope import (
     scope_json,
 )
 from des.domain.feature_documents import FeatureDocumentsInvalid, valid_feature_id
+from des.domain.input_defects import InputDefects
+from des.domain.integration_commit_message import ChangeIntent
+from des.domain.nwave_dir_gitignore import runtime_gitignore_content
 from des.ports.driven_ports.task_invocation_port import (
     MUTABLE_TARGET_DECISIONS,
+    ApplicableBoundaries,
     DesignFacts,
-    DesignTarget,
-    LegacyDesignFacts,
-    PublicOracle,
+    FactRef,
+    PreNormalizedDesign,
 )
 
 
@@ -73,7 +76,7 @@ class Blocked:
 class HandoverValue:
     observation: str
     dependencies: tuple[str, ...]
-    authority: str | DesignFacts | None
+    authority: str | DesignFacts | PreNormalizedDesign | None
     acceptance: tuple[AcceptanceObligation, ...] = ()
     acceptance_oracle: str | None = None
     acceptance_supports: tuple[str, ...] = ()
@@ -88,6 +91,7 @@ class HandoverValue:
     #: Identity of the complete normalized DESIGN input bound to this value;
     #: written only by :func:`bind_design_facts`.
     design_semantic_sha256: str | None = None
+    change: ChangeIntent | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,7 +106,7 @@ class SharedDesign:
     authority_locator: str
     section_sha256: str
     semantic_sha256: str
-    design: DesignFacts
+    design: DesignFacts | PreNormalizedDesign
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,7 +182,7 @@ def _is_section_locator(locator: str) -> bool:
     )
 
 
-def design_facts_defect(facts: DesignFacts, *, historical: bool = False) -> str | None:
+def design_facts_defect(facts: DesignFacts | PreNormalizedDesign) -> str | None:
     """The FIRST contract clause ``facts`` violates, or ``None`` when valid.
 
     Every caller used to print "incomplete facts" for ANY violation.  Measured
@@ -194,13 +198,35 @@ def design_facts_defect(facts: DesignFacts, *, historical: bool = False) -> str 
     must never reach the duplicate check, and a non-string oracle must never
     reach ``partition``.
     """
+    if isinstance(facts, PreNormalizedDesign):
+        return (
+            "DesignFactsPreNormalized: persisted authority is opaque and cannot be executed; "
+            "regenerate through des design --replace-current --input -"
+        )
     if facts.paradigm not in _PARADIGMS:
         return f"paradigm is not one of {' or '.join(_PARADIGMS)}: {_shown(facts.paradigm)}"
     if not facts.decisions:
         return "decisions is empty"
-    for index, item in enumerate(facts.decisions):
-        if not isinstance(item, str) or not item:
-            return f"decisions[{index}] is not a non-empty string: {_shown(item)}"
+    reference_defects: list[str] = []
+    reference_lists = [
+        ("decisions", facts.decisions),
+        ("constraints", facts.constraints),
+    ]
+    if isinstance(facts.boundaries, ApplicableBoundaries):
+        reference_lists.append(
+            ("boundaries.driven_ports", facts.boundaries.driven_ports)
+        )
+    for name, references in reference_lists:
+        malformed = [
+            f"DesignFactRefExpected {name}[{index}]"
+            for index, item in enumerate(references)
+            if not isinstance(item, FactRef)
+        ]
+        reference_defects.extend(malformed)
+        if not malformed:
+            reference_defects.extend(fact_reference_list_defects(references, name))
+    if reference_defects:
+        return "\n".join(reference_defects)
     if not isinstance(facts.oracle, str):
         return f"oracle is not a string: {_shown(facts.oracle)}"
     if not is_design_oracle_locator(facts.oracle):
@@ -238,16 +264,9 @@ def design_facts_defect(facts: DesignFacts, *, historical: bool = False) -> str 
         if path in seen_supports:
             return f"acceptance_supports[{index}] repeats an earlier support: {_shown(path)}"
         seen_supports.add(path)
-    # A binding persisted before EXTEND targets were refused as supports stays
-    # READABLE, so `des design --replace-current` can correct it and craft can
-    # name the moved target; only new admissions refuse the EXTEND half.
     conflict = target_acceptance_support_conflict(
         facts.oracle,
-        (
-            target.path
-            for target in facts.targets
-            if not historical or target.decision == "CREATE_NEW"
-        ),
+        (target.path for target in facts.targets),
         facts.acceptance_supports,
     )
     if conflict is not None:
@@ -291,7 +310,7 @@ def design_facts_defect(facts: DesignFacts, *, historical: bool = False) -> str 
                 "authority_locator is not a repository-relative DESIGN section "
                 f"locator: {_shown(facts.authority_locator)}"
             )
-    return design_decisions_defect(facts, historical=historical)
+    return design_decisions_defect(facts)
 
 
 def valid_design_facts(facts: DesignFacts) -> bool:
@@ -336,6 +355,30 @@ def candidate_handover_path(root: Path, candidate: str) -> Path | None:
     if re.fullmatch(r"[0-9a-f]{40}", candidate) is None:
         return None
     return root / ".nwave" / "des" / "candidates" / candidate / "handover.json"
+
+
+def retained_candidates(root: Path) -> tuple[str, ...] | Blocked:
+    """Enumerate retained candidate snapshots without changing historical state."""
+    directory = root / ".nwave" / "des" / "candidates"
+    try:
+        entries = tuple(directory.iterdir())
+    except FileNotFoundError:
+        return ()
+    except OSError as error:
+        return Blocked(
+            "CandidateHandoverUnavailable", str(error), "restore handover storage"
+        )
+    candidates = []
+    try:
+        for entry in entries:
+            path = candidate_handover_path(root, entry.name)
+            if path is not None and entry.is_dir() and path.is_file():
+                candidates.append(entry.name)
+    except OSError as error:
+        return Blocked(
+            "CandidateHandoverUnavailable", str(error), "restore handover storage"
+        )
+    return tuple(sorted(candidates))
 
 
 def retain_candidate_handover(
@@ -399,52 +442,20 @@ def stored_candidate_handover(
     return None if path is None else _existing_handover(path)
 
 
-def _obligations(raw: object) -> tuple[str, ...]:
-    """Restore the optional persisted constraint projection without coercion."""
-    if not isinstance(raw, list):
-        raise TypeError("obligations is not a list")
-    if any(
-        not isinstance(item, str) or not item or item != item.strip() for item in raw
-    ):
-        raise TypeError("obligations contains a normalized non-empty string violation")
-    if len(set(raw)) != len(raw):
-        raise TypeError("obligations contains a duplicate")
-    return tuple(raw)
-
-
 def _facts_wire(
-    value: DesignFacts,
+    value: DesignFacts | PreNormalizedDesign,
     *,
-    include_obligations: bool = True,
     include_authority_locator: bool = True,
     include_public_oracle: bool = True,
 ) -> dict[str, object]:
-    facts: dict[str, object] = {
-        "targets": [
-            {"path": target.path, "decision": target.decision}
-            for target in value.targets
-        ],
-        "paradigm": value.paradigm,
-        "decisions": list(value.decisions),
-        "oracle": value.oracle,
-        "acceptance_supports": list(value.acceptance_supports),
-        "verification": [list(argv) for argv in value.verification],
-        "oracle_verification_index": value.oracle_verification_index,
-        **design_decisions_wire(value),
-        **({"product_change": "none"} if value.product_change == "none" else {}),
-    }
-    if include_obligations:
-        facts["obligations"] = list(value.obligations)
-    if include_authority_locator:
-        facts["authority_locator"] = value.authority_locator
-    if include_public_oracle and value.public_oracle is not None:
-        facts["public_oracle"] = {
-            "observation": value.public_oracle.observation,
-            "stimulus": value.public_oracle.stimulus,
-            "expected": value.public_oracle.expected,
-            "falsifier": value.public_oracle.falsifier,
-        }
-    return facts
+    if isinstance(value, PreNormalizedDesign):
+        return value.raw
+    wire = normalized_wire(value)
+    if not include_authority_locator:
+        wire.pop("authority_locator", None)
+    if not include_public_oracle:
+        wire.pop("public_oracle", None)
+    return wire
 
 
 def _shared_wire(shared: SharedDesign) -> dict[str, object]:
@@ -503,23 +514,12 @@ def design_basis_sha256(shared: SharedDesign | None, value: HandoverValue) -> st
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class _CanonicalProjection:
-    """Which OPTIONAL members one canonical encoding of the handover carries.
+    """Optional envelope encodings retained for exact restart restoration.
 
-    Not a preference: persisted bytes must BE the canonical encoding, so every
-    shape a legacy file may still be in has to be reproducible exactly, and these
-    four members are the whole set of differences between those shapes.
-    ``include_acceptance`` is three-valued -- ``None`` carries the acceptance keys
-    of whichever value has any, which is what every current writer produces --
-    and ``include_scope`` selects the tagged ``scope`` key over the legacy bare
-    ``feature_id``.
-
-    Keyword-only because three of the four members are ``bool``: nothing here
-    checks annotations at runtime, so a positional transposition would encode one
-    shape where another was meant, and bytes nobody hand-edited could land in a
-    shape the ladder in :func:`read_handover` does not admit.
+    Opaque old authorities preserve their raw object; these options affect
+    normalized authority locators and the surrounding envelope only.
     """
 
-    include_obligations: bool = True
     include_acceptance: bool | None = None
     include_authority_locator: bool = True
     include_scope: bool = True
@@ -545,12 +545,10 @@ def _canonical_bytes(  # noqa: PLR0913 - canonical graph, bound authorities and 
     # decision is asked six times inside the value literal below.
     include_acceptance = projection.include_acceptance
 
-    def authority(value: str | DesignFacts | None) -> object:
-        if isinstance(value, DesignFacts):
+    def authority(value: str | DesignFacts | PreNormalizedDesign | None) -> object:
+        if isinstance(value, (DesignFacts, PreNormalizedDesign)):
             return _facts_wire(
-                value,
-                include_obligations=projection.include_obligations,
-                include_authority_locator=projection.include_authority_locator,
+                value, include_authority_locator=projection.include_authority_locator
             )
         return value
 
@@ -568,6 +566,16 @@ def _canonical_bytes(  # noqa: PLR0913 - canonical graph, bound authorities and 
                         "observation": value.observation,
                         "dependencies": list(value.dependencies),
                         "authority": authority(value.authority),
+                        **(
+                            {
+                                "change": {
+                                    "type": value.change.type,
+                                    "description": value.change.description,
+                                }
+                            }
+                            if value.change is not None
+                            else {}
+                        ),
                         **(
                             {"design_semantic_sha256": value.design_semantic_sha256}
                             if value.design_semantic_sha256 is not None
@@ -688,9 +696,10 @@ def _decode_shared(raw: object) -> SharedDesign | Blocked:
     design = _restore_facts(design_raw)
     if isinstance(design, Blocked):
         return design
-    defect = design_facts_defect(design, historical=True)
-    if defect is not None:
-        return _shared_malformed(f"design is inadmissible: {defect}")
+    if isinstance(design, DesignFacts):
+        defect = design_facts_defect(design)
+        if defect is not None:
+            return _shared_malformed(f"design is inadmissible: {defect}")
     locator = raw["authority_locator"]
     if (
         not isinstance(locator, str)
@@ -719,120 +728,32 @@ def _bound_shared(raw: bytes) -> SharedDesign | None:
     return None if isinstance(decoded, Blocked) else decoded
 
 
-def _restore_facts(authority: dict) -> DesignFacts | Blocked:
-    """Rebuild persisted design facts, or say why they are not restorable."""
-    if "oracle_verification_index" not in authority:
-        return Blocked(
-            "HandoverMalformed",
-            "design facts omit the required oracle_verification_index binding",
-            _HANDOVER_REPAIR,
+def _restore_facts(authority: dict) -> DesignFacts | PreNormalizedDesign | Blocked:
+    """Restore normalized records; retain old authorities without interpreting them."""
+    if authority.get("schema_version") != 2 or "facts" not in authority:
+        return PreNormalizedDesign(
+            raw=authority,
+            authority_locator=authority.get("authority_locator", ""),
+            design_semantic_sha256="",
         )
-    required_decisions = {
-        "architectural_tests",
-        "contract_tests",
-        "prefactoring",
-        "agreement_analysis",
-        "reuse_analysis",
-        "impact_closure",
-    }
-    missing_decisions = tuple(sorted(required_decisions - set(authority)))
-    legacy_keys = {
-        "targets",
-        "paradigm",
-        "decisions",
-        "oracle",
-        "acceptance_supports",
-        "verification",
-        "oracle_verification_index",
-        *(required_decisions & set(authority)),
-    }
-    keys = {
-        *legacy_keys,
-        "obligations",
-    }
-    locator_keys = {*keys, "authority_locator"}
-    legacy_locator_keys = {*legacy_keys, "authority_locator"}
-    # Extract public_oracle if present and validate the remaining keys
-    public_oracle = None
-    authority_keys = set(authority)
-    if "public_oracle" in authority_keys:
-        authority_keys = authority_keys - {"public_oracle"}
-    authority_keys -= {"adr", "architect_handoff", "product_change"}
-    if authority_keys not in (
-        legacy_keys,
-        keys,
-        legacy_locator_keys,
-        locator_keys,
-    ):
-        return Blocked(
-            "HandoverMalformed",
-            "design facts are invalid",
-            "restore the handover",
-        )
+    manifest = dict(authority)
+    locator = manifest.pop("authority_locator", "")
+    manifest = {key: value for key, value in manifest.items() if value is not None}
+    shared = locator.partition("#")[2] == "Shared design"
+    if shared and not manifest.get("inherits"):
+        manifest.pop("inherits", None)
     try:
-        if "public_oracle" in authority:
-            po = authority["public_oracle"]
-            if not isinstance(po, dict):
-                raise TypeError("public_oracle must be an object")
-            po_keys = {"observation", "stimulus", "expected", "falsifier"}
-            if set(po) != po_keys:
-                raise TypeError(f"public_oracle must contain exactly {sorted(po_keys)}")
-            for key in po_keys:
-                if not isinstance(po[key], str) or not po[key].strip():
-                    raise TypeError(f"public_oracle.{key} must be a non-empty string")
-            public_oracle = PublicOracle(
-                observation=po["observation"],
-                stimulus=po["stimulus"],
-                expected=po["expected"],
-                falsifier=po["falsifier"],
-            )
-        targets = tuple(
-            DesignTarget(item["path"], item["decision"])
-            for item in authority["targets"]
+        document = DesignDocument.from_json(
+            json.dumps(manifest, ensure_ascii=False),
+            shared=shared,
         )
-        record_type = LegacyDesignFacts if missing_decisions else DesignFacts
-        facts = record_type(
-            targets,
-            authority["paradigm"],
-            tuple(authority["decisions"]),
-            authority["oracle"],
-            tuple(authority["acceptance_supports"]),
-            tuple(tuple(argv) for argv in authority["verification"]),
-            authority["oracle_verification_index"],
-            _obligations(authority["obligations"])
-            if "obligations" in authority
-            else (),
-            authority.get("authority_locator", ""),
-            public_oracle=public_oracle,
-            product_change=authority.get("product_change", "required"),
-            architect_handoff=(
-                decode_architect_handoff(authority["architect_handoff"])
-                if "architect_handoff" in authority
-                else None
-            ),
-            **decode_design_decisions(authority, historical=bool(missing_decisions)),
-            **({"missing_decisions": missing_decisions} if missing_decisions else {}),
-        )
-    except (KeyError, TypeError, ValueError) as error:
+        return document.facts_at(locator)
+    except (DesignDocumentInvalid, TypeError, ValueError) as error:
         return Blocked(
             "HandoverMalformed",
-            f"design facts cannot be reconstructed: {_shown(str(error))}",
-            _HANDOVER_REPAIR,
+            f"normalized design facts cannot be reconstructed: {error}",
+            "reconstruct DESIGN through des design --replace-current --input -",
         )
-    if isinstance(facts.oracle, str) and all(
-        isinstance(target.path, str) for target in facts.targets
-    ):
-        defect = product_change_defect(
-            facts.product_change, facts.targets, facts.oracle
-        )
-        if defect is not None:
-            return Blocked(
-                "HandoverMalformed",
-                f"restored design facts are inadmissible: {defect}",
-                "reconstruct DESIGN with des design --repo-root ROOT --value N --input -; "
-                "use --replace-current only to intentionally replace bound facts",
-            )
-    return facts
 
 
 _ACCEPTANCE_TRIO = {"acceptance", "acceptance_oracle", "acceptance_supports"}
@@ -851,7 +772,7 @@ def _value_keys_admissible(keys: set[str]) -> bool:
     base = {"observation", "dependencies", "authority"}
     if not base <= keys:
         return False
-    rest = keys - base - {_SEMANTIC_KEY}
+    rest = keys - base - {_SEMANTIC_KEY, "change"}
     has_trio = rest >= _ACCEPTANCE_TRIO
     if rest & _ACCEPTANCE_TRIO and not has_trio:
         return False
@@ -1025,6 +946,16 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             item["authority"],
         )
         try:
+            change = (
+                ChangeIntent.from_payload(
+                    item["change"], f"values[{len(values)}].change"
+                )
+                if "change" in item
+                else None
+            )
+        except InputDefects as error:
+            return Blocked("HandoverMalformed", str(error), _HANDOVER_REPAIR)
+        try:
             acceptance = tuple(
                 AcceptanceObligation(entry["id"], entry["stimulus"], entry["expected"])
                 for entry in item.get("acceptance", [])
@@ -1069,7 +1000,7 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
                 "acceptance facts are invalid",
                 "restore the handover",
             )
-        facts: str | DesignFacts | None
+        facts: str | DesignFacts | PreNormalizedDesign | None
         if isinstance(authority, dict):
             restored = _restore_facts(authority)
             if isinstance(restored, Blocked):
@@ -1086,7 +1017,7 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
                     _HANDOVER_REPAIR,
                 )
         if isinstance(facts, DesignFacts):
-            defect = design_facts_defect(facts, historical=True)
+            defect = design_facts_defect(facts)
             if defect is not None:
                 return Blocked(
                     "HandoverMalformed",
@@ -1094,16 +1025,17 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
                     _HANDOVER_REPAIR,
                 )
         semantic = item.get("design_semantic_sha256")
+        if isinstance(facts, PreNormalizedDesign):
+            facts = replace(facts, design_semantic_sha256=semantic or "")
         if "design_semantic_sha256" in item and (
             not _is_digest(semantic)
-            or not isinstance(facts, DesignFacts)
-            or not facts.authority_locator
+            or not isinstance(facts, (str, DesignFacts, PreNormalizedDesign))
+            or not (facts if isinstance(facts, str) else facts.authority_locator)
         ):
             return Blocked(
                 "HandoverMalformed",
                 "design_semantic_sha256 must be 64 lowercase hex characters and "
-                "belongs only to a value bound to typed DESIGN facts with an "
-                "authority locator",
+                "belongs only to a value with a bound DESIGN authority identity",
                 "restore the handover",
             )
         if (
@@ -1115,7 +1047,7 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             or (
                 facts is not None
                 and (
-                    not isinstance(facts, (str, DesignFacts))
+                    not isinstance(facts, (str, DesignFacts, PreNormalizedDesign))
                     or (isinstance(facts, str) and not facts)
                 )
             )
@@ -1147,6 +1079,7 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
                 acceptance_supports,
                 *selection,
                 semantic,
+                change,
             )
         )
         observations.append(observation)
@@ -1159,7 +1092,7 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
         bound_headings = {
             value.authority.authority_locator
             for value in stored
-            if isinstance(value.authority, DesignFacts)
+            if isinstance(value.authority, (DesignFacts, PreNormalizedDesign))
         } | {value.authority for value in stored if isinstance(value.authority, str)}
         if decoded.authority_locator in bound_headings:
             return _shared_malformed("its locator is owned by a bound value")
@@ -1262,14 +1195,6 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             shared=shared,
             product_authority=product_authority,
         ),
-        _canonical_bytes(
-            feature_id=feature_id,
-            request=request,
-            values=stored,
-            shared=shared,
-            product_authority=product_authority,
-            projection=_CanonicalProjection(include_obligations=False),
-        ),
         # Typed handovers from before the section-identity migration have no
         # authority_locator member.  They remain readable as external legacy
         # bytes, while every newly constructed serialization includes it.
@@ -1280,16 +1205,6 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             shared=shared,
             product_authority=product_authority,
             projection=_CanonicalProjection(include_authority_locator=False),
-        ),
-        _canonical_bytes(
-            feature_id=feature_id,
-            request=request,
-            values=stored,
-            shared=shared,
-            product_authority=product_authority,
-            projection=_CanonicalProjection(
-                include_obligations=False, include_authority_locator=False
-            ),
         ),
         # Legacy handovers did not carry acceptance facts; their DESIGN facts
         # also predate the optional obligations member.
@@ -1308,7 +1223,6 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             shared=shared,
             product_authority=product_authority,
             projection=_CanonicalProjection(
-                include_obligations=False,
                 include_acceptance=False,
                 include_authority_locator=False,
             ),
@@ -1726,11 +1640,13 @@ def create_constructed_handover(
             "inspect handover storage",
         )
     if isinstance(winner, StoredHandover) and tuple(
-        (value.observation, value.dependencies) for value in winner.values
-    ) != tuple((value.observation, value.dependencies) for value in values):
+        (value.observation, value.dependencies, value.change) for value in winner.values
+    ) != tuple(
+        (value.observation, value.dependencies, value.change) for value in values
+    ):
         return Blocked(
             "HandoverGraphMismatch",
-            "handover winner has a different ordered observation/dependency graph",
+            "handover winner has a different ordered observation/dependency/change graph",
             "inspect the winning handover and reconcile the DISCUSS authority",
             refusal=True,
         )
@@ -1881,6 +1797,22 @@ def bind_design_facts(
             "supply complete DESIGN decisions before binding",
             refusal=True,
         )
+    resolved = resolve_inheritance(
+        stored.shared_design.design if stored.shared_design else None,
+        (
+            value.authority
+            for index, value in enumerate(stored.values, 1)
+            if index != position and isinstance(value.authority, DesignFacts)
+        ),
+        design.facts,
+    )
+    if isinstance(resolved, tuple):
+        return Blocked(
+            "DesignInheritanceRefused",
+            "\n".join(resolved),
+            "correct the referenced ids and resubmit des design --input -",
+            refusal=True,
+        )
     values = list(stored.values)
     current = values[position - 1]
     if current.authority == design.facts and (
@@ -1905,6 +1837,28 @@ def bind_design_facts(
     return bound
 
 
+def shared_design_defects(
+    stored: StoredHandover, shared: DesignFacts
+) -> tuple[str, ...]:
+    """Resolve every normalized dependent in the same proposed binding snapshot."""
+    values = tuple(
+        value.authority
+        for value in stored.values
+        if isinstance(value.authority, DesignFacts)
+    )
+    defects: list[str] = []
+    resolved = resolve_inheritance(None, values, shared)
+    if isinstance(resolved, tuple):
+        defects.extend(resolved)
+    for index, value in enumerate(values):
+        resolved = resolve_inheritance(
+            shared, values[:index] + values[index + 1 :], value
+        )
+        if isinstance(resolved, tuple):
+            defects.extend(resolved)
+    return tuple(dict.fromkeys(defects))
+
+
 def bind_shared_design(
     root: Path,
     stored: StoredHandover,
@@ -1923,6 +1877,14 @@ def bind_shared_design(
             "DesignFactsInvalid",
             defect,
             "supply complete shared DESIGN decisions before binding",
+            refusal=True,
+        )
+    defects = shared_design_defects(stored, shared.design)
+    if defects:
+        return Blocked(
+            "DesignInheritanceRefused",
+            "\n".join(defects),
+            "retain all referenced ids and resubmit des design --shared --input -",
             refusal=True,
         )
     if stored.shared_design == shared and stored.scope == scope:
@@ -2070,7 +2032,43 @@ class DeliveryLock:
             self.handle.close()
 
 
+def ensure_runtime_ignored(root: Path) -> Blocked | None:
+    """Create the runtime ignore before either lock owner writes runtime bytes."""
+    path = root / ".nwave" / "des" / ".gitignore"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            mode = path.stat().st_mode
+        except FileNotFoundError:
+            mode = None
+        if mode is not None:
+            if stat.S_ISREG(mode):
+                return None
+            return Blocked(
+                "DeliveryLockUnavailable",
+                f"{path} is not a regular ignore file",
+                f"restore a regular runtime ignore file at {path}, then retry",
+            )
+    except OSError as error:
+        return Blocked(
+            "DeliveryLockUnavailable",
+            f"{path}: {error}",
+            f"restore write access to {path}, then retry",
+        )
+    created = _create_if_absent(path, runtime_gitignore_content())
+    if isinstance(created, Blocked):
+        return Blocked(
+            "DeliveryLockUnavailable",
+            f"{path}: {created.why}",
+            f"restore write access to {path}, then retry",
+        )
+    return None
+
+
 def acquire_delivery_lock(root: Path) -> DeliveryLock | Blocked:
+    ignored = ensure_runtime_ignored(root)
+    if ignored is not None:
+        return ignored
     return acquire_file_lock(root / ".nwave" / "des" / "commit.lock")
 
 

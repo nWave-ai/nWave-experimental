@@ -11,17 +11,16 @@ from __future__ import annotations
 import copy
 import dataclasses as dc
 import json
-import os
 import random
-import tempfile
 import typing as t
 import unittest
-from pathlib import Path
 
 from tests.des.architect_handoff.tests.test_g10 import (
     base_doc,
     decode,
+    fixture_context,
     fresh_copy,
+    rand,
 )
 
 from des.application.architect_handoff import g10_codec as C
@@ -42,7 +41,7 @@ RUN = {
 }
 SCENARIO = {
     "id": "S1",
-    "title": "A walk",
+    "title": {"ref": "Scenario-title"},
     "source_run": "R1",
     "kind": "example",
     "review": {"tag": "pending"},
@@ -71,7 +70,7 @@ def sec(kind="laws", scope="shared", status=None) -> dict:
     return {
         "kind": kind,
         "scope": scope,
-        "status": {"tag": "not_applicable", "reason": "none"}
+        "status": {"tag": "not_applicable", "reason": {"ref": "Section-reason"}}
         if status is None
         else status,
     }
@@ -86,6 +85,53 @@ def collect(o, path: list, out: list) -> None:
     elif isinstance(o, list):
         for i, v in enumerate(o):
             collect(v, [*path, i], out)
+
+
+class SemanticReferenceLists(unittest.TestCase):
+    def test_each_former_unique_text_list_accepts_distinct_refs_and_refuses_a_repeated_ref(
+        self,
+    ):
+        slots = (
+            (T.Generator, "must_include"),
+            (T.Finite, "cases"),
+            (T.ExclusionClaim, "bypass"),
+            (T.Construction, "admitted"),
+            (T.Construction, "excluded"),
+            (T.Model, "exclusions"),
+            (T.Model, "assumptions"),
+            (T.Claim, "assumptions"),
+        )
+        for record, field in slots:
+            with self.subTest(record=record.__name__, field=field):
+                raw = C.enc(rand(record, random.Random(19)), ordered=True)
+                raw[field] = [{"ref": "F-1"}, {"ref": "F-2"}]
+                value, defects = read(record, raw, "$.record")
+                self.assertEqual([], defects)
+                self.assertEqual(
+                    ("F-1", "F-2"),
+                    tuple(reference.ref for reference in getattr(value, field)),
+                )
+                raw[field] = [{"ref": "F-1"}, {"ref": "F-1"}]
+                value, defects = read(record, raw, "$.record")
+                self.assertIs(C.BAD, value)
+                self.assertEqual(["DesignListEntryRepeated"], rules(defects))
+                self.assertEqual(f"$.record.{field}", defects[0].where)
+                self.assertIn("F-1", defects[0].what)
+                self.assertIn(f"$.record.{field}", defects[0].what)
+                self.assertTrue(defects[0].what and defects[0].why and defects[0].how)
+
+    def test_a_fact_reference_may_recur_in_distinct_semantic_slots(self):
+        raw = C.enc(rand(T.Model, random.Random(19)), ordered=True)
+        raw["exclusions"] = [{"ref": "F-shared"}]
+        raw["assumptions"] = [{"ref": "F-shared"}]
+        value, defects = read(T.Model, raw, "$.model")
+        self.assertEqual([], defects)
+        self.assertEqual(
+            ("F-shared",), tuple(reference.ref for reference in value.exclusions)
+        )
+        self.assertEqual(
+            ("F-shared",), tuple(reference.ref for reference in value.assumptions)
+        )
 
 
 class NumberBounds(unittest.TestCase):
@@ -180,7 +226,10 @@ class EveryRefusalSaysWhy(unittest.TestCase):
         self.assertIsInstance(read(T.Pending, {"tag": "pending"})[0], T.Pending)
         self.assertIsInstance(read(T.Pending, {})[0], T.Pending)
         out, ds = read(T.Pending, {"tag": "pending", "extra": 1}, "$.p")
-        self.assertEqual((C.BAD, ["G4"], "$.p.extra"), (out, rules(ds), ds[0].where))
+        self.assertEqual(
+            (C.BAD, ["DesignKeyNotInGrammar"], "$.p.extra"),
+            (out, rules(ds), ds[0].where),
+        )
         out, ds = read(
             T.Scenario, {k: v for k, v in SCENARIO.items() if k != "title"}, "$.s"
         )
@@ -192,7 +241,8 @@ class EveryRefusalSaysWhy(unittest.TestCase):
     ):
         rng = random.Random(7)
         with fresh_copy() as d:
-            doc = base_doc(d)
+            doc, _catalog, driven = fixture_context(base_doc(d))
+            doc["sections"].extend(driven)
         wrong = (
             None,
             0,
@@ -233,7 +283,9 @@ class EveryRefusalSaysWhy(unittest.TestCase):
                     parent[path[-1]] = rng.choice(wrong)
                 else:
                     bad = rng.choice(wrong)
-                out, ds = read(T.PAYLOAD[kind], bad)
+                out, ds = read(
+                    T.Receipts if kind == "receipts" else T.PAYLOAD[kind], bad
+                )
                 self.assertEqual(
                     out is C.BAD, bool(ds), (kind, path, how, [x.what for x in ds])
                 )
@@ -258,7 +310,7 @@ class DecodeOfSections(unittest.TestCase):
             )
         )
         self.assertIsNone(out)
-        self.assertEqual(["G4", "G4"], rules(ds))
+        self.assertEqual(["DesignKeyNotInGrammar", "DesignKeyNotInGrammar"], rules(ds))
         self.assertEqual(
             ["$.sections[0].status", "$.sections[1].status"], [x.where for x in ds]
         )
@@ -319,10 +371,13 @@ class DecodeOfSections(unittest.TestCase):
     def test_only_a_document_of_sections_is_a_document(self):
         for bad in (None, [], {}, {"sections": {}}, {"sections": [], "extra": 1}):
             out, ds = C.decode_handoff(bad)
-            self.assertEqual((None, ["G4"]), (out, rules(ds)), bad)
-        self.assertEqual(["G4"], rules(C.decode_handoff(section_doc(5))[1]))
+            self.assertEqual((None, ["DesignKeyNotInGrammar"]), (out, rules(ds)), bad)
         self.assertEqual(
-            ["G4"], rules(C.decode_handoff(section_doc({"kind": "laws"}))[1])
+            ["DesignKeyNotInGrammar"], rules(C.decode_handoff(section_doc(5))[1])
+        )
+        self.assertEqual(
+            ["DesignKeyNotInGrammar"],
+            rules(C.decode_handoff(section_doc({"kind": "laws"}))[1]),
         )
 
 
@@ -341,42 +396,41 @@ class AuthoringOfModels(unittest.TestCase):
             ]
         }
 
-    def test_a_model_is_read_from_its_file_and_a_model_that_has_its_text_is_left_alone(
-        self,
-    ):
-        with tempfile.TemporaryDirectory() as d:
-            with open(os.path.join(d, "m.qnt"), "wb") as fh:
-                fh.write(b"module M {}\n")
-            doc = self.doc_with(
-                {"id": "a", "text_file": "m.qnt"},
-                {"id": "b", "text": "inline"},
-                {"id": "c", "text": "kept", "text_file": "m.qnt"},
-                "not a model",
+    def test_inline_and_file_expansion_model_authoring_are_explicitly_retired(self):
+        for fields in (
+            {"text": "inline"},
+            {"text_file": "m.qnt"},
+            {"text": "kept", "text_file": "m.qnt"},
+            {"text_file": "absent.qnt"},
+            {"text_file": "binary.qnt"},
+            {"text_file": "dir.qnt"},
+            {"text_file": "../escape.qnt"},
+            {"text_file": 5},
+        ):
+            doc = self.doc_with({"id": "a", **fields})
+            out, ds = C.decode_handoff(doc)
+            self.assertIsNone(out)
+            retired = [d for d in ds if d.rule == "ArchitectHandoffModelTextRetired"]
+            self.assertEqual(
+                {f"$.sections[0].status.payload.models[0].{key}" for key in fields},
+                {d.where for d in retired},
             )
-            self.assertEqual([], C.resolve_authoring(doc, d))
-        models = doc["sections"][0]["status"]["payload"]["models"]
-        self.assertEqual({"id": "a", "text": "module M {}\n"}, models[0])
-        self.assertEqual({"id": "b", "text": "inline"}, models[1])
-        self.assertEqual({"id": "c", "text": "kept", "text_file": "m.qnt"}, models[2])
+            self.assertTrue(all(d.what and d.why and d.how for d in retired))
 
-    def test_a_model_file_that_cannot_be_read_says_what_went_wrong(self):
-        with tempfile.TemporaryDirectory() as d:
-            with open(os.path.join(d, "binary.qnt"), "wb") as fh:
-                fh.write(b"\xff\xfe\x00")
-            (Path(d) / "dir.qnt").mkdir()
-            said = {}
-            for name in ("absent.qnt", "binary.qnt", "dir.qnt", "../escape.qnt", 5):
-                doc = self.doc_with({"id": "a", "text_file": name})
-                ds = C.resolve_authoring(doc, d)
-                self.assertEqual(["G11"], rules(ds), name)
-                said[name] = ds[0].what
-        self.assertEqual(
-            "cannot read absent.qnt: No such file or directory", said["absent.qnt"]
-        )
-        self.assertEqual("cannot read binary.qnt: not UTF-8 text", said["binary.qnt"])
-        self.assertIn("cannot read dir.qnt: Is a directory", said["dir.qnt"])
-        self.assertIn("is not a file inside the directory", said["../escape.qnt"])
-        self.assertIn("is not a file inside the directory", said[5])
+    def test_model_source_is_a_locator_and_digest_not_an_authoring_file_expansion(self):
+        raw = {"path": "formal/m.qnt", "sha256": "a" * 64}
+        source, ds = read(T.ModelSource, raw, "$.source")
+        self.assertEqual([], ds)
+        self.assertEqual(raw, C.enc(source))
+        for path in ("../escape.qnt", "/absolute.qnt", 5):
+            source, ds = read(T.ModelSource, {**raw, "path": path}, "$.source")
+            self.assertIs(C.BAD, source)
+            self.assertEqual(["G10"], rules(ds))
+            self.assertEqual("$.source.path", ds[0].where)
+        source, ds = read(T.ModelSource, {**raw, "sha256": "not-a-digest"}, "$.source")
+        self.assertIs(C.BAD, source)
+        self.assertEqual(["G10"], rules(ds))
+        self.assertEqual("$.source.sha256", ds[0].where)
 
 
 class CanonicalForm(unittest.TestCase):
@@ -427,7 +481,7 @@ class CanonicalForm(unittest.TestCase):
         self.assertEqual(ordered, C.canonical(ordered))
         self.assertEqual(run.id, ordered.id)
 
-    def test_a_decoded_document_lists_its_sections_and_its_sets_in_one_order_whatever_the_order_written(
+    def test_lossless_wire_retains_section_order_and_canonical_projection_is_order_independent(
         self,
     ):
         sections = [
@@ -438,13 +492,17 @@ class CanonicalForm(unittest.TestCase):
         ]
         forward = C.decode_handoff(section_doc(*sections))[0]
         backward = C.decode_handoff(section_doc(*reversed(sections)))[0]
-        self.assertEqual(sorted(forward), list(forward))
-        self.assertEqual(list(forward), list(backward))
+        self.assertEqual([(s["kind"], s["scope"]) for s in sections], list(forward))
+        self.assertEqual(list(reversed(list(forward))), list(backward))
         self.assertEqual(forward, backward)
         flipped = dict(reversed(list(forward.items())))
         order = [(s["kind"], s["scope"]) for s in C.to_json(flipped)["sections"]]
-        self.assertEqual(sorted(order), order)
-        self.assertEqual(C.to_json(forward), C.to_json(flipped))
+        self.assertEqual(list(flipped), order)
+        self.assertEqual(forward, C.decode_handoff(C.to_json(flipped))[0])
+        self.assertEqual(
+            [C.enc(entry) for _key, entry in sorted(forward.items())],
+            [C.enc(entry) for _key, entry in sorted(flipped.items())],
+        )
 
     def test_the_order_a_decoded_value_holds_is_the_order_it_is_written_in_for_every_set_of_the_fixture(
         self,
@@ -471,7 +529,7 @@ class CanonicalForm(unittest.TestCase):
                     walk(x)
 
         for entry in h.values():
-            walk(entry)
+            walk(C.canonical(entry))
         self.assertGreater(len(seen), 50)
         self.assertTrue(
             any(
@@ -518,15 +576,30 @@ class CanonicalForm(unittest.TestCase):
 
 
 class Strings(unittest.TestCase):
+    def test_runtime_strings_keep_their_unicode_and_nonblank_contract(self):
+        for value, rule, said in (
+            (5, "G3", "expected a string"),
+            (None, "G3", "expected a string"),
+            ("\ud800", "G13", "unpaired surrogate"),
+            ("", "G7", "the string is blank"),
+            (" \t\n", "G7", "the string is blank"),
+        ):
+            out, ds = read(T.Run, run_with(tool_version=value), "$.r")
+            self.assertIs(C.BAD, out)
+            self.assertEqual([rule], rules(ds))
+            self.assertEqual("$.r.tool_version", ds[0].where)
+            self.assertIn(said, ds[0].what)
+        self.assertEqual([], read(T.Run, run_with(tool_version=" a "))[1])
+
     def test_a_string_must_be_text_that_is_not_blank_and_has_the_shape_its_field_asks_for(
         self,
     ):
         cases = (
-            ("title", 5, "G3", "expected a string"),
-            ("title", None, "G3", "expected a string"),
-            ("title", "\ud800", "G13", "unpaired surrogate"),
-            ("title", "", "G7", "the string is blank"),
-            ("title", " \t\n", "G7", "the string is blank"),
+            ("title", 5, "DesignFactRefExpected", "expected exactly"),
+            ("title", None, "DesignFactRefExpected", "expected exactly"),
+            ("title", "\ud800", "DesignFactRefExpected", "expected exactly"),
+            ("title", "", "DesignFactRefExpected", "expected exactly"),
+            ("title", " \t\n", "DesignFactRefExpected", "expected exactly"),
             ("id", "1 bad", "G10", "is not a valid ID"),
             ("id", 7, "G10", "is not a valid ID"),
             ("source_run", "bad id", "G10", "is not a valid ID"),
@@ -540,7 +613,7 @@ class Strings(unittest.TestCase):
         out, ds = read(T.Run, run_with(variant="mutant 1"), "$.r")
         self.assertEqual((C.BAD, ["G10"], "$.r.variant"), (out, rules(ds), ds[0].where))
         self.assertIn("does not match", ds[0].what)
-        self.assertEqual([], read(T.Scenario, {**SCENARIO, "title": " a "})[1])
+        self.assertEqual([], read(T.Scenario, {**SCENARIO, "title": {"ref": "A"}})[1])
 
     def test_an_optional_field_may_be_written_as_null_and_a_required_one_may_not(self):
         out, ds = read(
@@ -567,27 +640,23 @@ class Strings(unittest.TestCase):
 
 
 class AuthoringInput(unittest.TestCase):
-    def test_what_is_not_a_document_of_sections_has_nothing_to_resolve_and_no_defect(
-        self,
-    ):
-        with tempfile.TemporaryDirectory() as d:
-            for doc in (
-                None,
-                [],
-                "x",
-                {},
-                {"sections": 5},
-                {
-                    "sections": [
-                        None,
-                        5,
-                        {"status": 3},
-                        {"status": {"payload": []}},
-                        {"status": {"payload": {"models": 5}}},
-                    ]
-                },
-            ):
-                self.assertEqual([], C.resolve_authoring(doc, d), doc)
+    def test_malformed_authoring_input_is_refused_without_any_file_expansion(self):
+        for doc in (None, [], "x", {}, {"sections": 5}):
+            out, ds = C.decode_handoff(doc)
+            self.assertIsNone(out)
+            self.assertEqual(["DesignKeyNotInGrammar"], rules(ds), doc)
+            self.assertTrue(all(d.what and d.why and d.how for d in ds))
+        for entry in (
+            None,
+            5,
+            {"status": 3},
+            {"status": {"payload": []}},
+            {"status": {"payload": {"models": 5}}},
+        ):
+            out, ds = C.decode_handoff({"sections": [entry]})
+            self.assertIsNone(out)
+            self.assertEqual(["DesignKeyNotInGrammar"], rules(ds), entry)
+            self.assertTrue(all(d.what and d.why and d.how for d in ds))
 
 
 class Merge(unittest.TestCase):
@@ -595,10 +664,12 @@ class Merge(unittest.TestCase):
         self,
     ):
         a = C.decode_handoff(
-            section_doc(sec(status={"tag": "not_applicable", "reason": "one"}))
+            section_doc(sec(status={"tag": "not_applicable", "reason": {"ref": "One"}}))
         )[0]
         b = C.decode_handoff(
-            section_doc(sec(status={"tag": "not_applicable", "reason": "another"}))
+            section_doc(
+                sec(status={"tag": "not_applicable", "reason": {"ref": "Another"}})
+            )
         )[0]
         with self.assertRaises(C.MergeConflict) as cm:
             C.merge(a, b)

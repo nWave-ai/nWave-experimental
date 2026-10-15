@@ -15,12 +15,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.des.architect_handoff.tests.test_g10 import fixture_context
 from tests.des.architect_handoff.tests.test_surv_run import Sidecar, script
 
 from des.application.architect_handoff import g10 as G
 from des.application.architect_handoff import g10_codec as C
 from des.application.architect_handoff import g10_itf as I
 from des.application.architect_handoff import g10_run as RUN
+from des.application.architect_handoff import g10_types as T
 
 
 NOT_ROOT = unittest.skipIf(
@@ -44,26 +46,44 @@ class TwoFilesThatDisagree(unittest.TestCase):
         self,
     ):
         with tempfile.TemporaryDirectory() as d:
-            for name, reason in (
-                ("a.json", "one reason"),
-                ("b.json", "another reason"),
-            ):
-                with open(os.path.join(d, name), "w", encoding="utf-8") as fh:
-                    json.dump(
+            names = ("a.json", "b.json")
+            wire, catalog, _ = fixture_context(
+                {
+                    "sections": [
                         {
-                            "sections": [
-                                {
-                                    "kind": "laws",
-                                    "scope": "shared",
-                                    "status": {
-                                        "tag": "not_applicable",
-                                        "reason": reason,
-                                    },
-                                }
-                            ]
-                        },
-                        fh,
-                    )
+                            "kind": "laws",
+                            "scope": "shared",
+                            "status": {
+                                "tag": "not_applicable",
+                                "reason": reason,
+                            },
+                        }
+                        for reason in ("one reason", "another reason")
+                    ]
+                }
+            )
+            manifest = Path(d, "design.json")
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "facts": [
+                            {"id": record.id, "text": record.text}
+                            for record in catalog.records
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            context = [
+                {
+                    "path": manifest.name,
+                    "sha256": T.sha256_bytes(manifest.read_bytes()),
+                }
+            ]
+            for name, section in zip(names, wire["sections"], strict=True):
+                with open(os.path.join(d, name), "w", encoding="utf-8") as fh:
+                    json.dump({"sections": [section], "catalog": context}, fh)
             for command in ("check", "render", "summary"):
                 code, out = cli(
                     command, os.path.join(d, "a.json"), os.path.join(d, "b.json")

@@ -14,6 +14,7 @@ from des.domain.discuss_contract import (
 )
 from des.domain.discuss_sections import DiscussSections
 from des.domain.input_defects import Defects, InputDefects
+from des.domain.integration_commit_message import ChangeIntent
 
 
 if TYPE_CHECKING:
@@ -139,8 +140,14 @@ def _values(raw_values: object) -> tuple[DiscussValue, ...]:
     seen: list[str | None] = []
     for index, item in enumerate(raw_values):
         name = f"values[{index}]"
-        if not isinstance(item, dict) or set(item) != {"observation", "dependencies"}:
-            defects.add(f"{name} must contain exactly observation, dependencies")
+        required = {"observation", "dependencies"}
+        if not isinstance(item, dict) or not required <= set(item) <= required | {
+            "change"
+        }:
+            defects.add(
+                f"{name} must contain exactly observation, dependencies "
+                "and optionally change"
+            )
         if not isinstance(item, dict):
             seen.append(None)
             continue
@@ -153,6 +160,13 @@ def _values(raw_values: object) -> tuple[DiscussValue, ...]:
         dependencies = (
             defects.take(partial(_dependencies, item["dependencies"], name))
             if "dependencies" in item
+            else None
+        )
+        change = (
+            defects.take(
+                partial(ChangeIntent.from_payload, item["change"], f"{name}.change")
+            )
+            if "change" in item
             else None
         )
         if (observation is not None and observation in seen) or (
@@ -173,7 +187,7 @@ def _values(raw_values: object) -> tuple[DiscussValue, ...]:
                     f"{name}.dependencies must be ordered preceding observations"
                 )
         if observation is not None and dependencies is not None:
-            values.append(DiscussValue(observation, dependencies))
+            values.append(DiscussValue(observation, dependencies, change))
         seen.append(
             observation
             if observation is not None
@@ -205,6 +219,7 @@ def _table_content(value: str) -> str:
 class DiscussValue:
     observation: str
     dependencies: tuple[str, ...]
+    change: ChangeIntent | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -308,4 +323,19 @@ class DiscussDocument:
             f"| {_table_content(value.observation)} | {_table_content(', '.join(value.dependencies))} |"
             for value in self.values
         )
+        if any(value.change is not None for value in self.values):
+            lines.extend(
+                [
+                    "",
+                    "## Change intent",
+                    "| Observation | Type | Description |",
+                    "| --- | --- | --- |",
+                ]
+            )
+            lines.extend(
+                f"| {_table_content(value.observation)} | "
+                f"{value.change.type if value.change is not None else 'unrecorded'} | "
+                f"{_table_content(value.change.description) if value.change is not None else 'unrecorded'} |"
+                for value in self.values
+            )
         return "\n".join(lines) + "\n"

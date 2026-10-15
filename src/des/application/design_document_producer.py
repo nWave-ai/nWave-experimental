@@ -300,18 +300,10 @@ _NO_PUBLISHED_HEADINGS: frozenset[str] = frozenset()
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class DesignPublicationWidenings:
-    """The explicit widenings ONE invocation is authorized to apply.
-
-    Every field admits a write this publisher refuses by default, so the four
-    together are the whole of what a caller may loosen. Keyword-only, and that is
-    load-bearing rather than decorative: all four are `bool`, so a positional
-    permutation constructs cleanly and silently authorizes a different write.
-    Nothing here would catch it, because `typecheck` is executed by no workflow.
-    """
+    """Explicit publication permissions; keyword-only to avoid swapped flags."""
 
     allow_untracked_recovery: bool = False
     replace_current: bool = False
-    migrate_legacy_rendering: bool = False
     replace_unbound: bool = False
 
 
@@ -343,7 +335,6 @@ def publish_design_document(
 ) -> PublishedDesignDocument | Blocked:
     allow_untracked_recovery = widenings.allow_untracked_recovery
     replace_current = widenings.replace_current
-    migrate_legacy_rendering = widenings.migrate_legacy_rendering
     replace_unbound = widenings.replace_unbound
     authority_locator = binding.authority_locator
     published_headings = binding.published_headings
@@ -351,14 +342,22 @@ def publish_design_document(
     if candidate.is_absolute() or ".." in candidate.parts or not candidate.parts:
         return _unsafe_relative()
     expected_locator = f"{candidate}#{document.heading}"
+    replacement_heading = document.heading
     if authority_locator is not None and authority_locator != expected_locator:
-        return Blocked(
-            "DesignAuthorityIdentityMismatch",
-            "the configured destination and manifest heading do not equal the "
-            "selected value's persisted authority locator",
-            "keep the original configured path and heading when replacing this value",
-            refusal=True,
-        )
+        old_document, separator, old_heading = authority_locator.partition("#")
+        if (
+            not replace_current
+            or old_document != str(candidate)
+            or not separator
+            or not old_heading
+        ):
+            return Blocked(
+                "DesignAuthorityIdentityMismatch",
+                "replacement must keep the bound scope's destination document",
+                "keep the configured destination and use --replace-current for this scope",
+                refusal=True,
+            )
+        replacement_heading = old_heading
     path = _destination_path(root, destination)
     if isinstance(path, Blocked):
         return path
@@ -372,9 +371,7 @@ def publish_design_document(
         tracked = _tracked(root, path) if exists else True
         if isinstance(tracked, Blocked):
             return tracked
-        if (migrate_legacy_rendering or replace_unbound) and (
-            not exists or not tracked
-        ):
+        if replace_unbound and (not exists or not tracked):
             return Blocked(
                 "DesignUnboundRecoveryUnavailable",
                 "unbound DESIGN recovery requires an existing tracked authority",
@@ -391,14 +388,30 @@ def publish_design_document(
                 if unbound is not None:
                     return unbound
         snapshot = existing or b""
-        marker = f"## {document.heading}".encode()
+        marker = f"## {replacement_heading}".encode()
         lines = snapshot.splitlines(keepends=True)
         offsets: list[int] = []
+        if replacement_heading != document.heading and any(
+            line.rstrip(b"\r\n") == f"## {document.heading}".encode() for line in lines
+        ):
+            return Blocked(
+                "DesignAuthorityAmbiguous",
+                "the compiled replacement heading already exists",
+                "restore the bound section before des design --replace-current",
+                refusal=True,
+            )
         cursor = 0
         for line in lines:
             if line.rstrip(b"\r\n") == marker:
                 offsets.append(cursor)
             cursor += len(line)
+        if replacement_heading != document.heading and not offsets:
+            return Blocked(
+                "DesignAuthorityUnlocatable",
+                f"the bound replacement section {authority_locator} is absent",
+                "restore the bound section before des design --replace-current",
+                refusal=True,
+            )
         if len(offsets) > 1:
             return Blocked(
                 "DesignAuthorityAmbiguous",
@@ -439,16 +452,7 @@ def publish_design_document(
             # Separators belong to the surrounding document.  The canonical
             # section must be the complete owned content before those bytes.
             if owned_section != section:
-                legacy_render = getattr(document, "legacy_markdown_v1", None)
-                is_exact_legacy_render = (
-                    callable(legacy_render)
-                    and owned_section == legacy_render().encode()
-                )
-                if (
-                    replace_current
-                    or replace_unbound
-                    or (migrate_legacy_rendering and is_exact_legacy_render)
-                ):
+                if replace_current or replace_unbound:
                     rendered = (
                         snapshot[:start] + section + delimiter + snapshot[next_h2:]
                     )

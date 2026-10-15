@@ -211,12 +211,12 @@ def test_strict_projection_preserves_manifest_admission(
 
 
 def invalid_manifest_cases() -> list[dict]:
-    """Finite distinguishable structural and semantic v1 refusal obligations."""
+    """Finite distinguishable structural and semantic schema-2 refusals."""
     base = canonical_manifest()
     cases = []
     for field, value in (
         ("schema_version", True),
-        ("schema_version", 2),
+        ("schema_version", 1),
         ("authority", {"heading": "# Not a plain heading"}),
         (
             "targets",
@@ -224,12 +224,11 @@ def invalid_manifest_cases() -> list[dict]:
                 {
                     "path": "../escape.py",
                     "decision": "EXTEND",
-                    "reason": "Invalid locator.",
+                    "reason": base["targets"][0]["reason"],
                 }
             ],
         ),
-        ("constraints", []),
-        ("constraints", ["Duplicate", "Duplicate"]),
+        ("constraints", [base["constraints"][0]] * 2),
         ("oracle_verification_index", -1),
         ("oracle_verification_index", 1),  # structurally allowed, semantically unlinked
         ("verification", [["python", "NUL\u0000argument"]]),
@@ -245,21 +244,30 @@ def invalid_manifest_cases() -> list[dict]:
     missing = copy.deepcopy(base)
     missing.pop("purpose")
     cases.append(missing)
+    missing_constraints = copy.deepcopy(base)
+    missing_constraints.pop("constraints")
+    cases.append(missing_constraints)
     decided = finite_manifests()[1].manifest
     for field, value in (
         (
             "impact_closure",
-            {"applicability": "not_applicable", "reason": "Consumer omitted."},
+            {"applicability": "not_applicable", "reason": decided["purpose"]},
         ),
         (
             "agreement_analysis",
-            {"applicability": "not_applicable", "reason": "Contract unlinked."},
+            {"applicability": "not_applicable", "reason": decided["purpose"]},
         ),
     ):
         cases.append({**copy.deepcopy(decided), field: value})
     duplicate_path = copy.deepcopy(base)
     duplicate_path["targets"].append(
-        {**base["targets"][0], "reason": "Different record, same path."}
+        {**base["targets"][0], "reason": {"ref": "V1-duplicate-path"}}
+    )
+    duplicate_path["facts"].append(
+        {
+            "id": "V1-duplicate-path",
+            "text": "Different record, same path.",
+        }
     )
     cases.append(duplicate_path)
     return cases

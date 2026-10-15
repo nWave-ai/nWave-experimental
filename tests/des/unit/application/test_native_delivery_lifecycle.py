@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -24,14 +25,18 @@ from des.application.delivery_state import read_state
 from des.application.delivery_steps import DeliverySteps
 from des.application.handover import HandoverValue, SharedDesign, StoredHandover
 from des.domain.delivery_disposition import Disposition
+from des.domain.design_document import DesignDocument
 from des.domain.document_scope import Project
 from des.domain.turn_record_ref import CRAFT_TURN, ORACLE_TURN
 from des.ports.driven_ports.task_invocation_port import (
     ApplicablePrefactoring,
     DesignFacts,
     DesignTarget,
+    FactId,
+    FactRecord,
+    FactRef,
     NotApplicable,
-    ReuseAnalysis,
+    PreNormalizedDesign,
 )
 from tests.des._helpers.host_facts import design_manifest, product_manifest
 
@@ -236,7 +241,9 @@ def test_dune_constructor_distill_oracle_craft_verify_and_owned_drift(
         ("dune", "build", "@check"),
         ("dune", "exec", "./contract.exe"),
     )
-    oracle = _success(steps.oracle(root, 1, ORACLE_ACCEPTED))
+    oracle = _success(
+        steps.oracle(root, 1, ORACLE_ACCEPTED, baseline=_git(root, "rev-parse", "HEAD"))
+    )
     assert any(
         "verdict=red" in row and "axis=native-observation" in row
         for row in oracle.facts
@@ -262,9 +269,9 @@ def test_dune_constructor_distill_oracle_craft_verify_and_owned_drift(
         row["exit"] == 0 and Path(row["executable"]).name == "dune" for row in evidence
     )
     assert all(
-        "PYTEST_ADDOPTS" not in row["declared_environment"]
-        and "PYTHONPATH" not in row["declared_environment"]
+        row["declared_environment"].get(name) == os.environ.get(name)
         for row in evidence
+        for name in ("PYTEST_ADDOPTS", "PYTHONPATH")
     )
     assert not list(root.rglob("*.py"))
     assert not list(root.glob("nwave-*-runtime*"))
@@ -287,23 +294,61 @@ def test_dune_constructor_distill_oracle_craft_verify_and_owned_drift(
 
 
 def _facts(name: str) -> DesignFacts:
-    return DesignFacts(
-        targets=(DesignTarget(f"{name}.ml", "EXTEND"),),
-        paradigm="functional",
-        decisions=(f"Own the {name} public contract.",),
-        oracle=f"{name}_oracle.ml",
-        acceptance_supports=(),
-        verification=((sys.executable, "-c", "raise SystemExit(0)"),),
-        oracle_verification_index=0,
-        architectural_tests=NotApplicable("No changed structural boundary."),
-        contract_tests=NotApplicable("No changed agreement."),
-        prefactoring=NotApplicable("No selected structural move."),
-        agreement_analysis=NotApplicable("No affected consumer."),
-        reuse_analysis=ReuseAnalysis(()),
-        impact_closure=NotApplicable(
-            "The fixture reaches no public surface, consumer or build metadata."
-        ),
-    )
+    return DesignDocument.from_json(
+        json.dumps(
+            design_manifest(
+                {
+                    "targets": [
+                        {
+                            "path": f"{name}.ml",
+                            "decision": "EXTEND",
+                            "reason": f"Own the {name} implementation.",
+                        }
+                    ],
+                    "paradigm": "functional",
+                    "decisions": [f"Own the {name} public contract."],
+                    "oracle": f"{name}_oracle.ml",
+                    "acceptance_supports": [],
+                    "verification": [[sys.executable, "-c", "raise SystemExit(0)"]],
+                    "oracle_verification_index": 0,
+                    "architectural_tests": {
+                        "applicability": "not_applicable",
+                        "reason": f"No changed structural boundary for {name}.",
+                    },
+                    "contract_tests": {
+                        "applicability": "not_applicable",
+                        "reason": f"No changed agreement for {name}.",
+                    },
+                    "prefactoring": {
+                        "applicability": "not_applicable",
+                        "reason": f"No selected structural move for {name}.",
+                    },
+                    "agreement_analysis": {
+                        "applicability": "not_applicable",
+                        "reason": f"No affected consumer for {name}.",
+                    },
+                    "impact_closure": {
+                        "applicability": "not_applicable",
+                        "reason": f"The {name} fixture reaches no public surface, consumer or build metadata.",
+                    },
+                    "reuse_analysis": {"candidates": []},
+                    "constraints": [f"Preserve unrelated bytes for {name}."],
+                    "boundaries": {
+                        "applicability": "not_applicable",
+                        "reason": f"No affected boundary for {name}.",
+                    },
+                    "public_oracle": {
+                        "observation": f"Observe {name}.",
+                        "stimulus": f"Execute {name}.",
+                        "expected": f"{name} is visible.",
+                        "falsifier": f"{name} is absent.",
+                    },
+                },
+                f"Expose {name}.",
+                {"producer": 1, "consumer": 2, "independent": 3}.get(name, 1),
+            )
+        )
+    ).facts
 
 
 def test_cited_design_sections_hashes_prerequisite_with_architect_handoff(
@@ -312,13 +357,17 @@ def test_cited_design_sections_hashes_prerequisite_with_architect_handoff(
     entry = handoff_types.Entry(
         kind="closure",
         scope="value:1",
-        status=handoff_types.NotApplicable(reason="No temporal closure obligation."),
+        status=handoff_types.NotApplicable(reason=FactRef(FactId("ClosureReason"))),
     )
     prerequisite = HandoverValue(
         "producer",
         (),
         replace(
             _facts("producer"),
+            facts=(
+                *_facts("producer").facts,
+                FactRecord(FactId("ClosureReason"), "No temporal closure obligation."),
+            ),
             architect_handoff={(entry.kind, entry.scope): entry},
         ),
     )
@@ -335,7 +384,7 @@ def test_cited_design_sections_hashes_prerequisite_with_architect_handoff(
     assert len(dict(sections)["prerequisite:producer"]) == 64
 
 
-def test_cited_design_sections_preserves_prerequisite_hash_without_architect_handoff(
+def test_cited_design_sections_refuses_opaque_historical_prerequisite(
     tmp_path: Path,
 ) -> None:
     fixture = (
@@ -361,27 +410,12 @@ def test_cited_design_sections_preserves_prerequisite_hash_without_architect_han
     )
     archived = reference["canonical_prerequisite"]
     authority_input = dict(archived["authority"])
-    authority_input["targets"] = tuple(
-        DesignTarget(**target) for target in authority_input["targets"]
-    )
-    for field in ("decisions", "acceptance_supports", "obligations"):
-        authority_input[field] = tuple(authority_input[field])
-    authority_input["verification"] = tuple(
-        tuple(argv) for argv in authority_input["verification"]
-    )
-    for field in (
-        "architectural_tests",
-        "contract_tests",
-        "prefactoring",
-        "agreement_analysis",
-        "impact_closure",
-    ):
-        authority_input[field] = NotApplicable(authority_input[field]["reason"])
-    authority_input["reuse_analysis"] = ReuseAnalysis(
-        tuple(authority_input["reuse_analysis"]["candidates"])
-    )
     prerequisite_input = dict(archived)
-    prerequisite_input["authority"] = DesignFacts(**authority_input)
+    prerequisite_input["authority"] = PreNormalizedDesign(
+        raw=authority_input,
+        authority_locator=authority_input.get("authority_locator", ""),
+        design_semantic_sha256=authority_input.get("design_semantic_sha256", ""),
+    )
     for field in ("dependencies", "acceptance", "acceptance_supports"):
         prerequisite_input[field] = tuple(prerequisite_input[field])
     prerequisite = HandoverValue(**prerequisite_input)
@@ -394,30 +428,17 @@ def test_cited_design_sections_preserves_prerequisite_hash_without_architect_han
         tmp_path, stored, dependent
     )
 
-    assert sections is not None, (
-        "WHAT: the real prerequisite projection is unavailable; "
-        "WHY: an execution/setup failure is not an identity observation; "
-        "HOW: restore construction from the retained historical inputs before measuring identity."
+    assert sections is None, (
+        "Pre-normalized prerequisite facts must not be executable or receive "
+        "a current normalized identity."
     )
-    actual = dict(sections).get("prerequisite:producer")
-    print(
-        json.dumps(
-            {
-                "label": "historical-prerequisite-identity",
-                "source_commit": reference["source_commit"],
-                "executor": reference["executor"],
-                "fixture_sha256": artifact_sha256,
-                "expected": expected,
-                "actual": actual,
-            }
-        ),
-        flush=True,
+    assert prerequisite.authority.raw == archived["authority"]
+    refused = DeliveryContinuationRunner().derive_authority(
+        tmp_path, prerequisite.authority
     )
-    assert actual == expected, (
-        f"WHAT: historical-prerequisite-identity-conservation: expected={expected}; actual={actual}; "
-        "WHY: default required must preserve the independently retained historical prerequisite identity; "
-        "HOW: omit default product_change in the prerequisite projection without changing the historical fixture."
-    )
+    assert isinstance(refused, DeliveryOutcome)
+    assert refused.failure.what == "DesignFactsPreNormalized"
+    assert "--replace-current" in refused.failure.how
 
 
 def _record(root: Path, runner, stored, value, design) -> None:
@@ -448,15 +469,18 @@ def test_consumed_prerequisite_contract_invalidates_only_dependent_evidence(
     authority = root / "design.md"
     authority.write_text(
         "# Design\n\n"
-        + "\n".join(f"## {name}\n\n{name} contract: v1.\n" for name in names)
+        + "\n".join(
+            f"## Value {position}\n\n{name} contract: v1.\n"
+            for position, name in enumerate(names, 1)
+        )
     )
     values = tuple(
         HandoverValue(
             name,
             ("producer",) if name == "consumer" else (),
-            replace(_facts(name), authority_locator=f"design.md#{name}"),
+            replace(_facts(name), authority_locator=f"design.md#Value {position}"),
         )
-        for name in names
+        for position, name in enumerate(names, 1)
     )
     stored = StoredHandover("Three separately owned values", values, b"{}", Project())
     designs = []
@@ -473,7 +497,12 @@ def test_consumed_prerequisite_contract_invalidates_only_dependent_evidence(
     changed_producer = replace(
         values[0],
         authority=replace(
-            values[0].authority, decisions=("The public protocol changed.",)
+            values[0].authority,
+            decisions=(FactRef(FactId("ChangedProtocol")),),
+            facts=(
+                *values[0].authority.facts,
+                FactRecord(FactId("ChangedProtocol"), "The public protocol changed."),
+            ),
         ),
     )
     changed = replace(stored, values=(changed_producer, *values[1:]))
@@ -516,11 +545,24 @@ def _preservation(root: Path) -> SelectedValue:
     (root / "support.txt").write_text("same support\n")
     facts = replace(
         _facts("value"),
-        targets=(DesignTarget("product.txt", "EXTEND"),),
+        targets=(
+            DesignTarget("product.txt", "EXTEND", _facts("value").targets[0].reason),
+        ),
+        facts=(
+            *_facts("value").facts,
+            FactRecord(
+                FactId("PreservationMove"),
+                "Move the representation without changing its public result.",
+            ),
+            FactRecord(
+                FactId("PreservationObservation"),
+                "The selected existing result remains accepted.",
+            ),
+        ),
         prefactoring=ApplicablePrefactoring(
             existing_oracle="preserve.py",
-            move="Move the representation without changing its public result.",
-            preserved_observation="The selected existing result remains accepted.",
+            move=FactRef(FactId("PreservationMove")),
+            preserved_observation=FactRef(FactId("PreservationObservation")),
             verification=((sys.executable, "preserve.py"),),
             acceptance_supports=("support.txt",),
         ),
@@ -621,7 +663,7 @@ def test_committed_preservation_pair_survives_committed_feature_without_replayin
     assert prior["base"] != middle["base"]
     assert prior["witness"] == middle["witness"]
     assert middle["before_locator"] == before[0]
-    red = runner.measure_oracle(root, selected)
+    red = runner.measure_oracle(root, selected, explicit=middle["base"])
     assert red.refusal is None, red
     assert red.measured[0]["verdict"] == "red", red
     assert red.measured[0]["counts"] == (1, 0, 1), red
@@ -677,7 +719,7 @@ def test_preservation_identity_binds_the_whole_child_environment_not_volatile_or
     monkeypatch.setenv("CC", selector_a)
 
     # Per-invocation locations and credentials are not identity; the receipt
-    # displays only the public subset and never a credential.
+    # displays the complete secret-safe ambient environment, never a credential.
     monkeypatch.setenv("NWAVE_EVIDENCE_DIR", str(root / "evidence-two"))
     monkeypatch.setenv("TMPDIR", str(root / "tmp-two"))
     monkeypatch.setenv("DEPLOY_TOKEN", "rotated-credential-value")
@@ -690,7 +732,10 @@ def test_preservation_identity_binds_the_whole_child_environment_not_volatile_or
     assert middle["context"] == prior["context"]
     assert b"rotated-credential-value" not in middle_bytes
     assert b"hunter2" not in middle_bytes
-    assert "DOTNET_ROOT" not in middle["environment_public"]
+    assert middle["environment_public"]["DOTNET_ROOT"] == os.environ["DOTNET_ROOT"]
+    assert "DEPLOY_TOKEN" not in middle["environment_public"]
+    assert "REGISTRY_URL" not in middle["environment_public"]
+    assert "VENDOR_CONFIG" not in middle["environment_public"]
 
 
 def test_shared_applicable_prefactoring_must_be_carried_by_a_measured_value(
@@ -700,7 +745,7 @@ def test_shared_applicable_prefactoring_must_be_carried_by_a_measured_value(
     selected = _preservation(root)
     runner = DeliveryContinuationRunner()
     move = selected.ready.authority
-    shared = SharedDesign("design.md#shared", "0" * 64, "1" * 64, move)
+    shared = SharedDesign("design.md#Shared design", "0" * 64, "1" * 64, move)
     stored = replace(selected.stored, shared_design=shared)
 
     # Carried: the value declares the shared witness, so its own measured
@@ -715,9 +760,20 @@ def test_shared_applicable_prefactoring_must_be_carried_by_a_measured_value(
     # one, so ORACLE and CRAFT must not proceed with no witness at all.
     plain = replace(
         selected.ready,
-        authority=replace(move, prefactoring=NotApplicable("No move for this value.")),
+        authority=replace(
+            move,
+            facts=(
+                *move.facts,
+                FactRecord(FactId("NoValueMove"), "No move for this value."),
+            ),
+            prefactoring=NotApplicable(FactRef(FactId("NoValueMove"))),
+        ),
     )
-    design = replace(selected.design, prefactoring=NotApplicable("No move."))
+    design = replace(
+        selected.design,
+        prefactoring=plain.authority.prefactoring,
+        normalized_design=plain.authority,
+    )
     alone = SelectedValue(replace(stored, values=(plain,)), plain, design)
     assert (
         runner._prefactoring_ready(root, alone).failure.what
@@ -780,22 +836,27 @@ def _prompt_subject(root):
     from des.application.handover import create_handover
 
     (root / "design.md").write_text(
-        "# Design\n\n## Subject\n\nKeep the public contract.\n"
+        "# Design\n\n## Value 1\n\nKeep the public contract.\n"
     )
     for name in ("subject.ml", "other.ml", "subject_oracle.ml", "preserve.ml"):
         (root / name).write_text("let () = ()\n")
     (root / "root.txt").write_text("actual host context\n")
     facts = replace(
         _facts("subject"),
-        authority_locator="design.md#Subject",
+        authority_locator="design.md#Value 1",
         targets=(
-            DesignTarget("subject.ml", "EXTEND"),
-            DesignTarget("other.ml", "EXTEND"),
+            DesignTarget("subject.ml", "EXTEND", _facts("subject").targets[0].reason),
+            DesignTarget("other.ml", "EXTEND", _facts("subject").targets[0].reason),
+        ),
+        facts=(
+            *_facts("subject").facts,
+            FactRecord(FactId("SubjectMove"), "Move representation."),
+            FactRecord(FactId("SubjectObservation"), "Preserve current observations."),
         ),
         prefactoring=ApplicablePrefactoring(
             existing_oracle="preserve.ml",
-            move="Move representation.",
-            preserved_observation="Preserve current observations.",
+            move=FactRef(FactId("SubjectMove")),
+            preserved_observation=FactRef(FactId("SubjectObservation")),
             verification=((sys.executable, "-c", "raise SystemExit(0)"),),
             acceptance_supports=(),
         ),
@@ -898,8 +959,16 @@ def test_crafter_prompt_advertises_only_selected_mutable_targets(repository, cap
         "HOW: retain both fact records rather than replacing them with formatted target labels."
     )
     assert selected.get("targets") == [
-        ["subject.ml", "EXTEND"],
-        ["other.ml", "EXTEND"],
+        {
+            "path": "subject.ml",
+            "decision": "EXTEND",
+            "reason": {"ref": stored.values[0].authority.targets[0].reason.ref},
+        },
+        {
+            "path": "other.ml",
+            "decision": "EXTEND",
+            "reason": {"ref": stored.values[0].authority.targets[1].reason.ref},
+        },
     ], (
         f"WHAT: emitted declared target population is {selected.get('targets')!r}. "
         "WHY: the complete declaration must retain each actual path and decision, including unselected metadata. "
@@ -925,9 +994,9 @@ def test_crafter_prompt_advertises_only_selected_mutable_targets(repository, cap
         "HOW: use non-owning references that explicitly apply the caller's target restriction."
     )
     advertised_targets = [
-        (path, decision)
-        for path, decision in selected["targets"]
-        if path in invocation["targets"]
+        (target["path"], target["decision"])
+        for target in selected["targets"]
+        if target["path"] in invocation["targets"]
     ]
     assert advertised_targets == [("subject.ml", "EXTEND")], (
         f"WHAT: resolving the emitted target references advertises {advertised_targets!r}. "

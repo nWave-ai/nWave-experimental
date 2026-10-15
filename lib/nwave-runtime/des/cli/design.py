@@ -27,20 +27,9 @@ STDIN = "-"
 
 
 def _modes(args: argparse.Namespace) -> ReplacementModes:
-    """The three replacement/recovery modes this invocation asked for.
-
-    Both document forms -- one value's and the shared section's -- read them off
-    the SAME namespace, so they are built once here rather than spelled out again
-    at each call.
-
-    NOT exclusive: all three are independent ``store_true`` flags added straight to
-    the parser, so any combination is accepted and nothing downstream enforces an
-    arity over them.  The one mutually exclusive group in this CLI is ``--value``
-    against ``--shared``.
-    """
+    """The replacement/recovery mode requested by this invocation."""
     return ReplacementModes(
         replace_current=args.replace_current,
-        migrate_legacy_rendering=args.migrate_legacy_rendering,
         replace_unbound=args.replace_unbound,
     )
 
@@ -71,14 +60,6 @@ def main(argv: list[str] | None = None) -> int:
         help="import closed typed sections into this manifest through the existing constructor",
     )
     parser.add_argument("--replace-current", action="store_true")
-    parser.add_argument(
-        "--migrate-legacy-rendering",
-        action="store_true",
-        help=(
-            "explicitly replace an unbound tracked DESIGN section only when its "
-            "complete bytes equal the frozen pre-lint renderer"
-        ),
-    )
     parser.add_argument(
         "--replace-unbound",
         action="store_true",
@@ -147,6 +128,13 @@ def _manifest_input(args: argparse.Namespace, root: Path):
                 "--architect-handoff, not both"
             )
         path = args.architect_handoff
+        sidecar_path = path if path.is_absolute() else root / path
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        if isinstance(sidecar, dict) and "catalog" in sidecar:
+            raise ValueError(
+                "DesignKeyNotInGrammar architect_handoff.catalog: "
+                "use the constructing manifest facts and bound shared catalog"
+            )
         handoff, defects = load_files(
             [str(path if path.is_absolute() else root / path)]
         )
@@ -159,11 +147,16 @@ def _manifest_input(args: argparse.Namespace, root: Path):
             )
         manifest["architect_handoff"] = wire(handoff)
         return json.dumps(manifest, ensure_ascii=False)
-    except ValueError as error:
+    except (ValueError, OSError) as error:
+        why = (
+            f"cannot read the file {args.architect_handoff}: {error}"
+            if isinstance(error, OSError)
+            else str(error)
+        )
         return StepRefusal(
             "InvalidDesignDocument",
-            str(error),
-            "supply one DESIGN manifest and one closed typed handoff input",
+            why + "\nUNRUN: bound-state reference checks (manifest did not decode)",
+            "supply one DESIGN manifest and one closed typed handoff input through des design --input -",
         )
 
 

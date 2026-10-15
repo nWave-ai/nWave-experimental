@@ -21,6 +21,36 @@ from . import g10_scope as S
 from . import g10_types as T
 
 
+if t.TYPE_CHECKING:
+    from des.domain.design_document import FactCatalog
+
+CATALOG_UNAVAILABLE = (
+    "ArchitectHandoffCatalogUnavailable: WHAT: no catalog; WHY: FactRefs cannot be resolved; "
+    "HOW: add a digest-bound catalog locator to the handoff document, or run natively with --repo-root"
+)
+
+
+def resolved(value, catalog: FactCatalog | None):
+    """Resolve display text through the catalog owner, retaining every structured field."""
+    if catalog is None:
+        raise ValueError(CATALOG_UNAVAILABLE)
+    if isinstance(value, T.FactRef):
+        return catalog.resolve(value)
+    if dc.is_dataclass(value):
+        return dc.replace(
+            value,
+            **{
+                field.name: resolved(getattr(value, field.name), catalog)
+                for field in dc.fields(value)
+            },
+        )
+    if isinstance(value, tuple):
+        return tuple(resolved(item, catalog) for item in value)
+    if isinstance(value, dict):
+        return {key: resolved(item, catalog) for key, item in value.items()}
+    return value
+
+
 _PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)(@pre)?\}")
 
 
@@ -36,13 +66,15 @@ def mutant_description(model: T.Model, mutant_id: str) -> str | None:
     return m.description if m is not None else None
 
 
-def template_problems(model: T.Model) -> list[str]:
+def template_problems(model: T.Model, catalog: FactCatalog | None = None) -> list[str]:
     """Static (rule M2): every action template names only state atoms of its own model."""
+    model = resolved(model, catalog)
     states = {a.name for a in model.atoms if isinstance(a, T.StateAtom)}
     out = []
     for a in model.atoms:
-        if isinstance(a, T.ActionAtom):
-            for name, _pre in _PLACEHOLDER.findall(a.template):
+        if isinstance(a, (T.ActionAtom, T.PropertyAtom)):
+            text = a.template if isinstance(a, T.ActionAtom) else a.statement
+            for name, _pre in _PLACEHOLDER.findall(text):
                 if name not in states:
                     out.append(
                         f"action {a.name!r}: template names {name!r}, which is not a state atom of model {model.id}"
@@ -50,8 +82,11 @@ def template_problems(model: T.Model) -> list[str]:
     return out
 
 
-def trace_problems(model: T.Model, trace: I.Trace) -> list[str]:
+def trace_problems(
+    model: T.Model, trace: I.Trace, catalog: FactCatalog | None = None
+) -> list[str]:
     """Dynamic (rule S3): why this trace cannot be rendered through this model; empty means renderable."""
+    model = resolved(model, catalog)
     actions = _actions(model)
     out: list[str] = []
     if not trace.states:
@@ -81,11 +116,15 @@ def trace_problems(model: T.Model, trace: I.Trace) -> list[str]:
 
 
 def render_trace(
-    model: T.Model, trace: I.Trace, checks: t.Sequence[str]
+    model: T.Model,
+    trace: I.Trace,
+    checks: t.Sequence[str],
+    catalog: FactCatalog | None = None,
 ) -> list[tuple[int, str]]:
-    problems = trace_problems(model, trace)
+    problems = trace_problems(model, trace, catalog)
     if problems:
         raise ValueError("; ".join(problems))
+    model = resolved(model, catalog)
     actions = _actions(model)
     events: list[tuple[int, str]] = []
     for i, st in enumerate(trace.states):
@@ -133,8 +172,13 @@ class Bad:
 
 
 def render_scenario(
-    v: S.Visible, sc: T.Scenario, base_dir: str | None
+    v: S.Visible,
+    sc: T.Scenario,
+    base_dir: str | None,
+    catalog: FactCatalog | None = None,
 ) -> Rendered | Skipped | Bad:
+    if catalog is None:
+        return Skipped(CATALOG_UNAVAILABLE)
     run = v.runs.get(sc.source_run)
     model = v.models.get(run.model_id) if run is not None and run.model_id else None
     if run is None or model is None:
@@ -161,15 +205,15 @@ def render_scenario(
         trace = I.parse(json.loads(raw.decode("utf-8")))
     except (ValueError, I.ItfError, RecursionError) as exc:
         return Bad((f"trace {art.path} cannot be read: {exc}",))
-    problems = trace_problems(model, trace)
+    problems = trace_problems(model, trace, catalog)
     if problems:
         return Bad(tuple(problems))
     return Rendered(
-        sc,
+        resolved(sc, catalog),
         run,
-        model,
+        resolved(model, catalog),
         digest,
-        tuple(render_trace(model, trace, run.checks)),
+        tuple(render_trace(model, trace, run.checks, catalog)),
         trace.status,
     )
 

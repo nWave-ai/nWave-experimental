@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from dataclasses import asdict
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -38,6 +38,11 @@ from des.application.delivery_continuation import (
     Disposition,
     NativeEvidence,
 )
+from des.domain.design_document import (
+    DesignDocument,
+    ResolvedDesign,
+    resolve_inheritance,
+)
 from des.domain.oracle_observation import (
     ObservationUnavailable,
     OracleObservation,
@@ -46,13 +51,9 @@ from des.domain.oracle_observation import (
     observation_from_counts,
 )
 from des.ports.driven_ports.task_invocation_port import (
-    DesignFacts,
-    DesignTarget,
     ModelOutcome,
     ModelRun,
-    NotApplicable,
     ProductValue,
-    ReuseAnalysis,
     TaskInvocationPort,
 )
 from tests.des._helpers.host_facts import design_manifest
@@ -101,6 +102,73 @@ def test_answer():
 """
 
 
+def oracle_manifest(  # noqa: PLR0913 - explicit independent native-fixture contract axes
+    decision: str = "one observable value",
+    *,
+    oracle: str = ORACLE,
+    acceptance_supports: tuple[str, ...] = (),
+    targets: tuple[tuple[str, str], ...] = (
+        (PRODUCTION, "CREATE_NEW"),
+        (ORACLE, "CREATE_NEW"),
+    ),
+    verification: tuple[tuple[str, ...], ...] | None = None,
+    oracle_verification_index: int = 0,
+    paradigm: str = "object_oriented",
+) -> dict:
+    """The authored-oracle family's explicit facts through the shared producer."""
+    return design_manifest(
+        {
+            "targets": [{"path": path, "decision": choice} for path, choice in targets],
+            "paradigm": paradigm,
+            "decisions": [decision],
+            "oracle": oracle,
+            "acceptance_supports": list(acceptance_supports),
+            "verification": verification
+            if verification is not None
+            else (("python", "-m", "pytest", oracle, "-q"),),
+            "oracle_verification_index": oracle_verification_index,
+            "architectural_tests": {
+                "applicability": "not_applicable",
+                "reason": "The fixture has no structural boundary change.",
+            },
+            "contract_tests": {
+                "applicability": "not_applicable",
+                "reason": "The fixture changes no shared contract.",
+            },
+            "prefactoring": {
+                "applicability": "not_applicable",
+                "reason": "The fixture requires no preservation move.",
+            },
+            "agreement_analysis": {
+                "applicability": "not_applicable",
+                "reason": "The fixture has no affected agreement.",
+            },
+            "reuse_analysis": {"candidates": []},
+            "impact_closure": {
+                "applicability": "not_applicable",
+                "reason": "The fixture reaches no public surface, consumer or build metadata.",
+            },
+        },
+        OBSERVATION,
+        1,
+    )
+
+
+def execution_authority(root: Path, manifest: dict) -> AuthorityFacts:
+    """Construct the execution fixture without testing executable admission."""
+    document = DesignDocument.from_json(json.dumps(manifest))
+    resolved = resolve_inheritance(None, (), document.facts)
+    assert isinstance(resolved, ResolvedDesign), resolved
+    authority = DeliveryContinuationRunner._derive(
+        root,
+        resolved.design,
+        admit_verification=False,
+        resolution=resolved,
+    )
+    assert isinstance(authority, AuthorityFacts), authority
+    return replace(authority, resolved=resolved)
+
+
 def fact(prompt: str, key: str) -> object:
     """One dynamic fact out of a prompt `_prompt` framed: `key: <one JSON value>`."""
     prefix = f"{key}: "
@@ -141,29 +209,12 @@ class ScriptedPort(TaskInvocationPort):
         self.prompts: list[tuple[str, str]] = []
 
     def manifest(self, decision: str = "one observable value") -> dict:
-        facts = DesignFacts(
-            targets=(
-                DesignTarget(PRODUCTION, "CREATE_NEW"),
-                DesignTarget(self.oracle, "CREATE_NEW"),
-            ),
-            paradigm="object_oriented",
-            decisions=(decision,),
+        return oracle_manifest(
+            decision,
             oracle=self.oracle,
             acceptance_supports=self.acceptance_supports,
-            verification=(("python", "-m", "pytest", self.oracle, "-q"),),
-            oracle_verification_index=0,
-            architectural_tests=NotApplicable(
-                "The fixture has no structural boundary change."
-            ),
-            contract_tests=NotApplicable("The fixture changes no shared contract."),
-            prefactoring=NotApplicable("The fixture requires no preservation move."),
-            agreement_analysis=NotApplicable("The fixture has no affected agreement."),
-            reuse_analysis=ReuseAnalysis(()),
-            impact_closure=NotApplicable(
-                "The fixture reaches no public surface, consumer or build metadata."
-            ),
+            targets=((PRODUCTION, "CREATE_NEW"), (self.oracle, "CREATE_NEW")),
         )
-        return design_manifest(asdict(facts), OBSERVATION, 1)
 
     def invoke(
         self,
@@ -228,10 +279,23 @@ def subject(tmp_path: Path) -> Path:
     return root
 
 
+@pytest.fixture
+def genesis(subject: Path) -> str:
+    """Retain the fixture's original source before any test-body authoring or fix."""
+    return subprocess.run(
+        ["git", "-C", str(subject), "rev-parse", "--verify", "HEAD^{commit}"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
 REQUEST = "deliver the answer"
 
 
-def one_oracle_turn(subject: Path, port: ScriptedPort, *, finding: str | None = None):
+def one_oracle_turn(
+    subject: Path, port: ScriptedPort, *, baseline: str, finding: str | None = None
+):
     """`po`, `design`, then ONE `oracle` -- each invoked explicitly by this test.
 
     MIGRATED STIMULUS. These scenarios used to reach `oracle` by starting a
@@ -245,7 +309,9 @@ def one_oracle_turn(subject: Path, port: ScriptedPort, *, finding: str | None = 
         runner,
         stored,
         design,
-        oracled(runner, port, subject, stored, design, finding=finding),
+        oracled(
+            runner, port, subject, stored, design, baseline=baseline, finding=finding
+        ),
     )
 
 
@@ -259,7 +325,7 @@ def crafted(port: ScriptedPort) -> bool:
     ids=["import-error", "setup-error"],
 )
 def test_a_broken_oracle_is_refused_by_the_step_that_measured_it(
-    subject: Path, body: str
+    subject: Path, genesis: str, body: str
 ) -> None:
     # Run 22 and run 23 in one shape: the oracle never reaches its assertion.
     # The step refuses on the EXECUTED property, and it refuses in the same
@@ -267,7 +333,7 @@ def test_a_broken_oracle_is_refused_by_the_step_that_measured_it(
     # value whose oracle step never recorded.
     port = ScriptedPort(subject, [body])
 
-    _, _, _, measured = one_oracle_turn(subject, port)
+    _, _, _, measured = one_oracle_turn(subject, port, baseline=genesis)
 
     assert not crafted(port), f"the crafter ran on a broken oracle: {port.roles}"
     outcome = measured.refusal
@@ -280,6 +346,7 @@ def test_a_broken_oracle_is_refused_by_the_step_that_measured_it(
 
 def test_a_declared_oracle_and_support_outside_pytest_testpaths_are_authored(
     subject: Path,
+    genesis: str,
 ) -> None:
     """Authority, rather than a fixture pyproject, authorizes this test layout."""
     port = ScriptedPort(
@@ -289,7 +356,7 @@ def test_a_declared_oracle_and_support_outside_pytest_testpaths_are_authored(
         acceptance_supports=(DECLARED_OUTSIDE_SUPPORT,),
     )
 
-    _, _, design, measured = one_oracle_turn(subject, port)
+    _, _, design, measured = one_oracle_turn(subject, port, baseline=genesis)
 
     assert measured.refusal is None, measured.refusal
     assert design.acceptance_paths == (
@@ -302,6 +369,7 @@ def test_a_declared_oracle_and_support_outside_pytest_testpaths_are_authored(
 
 def test_aggregate_correction_owns_declared_oracle_outside_pytest_testpaths(
     subject: Path,
+    genesis: str,
 ) -> None:
     port = ScriptedPort(
         subject,
@@ -310,7 +378,7 @@ def test_aggregate_correction_owns_declared_oracle_outside_pytest_testpaths(
         acceptance_supports=(DECLARED_OUTSIDE_SUPPORT,),
     )
 
-    runner, stored, design, first = one_oracle_turn(subject, port)
+    runner, stored, design, first = one_oracle_turn(subject, port, baseline=genesis)
     assert first.refusal is not None
 
     corrected = oracled(
@@ -319,6 +387,7 @@ def test_aggregate_correction_owns_declared_oracle_outside_pytest_testpaths(
         subject,
         stored,
         design,
+        baseline=genesis,
         finding="the oracle errors at setup",
     )
 
@@ -331,7 +400,7 @@ def test_aggregate_correction_owns_declared_oracle_outside_pytest_testpaths(
     ids=["oracle", "support", "oracle-and-support"],
 )
 def test_missing_acceptance_files_are_named_with_their_actual_role(
-    subject: Path, missing: tuple[str, ...]
+    subject: Path, genesis: str, missing: tuple[str, ...]
 ) -> None:
     class IncompleteAuthor(ScriptedPort):
         def invoke(self, **kwargs: object) -> ModelRun:
@@ -347,7 +416,7 @@ def test_missing_acceptance_files_are_named_with_their_actual_role(
         acceptance_supports=(DECLARED_OUTSIDE_SUPPORT,),
     )
 
-    _, _, _, measured = one_oracle_turn(subject, port)
+    _, _, _, measured = one_oracle_turn(subject, port, baseline=genesis)
 
     outcome = measured.refusal
     assert isinstance(outcome, DeliveryOutcome), outcome
@@ -363,7 +432,7 @@ def test_missing_acceptance_files_are_named_with_their_actual_role(
 
 
 def test_unobservable_support_is_not_reported_as_a_missing_oracle(
-    subject: Path, monkeypatch: pytest.MonkeyPatch
+    subject: Path, genesis: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     port = ScriptedPort(
         subject,
@@ -384,7 +453,7 @@ def test_unobservable_support_is_not_reported_as_a_missing_oracle(
         DeliveryContinuationRunner, "_regular_file", staticmethod(observe)
     )
 
-    measured = oracled(runner, port, subject, stored, design)
+    measured = oracled(runner, port, subject, stored, design, baseline=genesis)
 
     outcome = measured.refusal
     assert isinstance(outcome, DeliveryOutcome), outcome
@@ -399,7 +468,7 @@ def test_unobservable_support_is_not_reported_as_a_missing_oracle(
 
 
 def test_a_green_oracle_is_measured_and_reported_but_does_not_refuse(
-    subject: Path, capfd: pytest.CaptureFixture[str]
+    subject: Path, genesis: str, capfd: pytest.CaptureFixture[str]
 ) -> None:
     # MEASURED, and the reason `green` is not in `_ORACLE_REFUSING`.  Several
     # designed behaviours present a green oracle before any craft turn -- a
@@ -410,7 +479,7 @@ def test_a_green_oracle_is_measured_and_reported_but_does_not_refuse(
     # without a paid turn spent refusing one.
     port = ScriptedPort(subject, [GREEN_BEFORE_CRAFT])
 
-    _, _, _, measured = one_oracle_turn(subject, port)
+    _, _, _, measured = one_oracle_turn(subject, port, baseline=genesis)
 
     assert measured.refusal is None
     reported = [
@@ -423,6 +492,7 @@ def test_a_green_oracle_is_measured_and_reported_but_does_not_refuse(
 
 def test_a_correction_that_answers_the_finding_records_the_turn(
     subject: Path,
+    genesis: str,
 ) -> None:
     # The second invocation is a real repair: the author is given the finding,
     # writes a RED oracle, and THIS step admits the set and records it -- the
@@ -430,11 +500,17 @@ def test_a_correction_that_answers_the_finding_records_the_turn(
     # turn at all, is the orchestrator's decision and not a branch in here.
     port = ScriptedPort(subject, [BROKEN_AT_SETUP, RED_ON_ITS_ASSERTION])
 
-    runner, stored, design, first = one_oracle_turn(subject, port)
+    runner, stored, design, first = one_oracle_turn(subject, port, baseline=genesis)
     assert first.refusal is not None
 
     corrected = oracled(
-        runner, port, subject, stored, design, finding="the oracle errors at setup"
+        runner,
+        port,
+        subject,
+        stored,
+        design,
+        baseline=genesis,
+        finding="the oracle errors at setup",
     )
 
     assert corrected.refusal is None, corrected.refusal
@@ -442,7 +518,10 @@ def test_a_correction_that_answers_the_finding_records_the_turn(
     assert runner.oracle_turn_complete(subject, stored, stored.values[0], design)
 
 
-def test_the_step_measures_the_red_before_it_admits_the_set(subject: Path) -> None:
+def test_the_step_measures_the_red_before_it_admits_the_set(
+    subject: Path,
+    genesis: str,
+) -> None:
     """The measurement is the step's own answer, not a claim about a role.
 
     RECONCILED. This scenario asserted that the pre-craft REVIEWER was told the
@@ -453,7 +532,7 @@ def test_the_step_measures_the_red_before_it_admits_the_set(subject: Path) -> No
     """
     port = ScriptedPort(subject, [RED_ON_ITS_ASSERTION])
 
-    _, _, _, measured = one_oracle_turn(subject, port)
+    _, _, _, measured = one_oracle_turn(subject, port, baseline=genesis)
 
     assert measured.refusal is None
     assert port.roles == [
@@ -524,19 +603,20 @@ def test_same_oracle_with_distinct_explicit_bindings_executes_each_binding(
         "test",
         "hc.api.tests.test_maintenance_windows",
     )
-    common = {
-        "locator": "docs/architecture.md#Maintenance windows",
-        "modified_authority_paths": (),
-        "target_decisions": ((PRODUCTION, "CREATE_NEW"),),
-        "paradigm": "object_oriented",
-        "decisions": (),
-        "obligations": (),
-        "acceptance_oracle_locator": ORACLE,
-        "acceptance_paths": (ORACLE,),
-        "native_verification_argvs": (broad, django_module),
-    }
-    first = AuthorityFacts(**common, oracle_verification_index=0)
-    second = AuthorityFacts(**common, oracle_verification_index=1)
+    first = execution_authority(
+        subject,
+        oracle_manifest(
+            verification=(broad, django_module),
+            oracle_verification_index=0,
+        ),
+    )
+    second = execution_authority(
+        subject,
+        oracle_manifest(
+            verification=(broad, django_module),
+            oracle_verification_index=1,
+        ),
+    )
     executed: list[tuple[str, ...]] = []
 
     def native(
@@ -558,14 +638,17 @@ def test_same_oracle_with_distinct_explicit_bindings_executes_each_binding(
     assert executed == [broad, django_module]
 
 
-def test_the_measured_red_carries_every_axis_the_reader_needs(subject: Path) -> None:
+def test_the_measured_red_carries_every_axis_the_reader_needs(
+    subject: Path,
+    genesis: str,
+) -> None:
     # A reader of this measurement -- the correction author below, or the
     # orchestrator -- cannot run what it is judging, so a fact it is not told
     # is a fact it must take on faith. Read off the step's own answer, which is
     # where the measurement lives now that no pre-craft judge is bought.
     port = ScriptedPort(subject, [RED_ON_ITS_ASSERTION])
 
-    _, _, _, measured = one_oracle_turn(subject, port)
+    _, _, _, measured = one_oracle_turn(subject, port, baseline=genesis)
 
     assert len(measured.measured) == 1, measured.measured
     only = measured.measured[0]
@@ -580,6 +663,7 @@ def test_the_measured_red_carries_every_axis_the_reader_needs(subject: Path) -> 
 
 def test_a_red_reached_on_the_oracles_own_defect_says_so_in_its_message(
     subject: Path,
+    genesis: str,
 ) -> None:
     # The whole point.  Both oracles are `red` on every axis the runner had
     # before this: exit 1, one failure, zero errors.  The message is the only
@@ -587,7 +671,7 @@ def test_a_red_reached_on_the_oracles_own_defect_says_so_in_its_message(
     # compares two roots that can never be equal" is written down.
     port = ScriptedPort(subject, [RED_FOR_A_DEFECT_OF_ITS_OWN])
 
-    _, _, _, measured = one_oracle_turn(subject, port)
+    _, _, _, measured = one_oracle_turn(subject, port, baseline=genesis)
 
     only = measured.measured[0]
     message = only["failures"][0]["message"]  # type: ignore[index]
@@ -596,12 +680,15 @@ def test_a_red_reached_on_the_oracles_own_defect_says_so_in_its_message(
     assert "scenario-" in message and "control-" in message, message
 
 
-def test_a_green_oracle_is_reported_as_green_with_no_failures(subject: Path) -> None:
+def test_a_green_oracle_is_reported_as_green_with_no_failures(
+    subject: Path,
+    genesis: str,
+) -> None:
     # The field is a MEASUREMENT and not a refusal: green stays admitted, and
     # the reader is told it is green rather than left to assume a red.
     port = ScriptedPort(subject, [GREEN_BEFORE_CRAFT])
 
-    _, _, _, measured = one_oracle_turn(subject, port)
+    _, _, _, measured = one_oracle_turn(subject, port, baseline=genesis)
 
     assert measured.measured[0]["verdict"] == "green"
     assert measured.measured[0]["failures"] == ()
@@ -640,23 +727,21 @@ def test_an_unreadable_report_is_absence_of_observation_not_of_failures(
 
 
 @pytest.mark.parametrize("exit_status", [1, 101])
-def test_unclassified_native_failure_is_recorded_without_inventing_a_pytest_verdict(
+def test_unclassified_native_failure_is_refused_without_inventing_a_pytest_verdict(
     subject: Path,
     monkeypatch: pytest.MonkeyPatch,
     exit_status: int,
 ) -> None:
     command = ("cargo", "test", "--offline")
-    authority = AuthorityFacts(
-        locator="docs/architecture.md#Queue visibility",
-        modified_authority_paths=(),
-        target_decisions=(("src/lib.rs", "EXTEND"),),
-        paradigm="functional",
-        decisions=(),
-        obligations=(),
-        acceptance_oracle_locator="tests/queue_visibility.rs",
-        acceptance_paths=("tests/queue_visibility.rs",),
-        native_verification_argvs=(command,),
-        oracle_verification_index=0,
+    authority = execution_authority(
+        subject,
+        oracle_manifest(
+            "Observe queue visibility.",
+            oracle="tests/queue_visibility.rs",
+            targets=(("src/lib.rs", "EXTEND"),),
+            verification=(command,),
+            paradigm="functional",
+        ),
     )
     runner = DeliveryContinuationRunner()
     monkeypatch.setattr(
@@ -672,8 +757,15 @@ def test_unclassified_native_failure_is_recorded_without_inventing_a_pytest_verd
     monkeypatch.setattr(runner, "_junit_failures", lambda _report: ())
     result = runner._executed_oracle_set(subject, [(OBSERVATION, authority)])
     assert not isinstance(result, DeliveryOutcome)
-    assert result.refusal is None
+    assert result.refusal is not None
+    outcome = result.refusal.terminal
+    assert outcome.disposition is Disposition.Indeterminate
+    assert outcome.failure is not None
+    assert outcome.failure.what == "OracleRedUnobservable"
+    assert "DES-ORACLE-OBSERVATION:" in outcome.failure.how
     assert result.measured[0]["verdict"] == "indeterminate"
+    assert result.measured[0]["axis"] == "exit-status-only"
+    assert result.measured[0]["counts"] is None
     assert result.measured[0]["exit"] == exit_status
     assert result.measured[0]["argv"] == list(command)
     assert "native diagnostic" in result.measured[0]["diagnostic"]

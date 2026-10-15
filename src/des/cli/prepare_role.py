@@ -192,6 +192,7 @@ def main(argv=None):
         f"INPUT: {path}",
         f"INPUT-SHA256: {digest}",
         f"RESULT-SCHEMA: {result_schema}",
+        'RESULT-ENVELOPE: record the role output as {"structured_output": <object matching RESULT-SCHEMA>}',
         "HOST-ACTION: invoke the exact installed role with the permitted INPUT bytes; then record its result",
     ]
     if not recovery:

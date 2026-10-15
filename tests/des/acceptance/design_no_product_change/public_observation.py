@@ -270,9 +270,9 @@ class PublicJourney:
         )
         if case.product_change != "none":
             require(
-                "product_change" not in authority,
-                f"default declaration changed historical wire shape: {authority}",
-                "Canonicalize explicit required to the historical absent-field wire form.",
+                authority.get("product_change") == "required",
+                f"default declaration lost its normalized alternative: {authority}",
+                "Persist the explicit schema-2 required alternative.",
             )
             persisted_before = value_envelope.get("design_semantic_sha256")
             emitted_before = block(out, err).get("SEMANTIC-SHA256")
@@ -352,11 +352,7 @@ class PublicJourney:
                 "Normalize required before hashing and wire projection, preserving the historical omitted form.",
             )
         require(
-            authority["targets"]
-            == [
-                {"path": row["path"], "decision": row["decision"]}
-                for row in manifest["targets"]
-            ],
+            authority["targets"] == manifest["targets"],
             f"mutation population changed: {authority['targets']}",
             "Preserve target authority without promoting reuse candidates.",
         )
@@ -371,7 +367,17 @@ class PublicJourney:
         code, out, err = self.command(
             root,
             "record-preserved-oracle",
-            ["oracle", "--repo-root", str(root), "--value", "1", "--input", "-"],
+            [
+                "oracle",
+                "--repo-root",
+                str(root),
+                "--value",
+                "1",
+                "--baseline",
+                git(root, "rev-parse", "HEAD"),
+                "--input",
+                "-",
+            ],
             {
                 "structured_output": {
                     "outcome": "accepted",
@@ -434,9 +440,12 @@ class PublicJourney:
         require(
             isinstance(declared_population, list)
             and all(
-                isinstance(row, list)
-                and len(row) == 2
-                and all(isinstance(value, str) for value in row)
+                isinstance(row, dict)
+                and set(row) == {"path", "decision", "reason"}
+                and isinstance(row["path"], str)
+                and isinstance(row["decision"], str)
+                and isinstance(row["reason"], dict)
+                and set(row["reason"]) == {"ref"}
                 for row in declared_population
             )
             and isinstance(invoked_paths, list)
@@ -448,10 +457,15 @@ class PublicJourney:
             (row["path"], row["decision"]) for row in manifest["targets"]
         ]
         require(
-            sorted(tuple(row) for row in declared_population)
+            sorted((row["path"], row["decision"]) for row in declared_population)
             == sorted(expected_declared),
             f"complete canonical declaration {declared_population!r} differs from independently submitted {expected_declared!r}",
             "Preserve every declared target and decision without adding arbitrary or consultation-only targets.",
+        )
+        require(
+            declared_population == manifest["targets"],
+            f"target reasons changed: {declared_population!r}",
+            "Retain every target's explicit catalog reference.",
         )
         expected_population = [
             (row["path"], row["decision"])
@@ -465,9 +479,9 @@ class PublicJourney:
             "Authorize exactly the declared production paths, excluding the immutable oracle and supports.",
         )
         emitted_population = [
-            (path, decision)
-            for path, decision in declared_population
-            if path in invoked_paths
+            (row["path"], row["decision"])
+            for row in declared_population
+            if row["path"] in invoked_paths
         ]
         require(
             sorted(emitted_population) == sorted(expected_population),

@@ -125,8 +125,14 @@ def main(argv=None):
         return refuse(
             StepRefusal(
                 "RoleResultMalformed",
-                str(error),
-                "supply one structured host result bound to its prepared input",
+                "the host result has no outer structured_output envelope; "
+                "the RESULT-SCHEMA object must sit inside it"
+                if isinstance(error, KeyError) and error.args == ("structured_output",)
+                else str(error),
+                error.how
+                if isinstance(error, MalformedModelEnvelope) and error.how is not None
+                else 'supply one host result bound to its prepared input, shaped {"structured_output": '
+                "<object matching the RESULT-SCHEMA printed by des prepare-role>}",
             ),
             NOTHING_OWED,
         )
@@ -137,6 +143,8 @@ def main(argv=None):
             f"OUTCOME: {outcome}",
             f"RESULT: {path}",
             f"RESULT-SHA256: {digest}",
+            "OUTCOME-EFFECT: a recorded role outcome is a host observation, not an integration "
+            "admission gate; des integrate separately checks its own mechanical preconditions",
         ],
         successor_next(r, a.role, a.candidate),
     )

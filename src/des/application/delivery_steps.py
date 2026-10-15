@@ -37,6 +37,8 @@ from des.application.handover import (
     create_constructed_handover,
     design_basis_sha256,
     rewrite_handover,
+    shared_design_defects,
+    stored_candidate_handover,
     stored_handover,
 )
 from des.application.operational_document_producer import publish_operational_document
@@ -49,7 +51,11 @@ from des.domain.architecture_brief_resolver import (
     target_acceptance_support_conflict_text,
 )
 from des.domain.delivery_disposition import Disposition
-from des.domain.design_document import DesignDocument, DesignDocumentInvalid
+from des.domain.design_document import (
+    DesignDocument,
+    DesignDocumentInvalid,
+    resolve_inheritance,
+)
 from des.domain.discuss_contract import HOW_TO_FIX as DISCUSS_HOW_TO_FIX
 from des.domain.discuss_document import (
     DiscussDocument,
@@ -76,6 +82,7 @@ from des.ports.driven_ports.task_invocation_port import (
     MalformedModelEnvelope,
     ModelOutcome,
     ModelRun,
+    PreNormalizedDesign,
 )
 
 
@@ -109,34 +116,18 @@ class StepOutcome:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ReplacementModes:
-    """Which of the three EXCLUSIVE DESIGN replacement or recovery modes was asked.
-
-    They travel as one value because they are one decision: the step refuses when
-    more than one is set, in the step's own words -- «DESIGN replacement and
-    recovery modes are exclusive».
-
-    Deliberately NOT `DesignPublicationWidenings`, which carries these same three
-    beside `allow_untracked_recovery`: that fourth one is MEASURED by the step
-    from what the value already carries, and a caller-facing record holding it
-    would let a caller widen the one recovery the step exists to decide.
-
-    Keyword-only because all three members are `bool`: nothing here checks
-    annotations at runtime, so a positional transposition would ask for a legacy
-    migration where a bound replacement was meant.
-    """
+    """Explicit, exclusive bound replacement and unbound recovery."""
 
     replace_current: bool = False
-    migrate_legacy_rendering: bool = False
     replace_unbound: bool = False
 
     @property
     def conflicting(self) -> bool:
-        """Whether more than one of the three exclusive modes was asked for."""
+        """Whether incompatible replacement modes were requested."""
         return (
             sum(
                 (
                     self.replace_current,
-                    self.migrate_legacy_rendering,
                     self.replace_unbound,
                 )
             )
@@ -203,7 +194,9 @@ def _host_result(raw: str, role: str) -> ModelRun | StepOutcome:
             FailureDetail(
                 "HostResultMalformed",
                 str(error),
-                "supply the host specialist's complete structured_output JSON",
+                error.how
+                if isinstance(error, MalformedModelEnvelope) and error.how is not None
+                else "supply the host specialist's complete structured_output JSON",
             ),
         )
     if result.outcome is not ModelOutcome.Accepted:
@@ -235,9 +228,14 @@ def _retaining_bound_facts(
     survives, and starts a renamed or newly added observation unbound.
     """
     if bound is None:
-        return HandoverValue(supplied.observation, supplied.dependencies, None)
+        return HandoverValue(
+            supplied.observation, supplied.dependencies, None, change=supplied.change
+        )
     return replace(
-        bound, observation=supplied.observation, dependencies=supplied.dependencies
+        bound,
+        observation=supplied.observation,
+        dependencies=supplied.dependencies,
+        change=supplied.change,
     )
 
 
@@ -332,6 +330,20 @@ def _has_selection(value: HandoverValue) -> bool:
     return bool(value.acceptance) or value.acceptance_oracle is not None
 
 
+def _inheritance_refusal(defects: tuple[str, ...]) -> StepOutcome:
+    manifest = any(
+        defect.startswith("DesignInheritanceContradiction") for defect in defects
+    )
+    why = "\n".join(defects)
+    if manifest:
+        why += "\nUNRUN: bound-state reference checks (manifest did not decode)"
+    return _scope_refusal(
+        "InvalidDesignDocument" if manifest else "DesignInheritanceRefused",
+        why,
+        "correct the named references and resubmit des design --input -",
+    )
+
+
 def _selection_is(
     value: HandoverValue, revision: SelectedAcceptanceRevision, stored: StoredHandover
 ) -> bool:
@@ -385,15 +397,16 @@ class DeliverySteps:
         modes: ReplacementModes = _NO_REPLACEMENT,
         feature: DocumentScope | str | None = None,
     ) -> StepOutcome:
-        """Bind a caller-supplied closed v1 document without a provider turn."""
+        """Bind a caller-supplied normalized document without a provider turn."""
         try:
-            document = DesignDocument.from_json(raw)
+            document = DesignDocument.from_json(raw, value=position)
         except DesignDocumentInvalid as error:
             return StepOutcome(
                 Disposition.Refusal,
                 FailureDetail(
                     "InvalidDesignDocument",
-                    str(error),
+                    f"{len(error.defects)} diagnostic entries:\n"
+                    + "\n".join(error.defects),
                     error.how(_DESIGN_MANIFEST_HOW),
                 ),
             )
@@ -401,7 +414,7 @@ class DeliverySteps:
         if isinstance(lock, Blocked):
             return _from_blocked(lock)
         try:
-            stored = _graph(root)
+            stored = _graph(root, repair=modes.replace_current, position=position)
             if isinstance(stored, StepOutcome):
                 return stored
             ready = _value_at(stored, position)
@@ -419,33 +432,35 @@ class DeliverySteps:
                 and stored.shared_design.authority_locator == authority_locator
             ):
                 return _heading_owned("the shared feature DESIGN")
-            if isinstance(ready.authority, DesignFacts) and (
-                ready.authority.authority_locator
-                and ready.authority.authority_locator != authority_locator
-            ):
-                return StepOutcome(
-                    Disposition.Refusal,
-                    FailureDetail(
+            previous_locator = (
+                ready.authority
+                if isinstance(ready.authority, str)
+                else ready.authority.authority_locator
+                if ready.authority is not None
+                else None
+            )
+            if previous_locator and previous_locator != authority_locator:
+                old = isinstance(ready.authority, (PreNormalizedDesign, str))
+                if not (
+                    old
+                    and modes.replace_current
+                    and previous_locator.partition("#")[0] == destination
+                ):
+                    return _scope_refusal(
                         "DesignAuthorityIdentityMismatch",
-                        "the manifest heading does not equal this value's persisted "
-                        "DESIGN authority locator",
-                        "keep the original configured path and heading for this value",
-                    ),
-                )
+                        "the selected scope must retain its bound destination and compiled identity",
+                        "keep the bound destination and use --replace-current to rebind old authority",
+                    )
             if modes.conflicting:
                 return StepOutcome(
                     Disposition.Refusal,
                     FailureDetail(
                         "InvalidDesignMigration",
                         "DESIGN replacement and recovery modes are exclusive",
-                        "choose one of bound replacement, legacy migration, or unbound recovery",
+                        "choose bound replacement or unbound recovery",
                     ),
                 )
-            if modes.replace_current and (
-                not isinstance(ready.authority, DesignFacts)
-                or not ready.authority.authority_locator
-                or ready.authority.authority_locator != authority_locator
-            ):
+            if modes.replace_current and not previous_locator:
                 return StepOutcome(
                     Disposition.Refusal,
                     FailureDetail(
@@ -453,15 +468,6 @@ class DeliverySteps:
                         "--replace-current requires the selected value's persisted "
                         "DESIGN authority locator",
                         "first bind this value through the closed DESIGN constructor",
-                    ),
-                )
-            if modes.migrate_legacy_rendering and ready.authority is not None:
-                return StepOutcome(
-                    Disposition.Refusal,
-                    FailureDetail(
-                        "DesignLegacyMigrationNotRequired",
-                        "the selected value already has persisted DESIGN facts",
-                        "use ordinary DESIGN correction only when the semantic facts change",
                     ),
                 )
             if modes.replace_unbound and ready.authority is not None:
@@ -474,6 +480,17 @@ class DeliverySteps:
                     ),
                 )
             facts = document.facts_at(authority_locator)
+            resolved = resolve_inheritance(
+                stored.shared_design.design if stored.shared_design else None,
+                (
+                    value.authority
+                    for index, value in enumerate(stored.values, 1)
+                    if index != position and isinstance(value.authority, DesignFacts)
+                ),
+                facts,
+            )
+            if isinstance(resolved, tuple):
+                return _inheritance_refusal(resolved)
             allow_untracked_recovery = ready.authority is None or (
                 ready.authority == facts
                 and ready.design_semantic_sha256 == document.semantic_sha256
@@ -485,16 +502,10 @@ class DeliverySteps:
                 widenings=DesignPublicationWidenings(
                     allow_untracked_recovery=allow_untracked_recovery,
                     replace_current=modes.replace_current,
-                    migrate_legacy_rendering=modes.migrate_legacy_rendering,
                     replace_unbound=modes.replace_unbound,
                 ),
                 binding=DesignAuthorityBinding(
-                    authority_locator=(
-                        ready.authority.authority_locator
-                        if isinstance(ready.authority, DesignFacts)
-                        and ready.authority.authority_locator
-                        else None
-                    ),
+                    authority_locator=previous_locator,
                     published_headings=bound_authority_headings(stored, destination),
                 ),
             )
@@ -527,7 +538,7 @@ class DeliverySteps:
                     f"DOCUMENT-SHA256: {published.digest}",
                     f"SEMANTIC-SHA256: {document.semantic_sha256}",
                     f"DESIGN-FACTS: {document.facts_json(facts)}",
-                    "SCHEMA-VERSION: 1",
+                    "SCHEMA-VERSION: 2",
                 ),
             )
         finally:
@@ -543,13 +554,14 @@ class DeliverySteps:
     ) -> StepOutcome:
         """Bind the one DESIGN section shared by every value, buying no turn."""
         try:
-            document = DesignDocument.from_json(raw)
+            document = DesignDocument.from_json(raw, shared=True)
         except DesignDocumentInvalid as error:
             return StepOutcome(
                 Disposition.Refusal,
                 FailureDetail(
                     "InvalidDesignDocument",
-                    str(error),
+                    f"{len(error.defects)} diagnostic entries:\n"
+                    + "\n".join(error.defects),
                     error.how(_DESIGN_MANIFEST_HOW),
                 ),
             )
@@ -557,7 +569,7 @@ class DeliverySteps:
         if isinstance(lock, Blocked):
             return _from_blocked(lock)
         try:
-            stored = _graph(root)
+            stored = _graph(root, repair=modes.replace_current)
             if isinstance(stored, StepOutcome):
                 return stored
             if feature is None and not stored.has_explicit_scope:
@@ -586,22 +598,23 @@ class DeliverySteps:
             if document.heading in bound_value_headings(stored, destination):
                 return _heading_owned("a value of this Request")
             if bound is not None and bound.authority_locator != locator:
-                return StepOutcome(
-                    Disposition.Refusal,
-                    FailureDetail(
+                if not (
+                    isinstance(bound.design, PreNormalizedDesign)
+                    and modes.replace_current
+                    and bound.authority_locator.partition("#")[0] == destination
+                ):
+                    return _scope_refusal(
                         "DesignAuthorityIdentityMismatch",
-                        "the manifest heading does not equal the persisted shared "
-                        "DESIGN authority locator",
-                        "keep the original configured path and heading for the shared design",
-                    ),
-                )
+                        "shared replacement must retain the bound destination and compiled identity",
+                        "keep the destination and use --replace-current to rebind old shared authority",
+                    )
             if modes.conflicting:
                 return StepOutcome(
                     Disposition.Refusal,
                     FailureDetail(
                         "InvalidDesignMigration",
                         "DESIGN replacement and recovery modes are exclusive",
-                        "choose one of bound replacement, legacy migration, or unbound recovery",
+                        "choose bound replacement or unbound recovery",
                     ),
                 )
             if bound is None and modes.replace_current:
@@ -611,15 +624,6 @@ class DeliverySteps:
                         "DesignAuthorityIdentityMismatch",
                         "--replace-current requires an already bound shared design",
                         "bind the shared design first, without --replace-current",
-                    ),
-                )
-            if modes.migrate_legacy_rendering and bound is not None:
-                return StepOutcome(
-                    Disposition.Refusal,
-                    FailureDetail(
-                        "DesignLegacyMigrationNotRequired",
-                        "the shared DESIGN already has persisted facts",
-                        "use ordinary DESIGN correction only when the semantic facts change",
                     ),
                 )
             if modes.replace_unbound and bound is not None:
@@ -645,6 +649,9 @@ class DeliverySteps:
                     ),
                 )
             facts = document.facts_at(locator)
+            defects = shared_design_defects(stored, facts)
+            if defects:
+                return _inheritance_refusal(defects)
             published = publish_design_document(
                 root,
                 destination,
@@ -652,7 +659,6 @@ class DeliverySteps:
                 widenings=DesignPublicationWidenings(
                     allow_untracked_recovery=bound is None or bound.design == facts,
                     replace_current=modes.replace_current,
-                    migrate_legacy_rendering=modes.migrate_legacy_rendering,
                     replace_unbound=modes.replace_unbound,
                 ),
                 binding=DesignAuthorityBinding(
@@ -812,13 +818,14 @@ class DeliverySteps:
         finally:
             lock.release()
 
-    def discuss_document(
+    def discuss_document(  # noqa: PLR0913 - explicit command scope and authority CAS operands
         self,
         root: Path,
         raw: str,
         *,
         project: bool,
         replace_current: bool = False,
+        expected_authority_sha256: str | None = None,
         feature: DocumentScope | str | None = None,
     ) -> StepOutcome:
         """Construct the DISCUSS authority, or explicitly correct the current one.
@@ -829,6 +836,16 @@ class DeliverySteps:
         unchanged, and only an observation the supplied graph drops or renames
         loses the facts that were keyed to it.
         """
+        if expected_authority_sha256 is not None and not replace_current:
+            return StepOutcome(
+                Disposition.Refusal,
+                FailureDetail(
+                    "InvalidDiscussInput",
+                    "--expected-authority-sha256 is valid only with --replace-current",
+                    "supply --replace-current with --expected-authority-sha256 "
+                    "using the current DISCUSS DOCUMENT-SHA256",
+                ),
+            )
         if project == (feature is not None):
             return _scope_refusal(
                 "DocumentScopeMissing" if not project else "DocumentScopeConflict",
@@ -853,19 +870,49 @@ class DeliverySteps:
             stored = stored_handover(root)
             if isinstance(stored, Blocked):
                 return _from_blocked(stored)
-            if replace_current and (
-                stored is None or stored.request != document.request
-            ):
-                return StepOutcome(
-                    Disposition.Refusal,
-                    FailureDetail(
-                        "DiscussAuthorityIdentityMismatch",
-                        "--replace-current requires a persisted graph carrying this "
-                        "Request",
-                        "construct this Request through des discuss before correcting "
-                        "it",
-                    ),
-                )
+            persisted_digest = (
+                stored.product_authority.sha256
+                if stored is not None and stored.product_authority is not None
+                else None
+            )
+            correction_how = (
+                "rerun des po or des discuss with the persisted scope, --input - "
+                f"--replace-current --expected-authority-sha256 {persisted_digest}"
+                if persisted_digest is not None
+                else "construct or rebind the unchanged Request through des po or "
+                "des discuss --input - with its persisted scope before correcting it"
+            )
+            if replace_current:
+                if expected_authority_sha256 is not None:
+                    if stored is None or persisted_digest != expected_authority_sha256:
+                        return StepOutcome(
+                            Disposition.Refusal,
+                            FailureDetail(
+                                "DiscussAuthorityIdentityMismatch",
+                                f"supplied authority digest {expected_authority_sha256!r} "
+                                "does not identify a persisted graph with product authority; "
+                                f"persisted digest: {persisted_digest or 'none bound'}",
+                                correction_how,
+                            ),
+                        )
+                    defect = DeliveryContinuationRunner.product_authority_defect(
+                        root, stored
+                    )
+                    if defect is not None:
+                        return StepOutcome(
+                            Disposition.Refusal,
+                            FailureDetail(defect.what, defect.why, defect.how),
+                        )
+                elif stored is None or stored.request != document.request:
+                    return StepOutcome(
+                        Disposition.Refusal,
+                        FailureDetail(
+                            "DiscussAuthorityIdentityMismatch",
+                            "--replace-current without an expected authority digest "
+                            "requires a persisted graph carrying this Request",
+                            correction_how,
+                        ),
+                    )
             requested_scope = Project() if project else legacy_scope(feature)
             scope_changed = (
                 replace_current
@@ -887,10 +934,13 @@ class DeliverySteps:
                 and (
                     stored.request != document.request
                     or tuple(
-                        (value.observation, value.dependencies)
+                        (value.observation, value.dependencies, value.change)
                         for value in stored.values
                     )
-                    != tuple((value.observation, value.dependencies) for value in graph)
+                    != tuple(
+                        (value.observation, value.dependencies, value.change)
+                        for value in graph
+                    )
                 )
             ):
                 return StepOutcome(
@@ -898,7 +948,9 @@ class DeliverySteps:
                     FailureDetail(
                         "DiscussHandoverConflict",
                         "stored and supplied request/value graphs are incompatible; supply --replace-current to correct the persisted graph",
-                        "resume the stored graph or rerun with --replace-current",
+                        correction_how
+                        if stored.request != document.request
+                        else "resume the stored graph or rerun with --replace-current",
                     ),
                 )
             if replace_current:
@@ -1039,6 +1091,14 @@ class DeliverySteps:
                         "supply acceptance facts only for existing observations",
                     ),
                 )
+            for position, value in enumerate(stored.values, start=1):
+                if value.observation not in incoming:
+                    continue
+                opaque = DeliveryContinuationRunner.design_consumption_defect(
+                    stored, position
+                )
+                if opaque is not None:
+                    return _from_blocked(opaque)
             for supplied in document.values:
                 value = stored_by_observation[supplied.observation]
                 if (
@@ -1087,6 +1147,14 @@ class DeliverySteps:
                         "acceptance-owned and not a DESIGN target",
                     ),
                 )
+            # Decide every value before any document byte is published, so a
+            # refused or failed selection leaves no acceptance brief behind.
+            values = tuple(
+                _selected(value, incoming[value.observation].revision, stored)
+                if value.observation in incoming
+                else value
+                for value in stored.values
+            )
             prior_brief = AcceptanceBrief(
                 tuple(_published(value) for value in stored.values if value.acceptance)
             )
@@ -1121,12 +1189,6 @@ class DeliverySteps:
             )
             if isinstance(published, Blocked):
                 return _from_blocked(published)
-            values = tuple(
-                _selected(value, incoming[value.observation].revision, stored)
-                if value.observation in incoming
-                else value
-                for value in stored.values
-            )
             from des.application.handover import rewrite_handover
 
             updated = (
@@ -1157,10 +1219,13 @@ class DeliverySteps:
         finally:
             lock.release()
 
-    def oracle(self, root: Path, position: int, raw: str) -> StepOutcome:
+    def oracle(
+        self, root: Path, position: int, raw: str, *, baseline: str | None = None
+    ) -> StepOutcome:
         """Record a host author's result and measure its existing public oracle."""
         return self._locked_native(
-            root, lambda runner: self._oracle(runner, root, position, raw)
+            root,
+            lambda runner: self._oracle(runner, root, position, raw, baseline=baseline),
         )
 
     def craft(self, root: Path, position: int, raw: str) -> StepOutcome:
@@ -1178,7 +1243,7 @@ class DeliverySteps:
     def _prefactoring(
         self, runner: DeliveryContinuationRunner, root: Path, position: int, phase: str
     ) -> StepOutcome:
-        stored = _graph(root)
+        stored = _graph(root, consuming=True, position=position)
         if isinstance(stored, StepOutcome):
             return stored
         ready = _value_at(stored, position)
@@ -1217,6 +1282,14 @@ class DeliverySteps:
             verification=True,
         )
 
+    def reverify_integrated(self, root: Path, candidate: str) -> StepOutcome:
+        """Explicitly measure HEAD using a retained, never revived, graph."""
+        return self._locked_native(
+            root,
+            lambda runner: self._reverify_integrated(runner, root, candidate),
+            verification=True,
+        )
+
     def integrate(self, root: Path, candidate: str) -> StepOutcome:
         """Apply the explicit candidate identity, compare-and-swap and cleanup operation."""
         return self._locked_native(
@@ -1226,9 +1299,15 @@ class DeliverySteps:
     # ----------------------------------------------------------------- inner
 
     def _oracle(
-        self, runner: DeliveryContinuationRunner, root: Path, position: int, raw: str
+        self,
+        runner: DeliveryContinuationRunner,
+        root: Path,
+        position: int,
+        raw: str,
+        *,
+        baseline: str | None = None,
     ) -> StepOutcome:
-        stored = _graph(root)
+        stored = _graph(root, consuming=True, position=position)
         if isinstance(stored, StepOutcome):
             return stored
         ready = _value_at(stored, position)
@@ -1242,10 +1321,23 @@ class DeliverySteps:
         result = _host_result(raw, "nw-acceptance-designer")
         if isinstance(result, StepOutcome):
             return result
-        measurement = runner.measure_oracle(root, SelectedValue(stored, ready, design))
+        measurement = runner.measure_oracle(
+            root,
+            SelectedValue(stored, ready, design),
+            explicit=baseline,
+            request_base=None,
+        )
         facts = (
             f"VALUE-{position}: {json.dumps(ready.observation, ensure_ascii=False)}",
             f"ORACLE: {design.acceptance_oracle_locator}",
+            *(
+                (
+                    f"ORACLE-BASELINE: {measurement.baseline[0].sha} "
+                    f"source={measurement.baseline[1].value}",
+                )
+                if measurement.baseline is not None
+                else ()
+            ),
             *_oracle_red_facts(measurement.measured),
         )
         if measurement.refusal is not None:
@@ -1262,7 +1354,7 @@ class DeliverySteps:
     def _craft(
         self, runner: DeliveryContinuationRunner, root: Path, position: int, raw: str
     ) -> StepOutcome:
-        stored = _graph(root)
+        stored = _graph(root, consuming=True, position=position)
         if isinstance(stored, StepOutcome):
             return stored
         ready = _value_at(stored, position)
@@ -1294,6 +1386,75 @@ class DeliverySteps:
             diagnostic=result.diagnostic,
         )
 
+    def _reverify_integrated(
+        self, runner: DeliveryContinuationRunner, root: Path, candidate: str
+    ) -> StepOutcome:
+        stored = stored_candidate_handover(root, candidate)
+        if isinstance(stored, Blocked):
+            return _from_blocked(stored)
+        if stored is None:
+            return StepOutcome(
+                Disposition.Refusal,
+                FailureDetail(
+                    "IntegratedCandidateUnknown",
+                    f"no retained candidate handover for {candidate} in {root}",
+                    "pass the INTEGRATED sha printed by des integrate in this worktree; "
+                    f"when a Request is active use des verify --repo-root {root}",
+                ),
+            )
+        head = runner.integrated_head(root, candidate)
+        if isinstance(head, DeliveryOutcome):
+            return _from_outcome(head, None)
+        prepared = _prepared(runner, root, stored)
+        if isinstance(prepared, StepOutcome):
+            return StepOutcome(
+                Disposition.Indeterminate,
+                FailureDetail(
+                    "IntegratedCandidateUnobservable",
+                    f"{prepared.failure.what}: {prepared.failure.why}",
+                    prepared.failure.how,
+                ),
+            )
+        verified = runner.reverify_integrated(
+            root, stored, prepared, candidate, head=head
+        )
+        maintenance = (
+            ()
+            if runner.workspace_maintenance is None
+            else runner.workspace_maintenance.report
+        )
+        if isinstance(verified, DeliveryOutcome):
+            return StepOutcome(
+                verified.disposition, verified.failure, facts=maintenance
+            )
+        head, evidence = verified
+        locator = runner.native_evidence_locator
+        digest = runner.native_evidence_sha256
+        if locator is None or digest is None:
+            return StepOutcome(
+                Disposition.Indeterminate,
+                FailureDetail(
+                    "NativeEvidenceUnretained",
+                    f"HEAD {head} completed native verification but its observation could not be persisted",
+                    "restore write access to .nwave/des/logs/native and verify again",
+                ),
+            )
+        return StepOutcome(
+            Disposition.Success,
+            facts=(
+                f"INTEGRATED-CANDIDATE: {candidate}",
+                f"REVERIFIED: {head}",
+                f"NATIVE-EVIDENCE: {locator}",
+                f"NATIVE-EVIDENCE-SHA256: {digest}",
+                *(
+                    f"NATIVE: exit={item.exit_status} origin={item.origin} "
+                    f"argv={' '.join(item.argv)}"
+                    for item in evidence
+                ),
+                *maintenance,
+            ),
+        )
+
     def _verify(
         self,
         runner: DeliveryContinuationRunner,
@@ -1301,7 +1462,7 @@ class DeliverySteps:
         *,
         fresh: bool = False,
     ) -> StepOutcome:
-        stored = _graph(root)
+        stored = _graph(root, consuming=True)
         if isinstance(stored, StepOutcome):
             return stored
         recorded = runner.verified_candidate(root, stored)
@@ -1506,7 +1667,13 @@ def _value_facts(stored: StoredHandover) -> tuple[str, ...]:
     )
 
 
-def _graph(root: Path) -> StoredHandover | StepOutcome:
+def _graph(
+    root: Path,
+    *,
+    consuming: bool = False,
+    position: int | None = None,
+    repair: bool = False,
+) -> StoredHandover | StepOutcome:
     """The persisted graph a per-value step operates on, or why there is none.
 
     An absent graph is a REFUSAL and not a crash: the orchestrator invoked a
@@ -1526,6 +1693,20 @@ def _graph(root: Path) -> StoredHandover | StepOutcome:
                 "construct host product facts with `des po --input -` and an explicit scope",
             ),
         )
+    if consuming:
+        defect = DeliveryContinuationRunner.design_consumption_defect(stored, position)
+        if defect is not None:
+            return _from_blocked(defect)
+    if repair:
+        authority = (
+            stored.shared_design.design
+            if position is None and stored.shared_design
+            else stored.values[position - 1].authority
+            if position is not None and 1 <= position <= len(stored.values)
+            else None
+        )
+        if isinstance(authority, (str, PreNormalizedDesign)):
+            return stored
     defect = DeliveryContinuationRunner.product_authority_defect(root, stored)
     if defect is not None:
         return _from_blocked(defect)

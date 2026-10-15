@@ -13,6 +13,10 @@ if TYPE_CHECKING:
 _SKILL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 _INVOCATION = re.compile(r"Invoke (?:ONE )?Skill\(([A-Za-z0-9][A-Za-z0-9._-]*)\)")
 _PREFIXES = ("~/.claude/skills/", "~/.agents/skills/")
+# "Read `des <subcommand> --help`" names a command to execute, not a file.
+_COMMAND_READ = re.compile(r"\bRead (`des(?: [a-z][a-z-]*)+ --help`)")
+# "Read `<skill-id>`" names a skill by id; it resolves to that skill's file.
+_SKILL_ID_READ = re.compile(r"\bRead `([A-Za-z0-9][A-Za-z0-9._-]*)`")
 _CONDITIONAL_INDEX = re.compile(
     r"<!-- GENERATED:role-skill-loading START.*?"
     r"<!-- GENERATED:role-skill-loading END -->\n?",
@@ -138,6 +142,15 @@ def _portable_reads(text: str, directory: Path) -> str:
     text = _INVOCATION.sub(
         lambda match: f"Read {directory / match[1] / 'SKILL.md'}", text
     )
+    text = _COMMAND_READ.sub(lambda match: f"Run {match[1]}", text)
+    text = _SKILL_ID_READ.sub(
+        lambda match: (
+            f"Read {directory / match[1] / 'SKILL.md'}"
+            if (directory / match[1] / "SKILL.md").is_file()
+            else match[0]
+        ),
+        text,
+    )
     for prefix in _PREFIXES:
         text = text.replace(prefix, str(directory) + "/")
     return text
@@ -177,6 +190,8 @@ def _expand(spec_path: Path) -> str:
     if (
         not skills
         and not _INVOCATION.search(text)
+        and not _COMMAND_READ.search(text)
+        and not _SKILL_ID_READ.search(text)
         and not any(p in text for p in _PREFIXES)
     ):
         return text

@@ -1,0 +1,56 @@
+{
+  "frozen_strip_sha256": "24a5dd5d7897d1c7412e0460d1f59beccf32118736f3147fb862297dd257dda6",
+  "guard_sha256": {
+    "tests/build/acceptance/test_strip_private_agents.py": "e7425fcd0f851c253cacfe2f5513ebbd165113294807bbfbd64d2bf9d42ffd08",
+    "tests/build/acceptance/test_strip_scrubs_removed_skill_references.py": "e17d9c02da60ea63f83eac083ebad5ccbfa0db404aeadc47bdcb7d2deab4b210",
+    "tests/build/test_release_artifact_privacy_gates.py": "3aa212d3eb8246fb4253916b0a3ab53fb9e091b0e99500ff233f0f1ff352a4c9",
+    "tests/build/unit/test_is_public_skill_call_sites_pass_private_skills.py": "f2553774df871bc4cdbb56f8f27d500bc6b133387cbff61e970b29352d871848",
+    "tests/installer/acceptance/private_skill_leak/steps/test_wheel_privacy.py": "8a759e82a2817ae4e525a5157fcbd133cc09b4a6d24055ea8c315187e730b757",
+    "tests/plugins/unit/test_agent_catalog.py": "406b59300701c0149e2a61ed0edb6b5eaceaddc129c0a39d5fc25331177429c8"
+  },
+  "hash_encoding": "key-sorted compact UTF-8 JSON; tree rows are path/kind/content-sha256",
+  "cases": {
+    "original-R@5f882": {
+      "source_revision": "5f882ba20da26d03312e1dc8736501cd8009488e",
+      "input": {
+        "catalog_sha256": "0c3dbfaeaaa74d09167317f4f90bb3751857c0507ed94ce3b890c8bb204800be",
+        "file_count": 315,
+        "optional_registry": "absent",
+        "scopes": [
+          "nWave/framework-catalog.yaml",
+          "nWave/agents",
+          "nWave/skills"
+        ],
+        "sha256": "352a699f6a93b701ea949f3c8c160f8505422cf254ac8311d6e7e633c7b1e495"
+      },
+      "output": {
+        "entry_count": 353,
+        "file_count": 194,
+        "sha256": "440b21e8374087483c2c92c1cf2d264087ad36839d354424487153ebb6660613"
+      },
+      "removed_report_sha256": "0b02f3297e5bbe0b2a28d6ad5cee9ede2eaa71729af0cf01b54e1f43c9befc07"
+    },
+    "candidate-premove@aaacec7": {
+      "source_revision": "aaacec7e8",
+      "input": {
+        "catalog_sha256": "0c3dbfaeaaa74d09167317f4f90bb3751857c0507ed94ce3b890c8bb204800be",
+        "file_count": 315,
+        "optional_registry": "absent",
+        "scopes": [
+          "nWave/framework-catalog.yaml",
+          "nWave/agents",
+          "nWave/skills"
+        ],
+        "sha256": "02455ed4783a25ab42f78deec9684b147fa0f1022f0b210ba85d2aac441943f0"
+      },
+      "output": {
+        "entry_count": 353,
+        "file_count": 194,
+        "sha256": "93a932fabeee23f7079f772d683e8ff0cd4aca59f1febf20e90b56a4e08e5c1d"
+      },
+      "removed_report_sha256": "0b02f3297e5bbe0b2a28d6ad5cee9ede2eaa71729af0cf01b54e1f43c9befc07"
+    }
+  },
+  "privacy_base": "5f882ba20da26d03312e1dc8736501cd8009488e",
+  "schema_version": 2
+}

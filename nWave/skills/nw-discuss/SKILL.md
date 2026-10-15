@@ -31,6 +31,15 @@ The LLM owns the semantic values, their supplied order and dependencies; each
 dependency list names already preceding values in that same supplied order. DES
 renders Markdown and projects those values to the typed handover; it does not
 write product Markdown from the LLM or invoke a provider. `NEXT` is advisory.
+Each value may record `change: {"type": TYPE, "description": "Describe the change"}`:
+TYPE is `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`,
+`chore`, or `revert`; description is one non-empty line starting with a letter.
+The PO decides the typed intent; software never classifies Request or observation
+prose. The first recorded intent in canonical value order supplies the batch's
+candidate subject. Omission is explicitly unrecorded: without any recorded intent
+the subject uses `chore` and the first observation, and the body marks
+`change-intent unrecorded` whenever any batch value lacks intent. Changing a
+persisted intent requires the explicit `--replace-current` correction below.
 Public results are `Success`, `Refusal`, `Retry`, and `Indeterminate`.
 
 Project and feature documents are separate. Scope is mandatory: use `--project`
@@ -55,8 +64,23 @@ printf '%s' "$DISCUSS_JSON" | des discuss --repo-root ROOT --feature FEATURE_ID 
 The replacement is selective: every DESIGN authority and acceptance projection
 already bound to an observation that survives the correction is preserved, and
 only an observation the corrected graph drops or renames loses the facts keyed
-to it. The correction refuses before writing when no persisted graph carries
-this Request. Do not imply replacement without that flag.
+to it. Without an expected authority digest, the correction refuses before writing
+when no persisted graph carries this Request. Do not imply replacement without
+that flag.
+
+To correct the Request text itself, use the `DOCUMENT-SHA256` printed by the
+current successful DISCUSS/PO constructor (the digest bound in
+`.nwave/des/handover.json` as `product_authority.sha256`):
+```bash
+printf '%s' "$DISCUSS_JSON" | des discuss --repo-root ROOT --feature FEATURE_ID --input - --replace-current --expected-authority-sha256 "$DOCUMENT_SHA256"
+```
+`des po` accepts the identical flags; use the persisted scope (`--project`,
+`--epic ID`, `--feature ID`, or `--slice FEATURE_ID SLICE_ID`). The expected
+digest is valid only with `--replace-current`. A changed Request without a
+matching digest, a missing persisted graph or authority binding, or drift in
+the bound brief refuses before writing. For an unbound legacy graph, first
+rerun the unchanged Request with plain `--input -` to bind its authority.
+Never hand-edit or quarantine the handover or brief to bypass a refusal.
 
 ## Shared human view
 
