@@ -32,8 +32,8 @@ else:
 # Ensure project root is importable for the privacy-strip dependency when this
 # script is invoked standalone from a wheel-build sandbox.
 _project_root = str(Path(__file__).resolve().parent.parent.parent)
-if _project_root not in sys.path:
-    sys.path.insert(0, _project_root)
+# First, even when a .pth already lists it later: an installed stale `scripts` must not win.
+sys.path[:] = [_project_root] + [p for p in sys.path if p != _project_root]
 
 # UTILITY_SCRIPTS (scripts/build_dist.py) is the single source of truth for
 # which top-level scripts must ship to users; the wheel force-include map is

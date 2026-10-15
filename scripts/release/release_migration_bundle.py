@@ -19,8 +19,8 @@ import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+# First, even when a .pth already lists it later: an installed stale `scripts` must not win.
+sys.path[:] = [str(ROOT)] + [p for p in sys.path if p != str(ROOT)]
 
 
 def refuse(x: str) -> None:

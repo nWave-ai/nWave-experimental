@@ -53,8 +53,8 @@ from pathlib import Path
 # repository root.  Match the canonical release-script bootstrap before using
 # the shared public-wheel projection seam.
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+# First, even when a .pth already lists it later: an installed stale `scripts` must not win.
+sys.path[:] = [str(REPO_ROOT)] + [p for p in sys.path if p != str(REPO_ROOT)]
 
 from scripts.release.experimental_migration_decision import (  # noqa: E402
     DecisionRefusal,

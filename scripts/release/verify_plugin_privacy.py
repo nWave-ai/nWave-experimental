@@ -8,8 +8,8 @@ from pathlib import Path
 
 
 _project_root = str(Path(__file__).resolve().parent.parent.parent)
-if _project_root not in sys.path:
-    sys.path.insert(0, _project_root)
+# First, even when a .pth already lists it later: an installed stale `scripts` must not win.
+sys.path[:] = [_project_root] + [p for p in sys.path if p != _project_root]
 
 from scripts.release.verify_wheel_privacy import _extract_archive  # noqa: E402
 from scripts.shared.agent_catalog import (  # noqa: E402

@@ -28,8 +28,8 @@ from pathlib import Path
 
 # Ensure project root is in sys.path for standalone CLI invocation
 _project_root = str(Path(__file__).resolve().parent.parent.parent)
-if _project_root not in sys.path:
-    sys.path.insert(0, _project_root)
+# First, even when a .pth already lists it later: an installed stale `scripts` must not win.
+sys.path[:] = [_project_root] + [p for p in sys.path if p != _project_root]
 
 from scripts.shared.agent_catalog import (  # noqa: E402
     CatalogNotFoundError,
