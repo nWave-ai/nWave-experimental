@@ -69,6 +69,8 @@ sections:
       - docs/guides/installation-guide
       - docs/guides/offline-install.md
       - docs/guides/installing-codex.md
+      - docs/guides/installing-cursor.md
+      - docs/guides/installing-omp.md
       - docs/guides/plugin-migration-guide
       - docs/guides/plugin-use-cases
       - docs/guides/nwave-tool-plugins.md

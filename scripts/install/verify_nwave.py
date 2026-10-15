@@ -9,6 +9,9 @@ without running the full installer. It checks:
 - Essential command files (review.md, devops.md, etc.)
 - Skills file counts in ~/.claude/skills/nw/
 - DES module presence in ~/.claude/lib/python/des/
+- Codex DES hook, agents (181 skills, 36 agents) [--platform codex]
+- Cursor DES hook [--platform cursor]
+- Devin skills (181 skills) [--platform devin]
 
 The script supports multiple output modes:
 - Terminal: Human-readable colored output (default)
@@ -20,8 +23,16 @@ Exit codes:
 - 1: Verification failed, missing files or manifest
 
 Usage:
-    # Default terminal output
+    # Default terminal output (Claude Code only)
     python verify_nwave.py
+
+    # Verify all supported platforms
+    python verify_nwave.py --platform all
+
+    # Verify a specific platform
+    python verify_nwave.py --platform codex
+    python verify_nwave.py --platform cursor
+    python verify_nwave.py --platform devin
 
     # JSON output for automated tools
     python verify_nwave.py --json
@@ -47,6 +58,12 @@ try:
         InstallationVerifier,
         VerificationResult,
     )
+    from scripts.install.plugins.base import InstallContext, PluginResult
+    from scripts.install.plugins.codex_des_plugin import CodexDESPlugin
+    from scripts.install.plugins.codex_skills_plugin import CodexSkillsPlugin
+    from scripts.install.plugins.codex_agents_plugin import CodexAgentsPlugin
+    from scripts.install.plugins.cursor_des_plugin import CursorDESPlugin
+    from scripts.install.plugins.devin_skills_plugin import DevinSkillsPlugin
     from scripts.install.rich_console import RichLogger
 except ImportError:
     from context_detector import is_claude_code_context
@@ -56,7 +73,80 @@ except ImportError:
         InstallationVerifier,
         VerificationResult,
     )
+    from plugins.base import InstallContext, PluginResult
+    from plugins.codex_des_plugin import CodexDESPlugin
+    from plugins.codex_skills_plugin import CodexSkillsPlugin
+    from plugins.codex_agents_plugin import CodexAgentsPlugin
+    from plugins.cursor_des_plugin import CursorDESPlugin
+    from plugins.devin_skills_plugin import DevinSkillsPlugin
     from rich_console import RichLogger
+
+
+_NATIVE_PLATFORMS = ("codex", "cursor", "devin")
+
+
+def _project_root() -> Path:
+    """Return the nWave-experimental repo root (parent of scripts/install/)."""
+    return Path(__file__).resolve().parent.parent.parent
+
+
+def _make_verify_context(claude_dir: Path, platform: str, logger: object) -> InstallContext:
+    """Build a minimal InstallContext sufficient for plugin verify() calls."""
+    repo_root = _project_root()
+    # Mirror NWaveInstaller: prefer nWave/ (dev checkout), fall back to dist/
+    framework_source = repo_root / "nWave"
+    if not framework_source.exists():
+        framework_source = repo_root / "dist"
+    return InstallContext(
+        claude_dir=claude_dir,
+        scripts_dir=repo_root / "scripts",
+        templates_dir=claude_dir / "templates",
+        logger=logger,
+        project_root=repo_root,
+        framework_source=framework_source,
+        target_platforms={platform},
+    )
+
+
+def verify_native_platform(
+    platform: str,
+    claude_dir: Path,
+    logger: object,
+) -> list[PluginResult]:
+    """Run verify() for each plugin relevant to a native platform.
+
+    Returns a list of PluginResult — one per plugin checked.
+    """
+    ctx = _make_verify_context(claude_dir, platform, logger)
+    results: list[PluginResult] = []
+    if platform == "codex":
+        results.append(CodexSkillsPlugin().verify(ctx))
+        results.append(CodexAgentsPlugin().verify(ctx))
+        results.append(CodexDESPlugin().verify(ctx))
+    elif platform == "cursor":
+        results.append(CursorDESPlugin().verify(ctx))
+    elif platform == "devin":
+        results.append(DevinSkillsPlugin().verify(ctx))
+    return results
+
+
+def format_native_results(
+    platform: str, results: list[PluginResult], verbose: bool = False
+) -> str:
+    """Format native-platform plugin verify results for terminal output."""
+    lines = [f"\n  Platform: {platform}"]
+    all_ok = all(r.success for r in results)
+    for r in results:
+        icon = "✅" if r.success else "❌"
+        lines.append(f"    {icon} {r.plugin_name}: {r.message}")
+        if not r.success and r.errors:
+            for e in r.errors:
+                lines.append(f"        ⚠️  {e}")
+    if all_ok:
+        lines.append(f"  ✅ {platform} verification passed")
+    else:
+        lines.append(f"  ❌ {platform} verification failed")
+    return "\n".join(lines)
 
 
 def parse_args(args: list[str] | None = None) -> argparse.Namespace:
@@ -81,6 +171,15 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         "--verbose",
         action="store_true",
         help="Include detailed verification information",
+    )
+    parser.add_argument(
+        "--platform",
+        choices=["claude-code", "codex", "cursor", "devin", "all"],
+        default="claude-code",
+        help=(
+            "Platform to verify (default: claude-code). "
+            "Use 'all' to verify every supported platform."
+        ),
     )
     return parser.parse_args(args)
 
@@ -238,31 +337,64 @@ def main(
         logger.info("")
         logger.info("  🔍 nWave verification started")
 
-    # Run verification
-    result = run_verification(claude_config_dir=claude_config_dir)
+    platform = getattr(parsed_args, "platform", "claude-code")
+    native_platforms = (
+        list(_NATIVE_PLATFORMS) if platform == "all"
+        else [platform] if platform in _NATIVE_PLATFORMS
+        else []
+    )
+    run_claude_code = platform in ("claude-code", "all")
 
-    # Log verification results
-    if result.success:
-        logger.info(
-            f"  ✅ Verification passed: {result.agent_file_count} agents, "
-            f"{result.command_file_count} commands, "
-            f"{result.skill_file_count} skills, DES installed"
-        )
-    else:
-        logger.error(f"  ❌ Verification failed: {result.message}")
-        if result.missing_essential_files:
-            logger.error(f"    ⚠️ Missing: {', '.join(result.missing_essential_files)}")
+    overall_success = True
 
-    # Format and print output
-    if use_json:
-        output = format_json_output(result, verbose=parsed_args.verbose)
-    else:
-        output = format_terminal_output(result, verbose=parsed_args.verbose)
+    # Claude Code verification
+    if run_claude_code:
+        result = run_verification(claude_config_dir=claude_config_dir)
+        if result.success:
+            logger.info(
+                f"  ✅ Verification passed: {result.agent_file_count} agents, "
+                f"{result.command_file_count} commands, "
+                f"{result.skill_file_count} skills, DES installed"
+            )
+        else:
+            logger.error(f"  ❌ Verification failed: {result.message}")
+            if result.missing_essential_files:
+                logger.error(
+                    f"    ⚠️ Missing: {', '.join(result.missing_essential_files)}"
+                )
+            overall_success = False
 
-    print(output)
+        if use_json:
+            output = format_json_output(result, verbose=parsed_args.verbose)
+        else:
+            output = format_terminal_output(result, verbose=parsed_args.verbose)
+        print(output)
 
-    # Return appropriate exit code
-    return 0 if result.success else 1
+    # Native platform verification (Codex, Cursor, Devin)
+    native_results: dict[str, list[PluginResult]] = {}
+    for p in native_platforms:
+        p_results = verify_native_platform(p, config_dir, logger)
+        native_results[p] = p_results
+        if not all(r.success for r in p_results):
+            overall_success = False
+        if not use_json:
+            print(format_native_results(p, p_results, verbose=parsed_args.verbose))
+
+    if use_json and native_results:
+        native_summary = {
+            p: {
+                "success": all(r.success for r in rs),
+                "checks": [
+                    {"plugin": r.plugin_name, "success": r.success, "message": r.message,
+                     "errors": r.errors}
+                    for r in rs
+                ],
+            }
+            for p, rs in native_results.items()
+        }
+        print(json.dumps({"platforms": native_summary}, indent=2))
+
+    return 0 if overall_success else 1
 
 
 if __name__ == "__main__":

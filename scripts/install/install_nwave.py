@@ -187,7 +187,9 @@ try:
     )
     from scripts.install.plugins.commands_plugin import CommandsPlugin
     from scripts.install.plugins.copilot_des_plugin import CopilotDESPlugin
+    from scripts.install.plugins.cursor_des_plugin import CursorDESPlugin
     from scripts.install.plugins.des_plugin import DESPlugin
+    from scripts.install.plugins.devin_skills_plugin import DevinSkillsPlugin
     from scripts.install.plugins.omp_agents_plugin import OmpAgentsPlugin
     from scripts.install.plugins.omp_commands_plugin import OmpCommandsPlugin
     from scripts.install.plugins.omp_des_plugin import OMP_GUARD_CEILING, OmpDESPlugin
@@ -240,7 +242,9 @@ except ImportError:
     )
     from plugins.commands_plugin import CommandsPlugin
     from plugins.copilot_des_plugin import CopilotDESPlugin
+    from plugins.cursor_des_plugin import CursorDESPlugin
     from plugins.des_plugin import DESPlugin
+    from plugins.devin_skills_plugin import DevinSkillsPlugin
     from plugins.omp_agents_plugin import OmpAgentsPlugin
     from plugins.omp_commands_plugin import OmpCommandsPlugin
     from plugins.omp_des_plugin import OMP_GUARD_CEILING, OmpDESPlugin
@@ -1434,17 +1438,25 @@ class NWaveInstaller:
             registry.register(AgentsPlugin())
             registry.register(CommandsPlugin())
             registry.register(SkillsPlugin())
-            # NWAVE_AGENTS_HOME honored here too (same override every other
-            # ~/.nwave-rooted read/write in this file already honors): left
-            # at AttributionPlugin's own default (None -> Path.home()), an
-            # isolated caller with NWAVE_AGENTS_HOME pinned still had this
-            # plugin's config_dir/hooks_dir/config.json read-and-write
-            # (migrate_legacy_hook, install_prepare_commit_msg_hook,
-            # read/write_global_config) land in the operator's real home.
-            # Default is unchanged when unset.
-            registry.register(
-                AttributionPlugin(config_dir=self._locations.agents_home / ".nwave")
+        # AttributionPlugin is host-neutral: the enforcement runtime (PreToolUse
+        # universal handler) and config (~/.nwave/config.json) work identically
+        # across Claude Code, Codex, Cursor, Copilot, OMP, and OpenCode. The
+        # plugin is priority 200 and fail-open — it never blocks core install.
+        # NWAVE_AGENTS_HOME honored here (same override every other
+        # ~/.nwave-rooted read/write in this file already honors): left at
+        # AttributionPlugin's own default (None -> Path.home()), an isolated
+        # caller with NWAVE_AGENTS_HOME pinned still had config_dir/hooks_dir/
+        # config.json (migrate_legacy_hook, read/write_global_config) land in
+        # the operator's real home. Default is unchanged when unset.
+        # Spike pending (S3): whether each host honors `updatedInput` on a
+        # preToolUse allow is unverified per host. Attribution is seeded here;
+        # claiming it works on a specific host requires a live-commit spike.
+        _locs = getattr(self, "_locations", None)
+        registry.register(
+            AttributionPlugin(
+                config_dir=_locs.agents_home / ".nwave" if _locs is not None else None
             )
+        )
         # OpenCode plugins (registered when opencode detected)
         if target_platforms and "opencode" in target_platforms:
             opencode_skills = OpenCodeSkillsPlugin()
@@ -1467,6 +1479,11 @@ class NWaveInstaller:
             codex_des = CodexDESPlugin()
             codex_des.set_dependencies(["des", "codex-skills"])
             registry.register(codex_des)
+        # Cursor plugins (registered when cursor detected)
+        if target_platforms and "cursor" in target_platforms:
+            cursor_des = CursorDESPlugin()
+            cursor_des.set_dependencies(["des"])
+            registry.register(cursor_des)
         # Copilot CLI plugins (registered when copilot detected)
         if target_platforms and "copilot" in target_platforms:
             copilot_des = CopilotDESPlugin()
@@ -1481,6 +1498,23 @@ class NWaveInstaller:
             registry.register(omp_agents)
             registry.register(OmpCommandsPlugin())
             registry.register(OmpDESPlugin())
+        # Devin CLI plugins. All 181 skills are installed, including the 174
+        # user-invocable command-skills (equivalent to Claude Code commands).
+        # Skills are discovered as /devin:nw-* slash commands (confirmed via
+        # `devin skills list` on Devin 3000.6.14, 2026-10-11).
+        # S4 CLOSED (A — platform limitation): Devin 3000.6.14 has no hook
+        # subcommand and no hooks key in config.json. Probe confirmed via
+        # `devin --help` and `devin config show` on 2026-10-11. Devin uses a
+        # permissions model (Exec allow-lists in config.json) rather than
+        # pre-tool-use hooks. DES enforcement is not possible on Devin.
+        # S5 CONFIRMED GAP: `des` is not in PATH after a Devin install. The
+        # DES runtime lands at ~/.claude/lib/python/des/ (not on PATH), so
+        # `des design ...` invocations inside skill bodies cannot execute in
+        # Devin's shell environment. Skills work as LLM methodology guidance;
+        # DES step EXECUTION requires `PYTHONPATH=~/.claude/lib/python` or a
+        # `des` shim on PATH. Probe confirmed on 2026-10-11.
+        if target_platforms and "devin" in target_platforms:
+            registry.register(DevinSkillsPlugin())
         return registry
 
     def install_framework(self) -> bool:
@@ -1646,6 +1680,55 @@ class NWaveInstaller:
                     if not plan.success:
                         self.logger.error(plan.message)
                         return False
+
+            if "devin" in target_platforms:
+                from scripts.install.plugins.devin_skills_plugin import (
+                    _find_skills_source as _find_devin_skills_source,
+                )
+                from scripts.shared.install_paths import devin_skills_dir
+                from scripts.shared.skill_distribution import (
+                    enumerate_skills,
+                    filter_public_skills,
+                )
+                from scripts.shared.agent_catalog import (
+                    build_ownership_map,
+                    detect_command_skills,
+                    load_private_skills,
+                )
+
+                devin_context = InstallContext(
+                    claude_dir=self.claude_config_dir,
+                    scripts_dir=self.project_root / "scripts" / "install",
+                    templates_dir=self.framework_source / "templates",
+                    logger=self.logger,
+                    project_root=self.project_root,
+                    framework_source=self.framework_source,
+                    dev_mode=self.dev_mode,
+                    dry_run=True,
+                    target_platforms=set(target_platforms),
+                )
+                devin_skills_source = _find_devin_skills_source(devin_context)
+                devin_skill_count = 0
+                if devin_skills_source is not None:
+                    devin_public_agents = (
+                        set()
+                        if self.dev_mode
+                        else load_public_agents(self.project_root / "nWave")
+                    )
+                    devin_entries = enumerate_skills(devin_skills_source)
+                    if not self.dev_mode:
+                        devin_entries = filter_public_skills(
+                            devin_entries,
+                            devin_public_agents,
+                            build_ownership_map(self.project_root / "nWave" / "agents"),
+                            detect_command_skills(devin_skills_source),
+                            load_private_skills(self.project_root / "nWave"),
+                        )
+                    devin_skill_count = len(devin_entries)
+                self.logger.info(
+                    f"  🚨 [DRY RUN] Would install {devin_skill_count} Devin skills to "
+                    f"{devin_skills_dir()}"
+                )
 
             return True
 
@@ -2188,7 +2271,7 @@ def show_help():
     help_text = f"""
 {B}DESCRIPTION:{N}
     Installs the nWave methodology framework to your global AI coding host
-    config directory (Claude Code, OpenCode, Codex, Copilot, OMP).
+    config directory (Claude Code, OpenCode, Codex, Cursor, Copilot, OMP, Devin).
     This makes all specialized agents and commands available across all projects.
 
 {B}USAGE:{N}
@@ -2202,6 +2285,7 @@ def show_help():
                       before a real install -- run this first if unsure.
     --dev             Install ALL agents, skills and OMP commands (including private)
     --platform omp    Install public OMP agents, skills, /nw-* commands and DES extension
+    --platform devin  Install public skills to ~/.config/devin/skills/ (Devin CLI)
     --adopt-legacy-codex-dev
                       With --dev --platform codex only, quarantine safely
                       backed-up legacy unmanifested Codex nWave assets
@@ -2233,6 +2317,13 @@ def show_help():
     ~/.nwave/runtime/      # Host-neutral Python DES runtime (Python >=3.10 required)
     PI_CODING_AGENT_DIR relocates OMP skills, commands and extensions.
     {OMP_GUARD_CEILING}
+    # OMP installs no hooks: OMP extension events differ from Claude Code
+    # hooks, so DES guard enforcement is not projected onto OMP.
+    ~/.codex/hooks.json      # Codex PreToolUse hook configuration (if codex enabled)
+    ~/.agents/skills/        # Codex SKILL.md registry (if codex enabled)
+    ~/.codex/agents/         # Codex TOML agents (if codex enabled)
+    ~/.cursor/hooks.json     # Cursor preToolUse hook configuration (if cursor enabled)
+    ~/.cursor/agents/        # Cursor agents directory (if cursor enabled)
 
 For more information: https://github.com/nWave-ai/nWave
 """
@@ -2244,7 +2335,7 @@ def _resolve_platform_override(platform_flag: str) -> set[str] | None:
 
     Args:
         platform_flag: One of "auto", "claude-code", "opencode", "codex",
-            "copilot", "omp", "all".
+            "cursor", "copilot", "omp", "devin", "all".
 
     Returns:
         None for auto-detect, or a set of platform string values.
@@ -2254,9 +2345,11 @@ def _resolve_platform_override(platform_flag: str) -> set[str] | None:
         "claude-code": {"claude_code"},
         "opencode": {"opencode"},
         "codex": {"codex"},
+        "cursor": {"cursor"},
         "copilot": {"copilot"},
         "omp": {"omp"},
-        "all": {"claude_code", "opencode", "codex", "copilot", "omp"},
+        "devin": {"devin"},
+        "all": {"claude_code", "opencode", "codex", "cursor", "copilot", "omp", "devin"},
     }
     return platform_map[platform_flag]
 
@@ -2275,7 +2368,17 @@ def main():
     parser.add_argument("--help", "-h", action="store_true", help="Show help")
     parser.add_argument(
         "--platform",
-        choices=["auto", "claude-code", "opencode", "codex", "copilot", "omp", "all"],
+        choices=[
+            "auto",
+            "claude-code",
+            "opencode",
+            "codex",
+            "cursor",
+            "copilot",
+            "omp",
+            "devin",
+            "all",
+        ],
         default="auto",
         help="Target platform (default: auto-detect)",
     )

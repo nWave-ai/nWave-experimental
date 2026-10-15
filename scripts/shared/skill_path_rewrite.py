@@ -23,6 +23,8 @@ from __future__ import annotations
 
 from scripts.shared.platform_contracts import (
     CODEX_PATH_REWRITES,
+    DEVIN_PATH_REWRITE_EXCEPTIONS,
+    DEVIN_PATH_REWRITES,
     OMP_PATH_REWRITE_EXCEPTIONS,
     OMP_PATH_REWRITES,
     OPENCODE_PATH_REWRITE_EXCEPTIONS,
@@ -44,6 +46,7 @@ HOST_PATH_REWRITES: dict[str, tuple[tuple[str, str], ...]] = {
     "opencode": OPENCODE_PATH_REWRITES,
     "codex": CODEX_PATH_REWRITES,
     "omp": OMP_PATH_REWRITES,
+    "devin": DEVIN_PATH_REWRITES,
 }
 
 HOST_PATH_REWRITE_EXCEPTIONS: dict[str, tuple[str, ...]] = {
@@ -51,6 +54,7 @@ HOST_PATH_REWRITE_EXCEPTIONS: dict[str, tuple[str, ...]] = {
     "opencode": OPENCODE_PATH_REWRITE_EXCEPTIONS,
     "codex": (),
     "omp": OMP_PATH_REWRITE_EXCEPTIONS,
+    "devin": DEVIN_PATH_REWRITE_EXCEPTIONS,
 }
 
 _EXCEPTION_CONTEXT_WINDOW = 100

@@ -26,8 +26,78 @@ from unittest.mock import MagicMock
 from nwave_ai.state_delta import assert_state_delta, set_to
 
 from scripts.install.plugins.base import InstallContext
-from scripts.install.plugins.codex_skills_plugin import CodexSkillsPlugin
+from scripts.install.plugins.codex_skills_plugin import (
+    CodexSkillsPlugin,
+    _adapt_model_dispatch_for_codex,
+)
 from scripts.shared.skill_path_rewrite import rewrite_host_paths as render_for_codex
+
+
+class TestCodexModelProjection:
+    """Codex skills must not request Claude-only model aliases."""
+
+    def test_rewrites_aliases_and_omits_rigor_model_arguments(self):
+        """Scenario: Codex review dispatch uses the configured session model.
+
+        Slice: Codex reviewer dispatch. Given shared review guidance containing
+        a Claude model alias and a rigor model argument, when the guidance is
+        projected for Codex, then neither can be sent to the runtime.
+        """
+        # Given
+        content = (
+            "Default model: Haiku\n"
+            "If inherit, omit the model argument.\n"
+            "    model=rigor_reviewer_model,\n"
+        )
+
+        # When
+        projected = _adapt_model_dispatch_for_codex(content)
+
+        # Then
+        assert "haiku" not in projected.lower()
+        assert "inherit" not in projected.lower()
+        assert "model=rigor_reviewer_model" not in projected
+        assert "configured session model" in projected
+
+
+class TestCodexCommandSkillDistribution:
+    """User-invocable workflow skills must reach the Codex registry."""
+
+    def test_install_keeps_user_invocable_review_skill(self, tmp_path, monkeypatch):
+        """Scenario: Codex needs the review workflow to dispatch its reviewer.
+
+        Slice: Codex review dispatch. Given a public user-invocable review
+        skill without an owning agent, when Codex skills are installed, then
+        the workflow is copied to the Codex skills registry.
+        """
+        # Given
+        skills = {
+            "nw-review": (
+                "---\n"
+                "name: nw-review\n"
+                "description: review a feature\n"
+                "user-invocable: true\n"
+                "---\n\n"
+                "# Review\n"
+            )
+        }
+        context, _, _ = _make_context(
+            tmp_path,
+            skills=skills,
+            public_agents_yaml="agents:\n  public-agent:\n    public: true\n",
+        )
+        context.dev_mode = False
+        codex_skills_dir = tmp_path / "home" / ".agents" / "skills"
+        codex_config_dir = tmp_path / "home" / ".codex"
+        codex_config_dir.mkdir(parents=True)
+        _patch_codex_dirs(monkeypatch, codex_skills_dir, codex_config_dir)
+
+        # When
+        result = CodexSkillsPlugin().install(context)
+
+        # Then
+        assert result.success is True
+        assert (codex_skills_dir / "nw-review" / "SKILL.md").is_file()
 
 
 if TYPE_CHECKING:

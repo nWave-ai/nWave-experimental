@@ -365,8 +365,13 @@ def _build_launcher_hook_entry(launcher_path: Path) -> dict:
     must stay a value ``shlex``/the shell can invoke directly
     (fix-codex-hook-command-embeds-ephemeral-interpreter-path).
     """
+    _exe = sys.executable
     python_path = (
-        sys.executable if is_durable_interpreter_path(sys.executable) else "python3"
+        "python3"
+        if not is_durable_interpreter_path(_exe)
+        or "/.venv/" in _exe
+        or "\\.venv\\" in _exe
+        else _exe
     )
     if os.name == "nt":
         powershell = " ".join(
@@ -401,8 +406,13 @@ def _build_session_start_hook_entry(launcher_path: Path) -> dict:
     via a durability guard on ``sys.executable`` rather than either raw
     ``sys.executable`` or ``resolve_python_command_for_spawn()``.
     """
+    _exe = sys.executable
     python_path = (
-        sys.executable if is_durable_interpreter_path(sys.executable) else "python3"
+        "python3"
+        if not is_durable_interpreter_path(_exe)
+        or "/.venv/" in _exe
+        or "\\.venv\\" in _exe
+        else _exe
     )
     if os.name == "nt":
         powershell = " ".join(
@@ -501,8 +511,13 @@ def _command_targets_launcher(
     command: str, launcher_path: Path, subcommand: str = "pre-tool-use"
 ) -> bool:
     """Verify the serialized command is exactly the canonical invocation."""
+    _exe = sys.executable
     python_path = (
-        sys.executable if is_durable_interpreter_path(sys.executable) else "python3"
+        "python3"
+        if not is_durable_interpreter_path(_exe)
+        or "/.venv/" in _exe
+        or "\\.venv\\" in _exe
+        else _exe
     )
     expected_argv = [python_path, str(launcher_path), subcommand]
     if subcommand == _SESSION_START_SUBCOMMAND:

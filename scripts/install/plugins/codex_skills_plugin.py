@@ -13,6 +13,7 @@ so uninstall() can remove only nWave skills without touching user-created ones.
 
 import json
 import os
+import re
 import shutil
 from collections import Counter
 from hashlib import sha256
@@ -186,6 +187,28 @@ def legacy_v1_omitted_command_skills(
     ):
         return payload_names - listed
     return None
+
+_RIGOR_MODEL_ARGUMENT = re.compile(
+    r"(?m)^([ \t]*)model\s*=\s*rigor_(?:agent|reviewer)_model,?[^\n]*$"
+)
+_CLAUDE_MODEL_SELECTOR = re.compile(
+    r"\b(?:claude-)?(?:haiku|sonnet|opus)(?:-[\w.-]+)?\b|\binherit\b",
+    re.IGNORECASE,
+)
+
+
+def _adapt_model_dispatch_for_codex(content: str) -> str:
+    """Project shared model-dispatch guidance onto Codex's session model.
+
+    Codex chooses the model from its active configuration.  Passing nWave's
+    Claude-oriented rigor aliases causes both agent registration and dispatch
+    failures, so generated Codex skills must explicitly omit those arguments.
+    """
+    content = _CLAUDE_MODEL_SELECTOR.sub("configured Codex model", content)
+    return _RIGOR_MODEL_ARGUMENT.sub(
+        r"\1# Codex uses its configured session model; omit the model argument.",
+        content,
+    )
 
 
 def _codex_skills_dir() -> Path:
@@ -624,6 +647,7 @@ class CodexSkillsPlugin(InstallationPlugin):
                 content = target_file.read_text(encoding="utf-8")
                 content = _strip_forbidden_fields(content)
                 content = rewrite_host_paths(content, "codex")
+                content = _adapt_model_dispatch_for_codex(content)
                 target_file.write_text(content, encoding="utf-8")
 
                 installed_names.append(entry.name)

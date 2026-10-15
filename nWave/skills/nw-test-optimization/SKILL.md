@@ -39,7 +39,7 @@ Path form: `~/.claude/skills/{module}/SKILL.md`.
 - Test infrastructure (fixtures, conftest, plugins) — that is platform-architect or troubleshooter scope
 - Production code refactoring — `/nw-refactor` and the crafter scope
 - New test authoring — crafter scope (DELIVER wave)
-- Adapter integration tests — different rules apply (real I/O, no parametrize-collapse there); see `nw-hexagonal-testing` skill
+- Adapter integration tests — different rules apply (real I/O, no parametrize-collapse there); see `nw-distill-port-treatment-policy` for port/adapter test rules, and `nw-code-craftsmanship` for ports/adapters boundary discipline
 
 ## Cross-References
 

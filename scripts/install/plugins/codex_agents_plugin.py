@@ -61,6 +61,15 @@ _logger = logging.getLogger(__name__)
 _toml_reader = importlib.import_module(
     "tomllib" if sys.version_info >= (3, 11) else "tomli"
 )
+_CLAUDE_MODEL_SELECTOR = re.compile(
+    r"\b(?:claude-)?(?:haiku|sonnet|opus)(?:-[\w.-]+)?\b|\binherit\b",
+    re.IGNORECASE,
+)
+
+
+def _rewrite_model_selectors_for_codex(content: str) -> str:
+    """Replace source-only model selectors with Codex's configured model."""
+    return _CLAUDE_MODEL_SELECTOR.sub("configured Codex model", content)
 
 
 # ---------------------------------------------------------------------------
@@ -492,7 +501,11 @@ def _transform_agent(
             agent_name,
             UNPROJECTED_MODEL_NOTICE.format(model=unprojected_model),
         )
+    scalar_fields["description"] = _rewrite_model_selectors_for_codex(
+        scalar_fields.get("description", "")
+    )
     body = rewrite_host_paths(body, "codex")
+    body = _rewrite_model_selectors_for_codex(body)
     body = _translate_skill_invocations(body)
     preamble = _capability_preamble(frontmatter)
     if preamble:

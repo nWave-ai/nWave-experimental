@@ -155,14 +155,44 @@ class TestTomlStringRendering:
             "embedded triple-quote must be escaped to prevent premature termination"
         )
 
+    def test_multiline_string_escapes_backslashes_for_toml(self):
+        """Scenario: agent instructions contain a backslash.
+
+        Slice: Codex reviewer registration. Given a multiline instruction with
+        a backslash, when it is rendered as TOML, then Python's TOML parser
+        accepts the resulting agent file.
+        """
+        # Given
+        import tomllib
+
+        instruction = r"Use C:\\workspace for the review."
+
+        # When
+        rendered = f"developer_instructions = {_toml_multiline_string(instruction)}"
+
+        # Then
+        assert tomllib.loads(rendered)["developer_instructions"] == instruction
+
 
 class TestExtractScalarFields:
     """_extract_scalar_fields: drops forbidden + non-scalar YAML keys."""
 
-    def test_keeps_name_description_model(self):
-        # bypass: pure function, single-property assertion
+    def test_passes_model_through_for_downstream_omit(self):
+        """Scenario: _extract_scalar_fields passes model to _omit_unsupported_model.
+
+        Slice: Codex reviewer registration. Given an nWave agent frontmatter
+        with a model field, when projected to scalar fields, then model is
+        included so _omit_unsupported_model can inspect and drop Claude aliases.
+        Claude aliases are excluded from the final TOML by _omit_unsupported_model,
+        not by _extract_scalar_fields (see TestTransformAgent for end-to-end).
+        """
+        # Given
         frontmatter = {"name": "nw-foo", "description": "bar", "model": "sonnet"}
+
+        # When
         result = _extract_scalar_fields(frontmatter)
+
+        # Then — model is kept here; _omit_unsupported_model removes Claude aliases
         assert result == {"name": "nw-foo", "description": "bar", "model": "sonnet"}
 
     def test_drops_forbidden_fields(self):
@@ -201,23 +231,20 @@ class TestRenderTomlAgent:
     def test_canonical_fields_appear_in_stable_order(self):
         # bypass: pure function — ordering assertion
         scalar_fields = {
-            "model": "claude-sonnet-4-5",
             "description": "A test agent",
             "name": "nw-test",
         }
         result = _render_toml_agent(scalar_fields, "body text\n")
         lines = result.splitlines()
         keys_in_order = [ln.split(" = ")[0] for ln in lines if " = " in ln]
-        # name, description, model must appear before developer_instructions
+        # name and description must appear before developer_instructions
         assert keys_in_order.index("name") < keys_in_order.index(
             "developer_instructions"
         )
         assert keys_in_order.index("description") < keys_in_order.index(
             "developer_instructions"
         )
-        assert keys_in_order.index("model") < keys_in_order.index(
-            "developer_instructions"
-        )
+        assert "model" not in keys_in_order
 
     def test_body_appears_as_developer_instructions(self):
         # bypass: pure function
@@ -251,8 +278,14 @@ class TestLogToolsTranslated:
 class TestTransformAgent:
     """_transform_agent: end-to-end pipeline (parse -> transform -> render)."""
 
-    def test_full_transform_produces_valid_toml_structure(self):
-        # bypass: pure function
+    def test_full_transform_uses_the_configured_codex_model(self):
+        """Scenario: transformed agents cannot reject Codex-only runtime dispatch.
+
+        Slice: Codex reviewer registration. Given a Claude-oriented agent,
+        when it is transformed for Codex, then no model selector or Claude
+        model alias remains in the emitted TOML.
+        """
+        # Given
         source = (
             "---\n"
             "name: nw-craft\n"
@@ -264,6 +297,7 @@ class TestTransformAgent:
             "---\n\n"
             "You are a crafter.\n"
         )
+        # When
         result = _transform_agent(source, "nw-craft")
         parsed = tomllib.loads(result)
 

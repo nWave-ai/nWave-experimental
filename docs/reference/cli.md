@@ -65,9 +65,10 @@ nwave-ai install [--platform <tool>] [--target <path>] [--yes] \
 
 | Flag              | Required | Type   | Description                                                                |
 |-------------------|----------|--------|----------------------------------------------------------------------------|
-| `--platform`      | no       | enum   | Target agentic tool: `claude-code`, `codex`, `opencode`, `copilot`, `omp`, or `all`; `auto` infers available hosts. Forwarded to the installer subprocess. |
+| `--platform`      | no       | enum   | Target agentic tool: `claude-code`, `codex`, `cursor`, `opencode`, `copilot`, `omp`, or `all`; `auto` infers available hosts. Forwarded to the installer subprocess. |
 | `--target`        | no       | path   | Install into <path> instead of `~/.claude/`. Must not be `$HOME` (rejected with exit 2). Sets `CLAUDE_CONFIG_DIR` for subprocess. Default: `~/.claude/`. |
 | `--yes`           | no       | bool   | Non-interactive mode. Recommended for CI. |
+| `--density-only`  | no       | bool   | Run only the first-run documentation density prompt and exit (test-driving fixture; not a user flag). Exit 0 on completion. |
 | `--dry-run`       | no       | bool   | Preview changes without modifying the filesystem. Passed through to install script. |
 | `--backup-only`   | no       | bool   | Create a backup only without installing. Passed through to install script. |
 | `--restore`       | no       | bool   | Restore nWave from a previous backup. Passed through to install script. |
@@ -91,7 +92,7 @@ documentation-density preference being written.
 **stderr** on error:
 
 ```
-nwave-ai: --target must point to a Claude config directory (e.g. ~/.claude-nwave or ./.claude), not your home directory
+nwave-ai: --target must point to a config directory (e.g. ~/.claude-nwave or ./.claude), not your home directory
 ```
 
 ### Example
@@ -117,7 +118,9 @@ nwave-ai install --restore
 
 ## nwave-ai uninstall
 
-Remove the nWave framework from the configured Claude directory. Project files (`.nwave/`, source code) are not touched; only the framework itself is removed.
+Remove the nWave framework from configured tool directories. Project files
+(`.nwave/`, source code) are not touched; only the framework itself is
+removed.
 
 ### Synopsis
 
@@ -129,7 +132,7 @@ nwave-ai uninstall [--target <path>]
 
 | Flag       | Required | Type | Description                                                          |
 |------------|----------|------|------|
-| `--target` | no       | path | Uninstall from <path> instead of `~/.claude/`. Must not be `$HOME` (rejected with exit 2). Sets `CLAUDE_CONFIG_DIR` for subprocess. |
+| `--target` | no       | path | Uninstall from <path> instead of assistant default config path. Must not be `$HOME` (rejected with exit 2). Sets `CLAUDE_CONFIG_DIR` for subprocess. |
 
 ### Exit codes
 
